@@ -12,22 +12,16 @@ _CACHED = {}
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _mongo_connection():
-    """Create MongoDB connection once for the entire test session.
-
-    The AsyncMongoClient must be created inside the event loop that
-    pytest-asyncio manages, otherwise it binds to a different loop
-    and raises RuntimeError on use.
-    """
+    """Create MongoDB connection once for the entire test session."""
     from mongoengine.connection import _connections, _dbs, _connection_settings
 
     _connections.clear()
     _dbs.clear()
     _connection_settings.clear()
 
-    conn = connect(db=MONGO_TEST_DB)
-    connect(db="mongoenginetest2", alias="test2")
+    conn = connect(db=MONGO_TEST_DB, uuidRepresentation="standard")
+    connect(db="mongoenginetest2", alias="test2", uuidRepresentation="standard")
 
-    # Cache MongoDB version for the session (used by tests via cls.mongodb_version)
     from mongoengine.mongodb_support import get_mongodb_version
 
     _CACHED["mongodb_version"] = await get_mongodb_version()
@@ -46,32 +40,13 @@ def _is_mongo_testcase(cls):
     return any(c.__name__ == "MongoDBTestCase" for c in cls.__mro__)
 
 
-async def _drop_and_wait(db):
-    """Drop all collections in the test database individually.
-
-    Using drop_database can cause race conditions with subsequent writes
-    because MongoDB may still be processing the drop asynchronously.
-    Dropping individual collections is more predictable.
-    """
-    names = await db.list_collection_names()
-    for name in names:
-        if not name.startswith("system."):
-            await db.drop_collection(name)
-
-
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean_db(_mongo_connection, request):
-    """Drop the test database before and after each test.
-
-    Also sets ``cls._connection`` and ``cls.db`` on MongoDBTestCase
-    subclasses for backward compatibility.  Re-establishes the
-    connection if a prior test (e.g. ConnectionTest) cleared it.
-    """
+    """Drop the test database before each test."""
     if not _is_mongo_testcase(request.cls):
         yield
         return
 
-    # Re-establish connection if it was cleared by another test
     from mongoengine.connection import _connection_settings
 
     if "default" not in _connection_settings:
@@ -82,9 +57,13 @@ async def _clean_db(_mongo_connection, request):
     request.cls.db = db
     request.cls.mongodb_version = _CACHED["mongodb_version"]
 
-    await _drop_and_wait(db)
+    await db.client.drop_database(MONGO_TEST_DB)
+    # Synchronization barrier: perform a write and read to ensure
+    # the drop has fully completed before proceeding.
+    await db.command("ping")
     yield
-    await _drop_and_wait(db)
+    await db.client.drop_database(MONGO_TEST_DB)
+    await db.command("ping")
 
 
 def pytest_collection_modifyitems(items):
