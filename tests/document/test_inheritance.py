@@ -1,4 +1,3 @@
-import unittest
 import warnings
 
 import pytest
@@ -19,11 +18,11 @@ from tests.utils import MongoDBTestCase
 
 
 class TestInheritance(MongoDBTestCase):
-    def tearDown(self):
-        for collection in list_collection_names(self.db):
-            self.db.drop_collection(collection)
+    async def teardown_method(self, method=None):
+        for collection in await list_collection_names(self.db):
+            await self.db.drop_collection(collection)
 
-    def test_constructor_cls(self):
+    async def test_constructor_cls(self):
         # Ensures _cls is properly set during construction
         # and when object gets reloaded (prevent regression of #1950)
         class EmbedData(EmbeddedDocument):
@@ -38,13 +37,13 @@ class TestInheritance(MongoDBTestCase):
         test_doc = DataDoc(name="test", embed=EmbedData(data="data"))
         assert test_doc._cls == "DataDoc"
         assert test_doc.embed._cls == "EmbedData"
-        test_doc.save()
-        saved_doc = DataDoc.objects.with_id(test_doc.id)
+        await test_doc.save()
+        saved_doc = await DataDoc.objects.with_id(test_doc.id)
         assert test_doc._cls == saved_doc._cls
         assert test_doc.embed._cls == saved_doc.embed._cls
-        test_doc.delete()
+        await test_doc.delete()
 
-    def test_superclasses(self):
+    async def test_superclasses(self):
         """Ensure that the correct list of superclasses is assembled."""
 
         class Animal(Document):
@@ -72,7 +71,7 @@ class TestInheritance(MongoDBTestCase):
         assert Dog._superclasses == ("Animal", "Animal.Mammal")
         assert Human._superclasses == ("Animal", "Animal.Mammal")
 
-    def test_external_superclasses(self):
+    async def test_external_superclasses(self):
         """Ensure that the correct list of super classes is assembled when
         importing part of the model.
         """
@@ -102,7 +101,7 @@ class TestInheritance(MongoDBTestCase):
         assert Dog._superclasses == ("Base", "Base.Animal", "Base.Animal.Mammal")
         assert Human._superclasses == ("Base", "Base.Animal", "Base.Animal.Mammal")
 
-    def test_subclasses(self):
+    async def test_subclasses(self):
         """Ensure that the correct list of _subclasses (subclasses) is
         assembled.
         """
@@ -142,7 +141,7 @@ class TestInheritance(MongoDBTestCase):
         )
         assert Human._subclasses == ("Animal.Mammal.Human",)
 
-    def test_external_subclasses(self):
+    async def test_external_subclasses(self):
         """Ensure that the correct list of _subclasses (subclasses) is
         assembled when importing part of the model.
         """
@@ -182,7 +181,7 @@ class TestInheritance(MongoDBTestCase):
         )
         assert Human._subclasses == ("Base.Animal.Mammal.Human",)
 
-    def test_dynamic_declarations(self):
+    async def test_dynamic_declarations(self):
         """Test that declaring an extra class updates meta data"""
 
         class Animal(Document):
@@ -214,7 +213,7 @@ class TestInheritance(MongoDBTestCase):
         assert Pike._superclasses == ("Animal", "Animal.Fish")
         assert Pike._subclasses == ("Animal.Fish.Pike",)
 
-    def test_inheritance_meta_data(self):
+    async def test_inheritance_meta_data(self):
         """Ensure that document may inherit fields from a superclass document."""
 
         class Person(Document):
@@ -231,7 +230,7 @@ class TestInheritance(MongoDBTestCase):
         )
         assert Employee._get_collection_name() == Person._get_collection_name()
 
-    def test_inheritance_to_mongo_keys(self):
+    async def test_inheritance_to_mongo_keys(self):
         """Ensure that document may inherit fields from a superclass document."""
 
         class Person(Document):
@@ -259,7 +258,7 @@ class TestInheritance(MongoDBTestCase):
         ]
         assert Employee._get_collection_name() == Person._get_collection_name()
 
-    def test_indexes_and_multiple_inheritance(self):
+    async def test_indexes_and_multiple_inheritance(self):
         """Ensure that all of the indexes are created for a document with
         multiple inheritance.
         """
@@ -277,17 +276,17 @@ class TestInheritance(MongoDBTestCase):
         class C(A, B):
             pass
 
-        A.drop_collection()
-        B.drop_collection()
-        C.drop_collection()
+        await A.drop_collection()
+        await B.drop_collection()
+        await C.drop_collection()
 
-        C.ensure_indexes()
+        await C.ensure_indexes()
 
         assert sorted(
-            idx["key"] for idx in C._get_collection().index_information().values()
+            idx["key"] for idx in (await (await C._get_collection()).index_information()).values()
         ) == sorted([[("_cls", 1), ("b", 1)], [("_id", 1)], [("_cls", 1), ("a", 1)]])
 
-    def test_polymorphic_queries(self):
+    async def test_polymorphic_queries(self):
         """Ensure that the correct subclasses are returned from a query"""
 
         class Animal(Document):
@@ -305,24 +304,24 @@ class TestInheritance(MongoDBTestCase):
         class Human(Mammal):
             pass
 
-        Animal.drop_collection()
+        await Animal.drop_collection()
 
-        Animal().save()
-        Fish().save()
-        Mammal().save()
-        Dog().save()
-        Human().save()
+        await Animal().save()
+        await Fish().save()
+        await Mammal().save()
+        await Dog().save()
+        await Human().save()
 
-        classes = [obj.__class__ for obj in Animal.objects]
+        classes = [obj.__class__ async for obj in Animal.objects]
         assert classes == [Animal, Fish, Mammal, Dog, Human]
 
-        classes = [obj.__class__ for obj in Mammal.objects]
+        classes = [obj.__class__ async for obj in Mammal.objects]
         assert classes == [Mammal, Dog, Human]
 
-        classes = [obj.__class__ for obj in Human.objects]
+        classes = [obj.__class__ async for obj in Human.objects]
         assert classes == [Human]
 
-    def test_allow_inheritance(self):
+    async def test_allow_inheritance(self):
         """Ensure that inheritance is disabled by default on simple
         classes and that _cls will not be used.
         """
@@ -337,14 +336,14 @@ class TestInheritance(MongoDBTestCase):
                 pass
 
         # Check that _cls etc aren't present on simple documents
-        dog = Animal(name="dog").save()
+        dog = await Animal(name="dog").save()
         assert sorted(dog.to_mongo().keys()) == ["_id", "name"]
 
         collection = self.db[Animal._get_collection_name()]
-        obj = collection.find_one()
+        obj = await collection.find_one()
         assert "_cls" not in obj
 
-    def test_cant_turn_off_inheritance_on_subclass(self):
+    async def test_cant_turn_off_inheritance_on_subclass(self):
         """Ensure if inheritance is on in a subclass you cant turn it off."""
 
         class Animal(Document):
@@ -361,7 +360,7 @@ class TestInheritance(MongoDBTestCase):
             == 'Only direct subclasses of Document may set "allow_inheritance" to False'
         )
 
-    def test_allow_inheritance_abstract_document(self):
+    async def test_allow_inheritance_abstract_document(self):
         """Ensure that abstract documents can set inheritance rules and that
         _cls will not be used.
         """
@@ -381,7 +380,7 @@ class TestInheritance(MongoDBTestCase):
         doc = Animal(name="dog")
         assert "_cls" not in doc.to_mongo()
 
-    def test_using_abstract_class_in_reference_field(self):
+    async def test_using_abstract_class_in_reference_field(self):
         # Ensures no regression of #1920
         class AbstractHuman(Document):
             meta = {"abstract": True}
@@ -393,14 +392,14 @@ class TestInheritance(MongoDBTestCase):
             dad = ReferenceField(AbstractHuman)  # Referencing the abstract class
             address = StringField()
 
-        dad = Dad(name="5").save()
-        Home(dad=dad, address="street").save()
+        dad = await Dad(name="5").save()
+        await Home(dad=dad, address="street").save()
 
-        home = Home.objects.first()
+        home = await Home.objects.first()
         home.address = "garbage"
-        home.save()  # Was failing with ValidationError
+        await home.save()  # Was failing with ValidationError
 
-    def test_abstract_class_referencing_self(self):
+    async def test_abstract_class_referencing_self(self):
         # Ensures no regression of #1920
         class Human(Document):
             meta = {"abstract": True}
@@ -409,14 +408,14 @@ class TestInheritance(MongoDBTestCase):
         class User(Human):
             name = StringField()
 
-        user = User(name="John").save()
-        user2 = User(name="Foo", creator=user).save()
+        user = await User(name="John").save()
+        user2 = await User(name="Foo", creator=user).save()
 
-        user2 = User.objects.with_id(user2.id)
+        user2 = await User.objects.with_id(user2.id)
         user2.name = "Bar"
-        user2.save()  # Was failing with ValidationError
+        await user2.save()  # Was failing with ValidationError
 
-    def test_abstract_handle_ids_in_metaclass_properly(self):
+    async def test_abstract_handle_ids_in_metaclass_properly(self):
         class City(Document):
             continent = StringField()
             meta = {"abstract": True, "allow_inheritance": False}
@@ -430,7 +429,7 @@ class TestInheritance(MongoDBTestCase):
         assert len(berlin._fields_ordered) == 3
         assert berlin._fields_ordered[0] == "id"
 
-    def test_auto_id_not_set_if_specific_in_parent_class(self):
+    async def test_auto_id_not_set_if_specific_in_parent_class(self):
         class City(Document):
             continent = StringField()
             city_id = IntField(primary_key=True)
@@ -445,7 +444,7 @@ class TestInheritance(MongoDBTestCase):
         assert len(berlin._fields_ordered) == 3
         assert berlin._fields_ordered[0] == "city_id"
 
-    def test_auto_id_vs_non_pk_id_field(self):
+    async def test_auto_id_vs_non_pk_id_field(self):
         class City(Document):
             continent = StringField()
             id = IntField()
@@ -459,10 +458,10 @@ class TestInheritance(MongoDBTestCase):
         assert len(berlin._reverse_db_field_map) == len(berlin._fields_ordered)
         assert len(berlin._fields_ordered) == 4
         assert berlin._fields_ordered[0] == "auto_id_0"
-        berlin.save()
+        await berlin.save()
         assert berlin.pk == berlin.auto_id_0
 
-    def test_abstract_document_creation_does_not_fail(self):
+    async def test_abstract_document_creation_does_not_fail(self):
         class City(Document):
             continent = StringField()
             meta = {"abstract": True, "allow_inheritance": False}
@@ -473,7 +472,7 @@ class TestInheritance(MongoDBTestCase):
         with pytest.raises(KeyError):
             city.pk = 1
 
-    def test_allow_inheritance_embedded_document(self):
+    async def test_allow_inheritance_embedded_document(self):
         """Ensure embedded documents respect inheritance."""
 
         class Comment(EmbeddedDocument):
@@ -494,7 +493,7 @@ class TestInheritance(MongoDBTestCase):
         doc = Comment(content="test")
         assert "_cls" in doc.to_mongo()
 
-    def test_document_inheritance(self):
+    async def test_document_inheritance(self):
         """Ensure mutliple inheritance of abstract documents"""
 
         class DateCreatedDocument(Document):
@@ -506,7 +505,7 @@ class TestInheritance(MongoDBTestCase):
         class MyDocument(DateCreatedDocument, DateUpdatedDocument):
             pass
 
-    def test_abstract_documents(self):
+    async def test_abstract_documents(self):
         """Ensure that a document superclass can be marked as abstract
         thereby not using it as the name for the collection."""
 
@@ -559,7 +558,7 @@ class TestInheritance(MongoDBTestCase):
                 evil = BooleanField(default=True)
                 meta = {"abstract": True}
 
-    def test_abstract_embedded_documents(self):
+    async def test_abstract_embedded_documents(self):
         # 789: EmbeddedDocument shouldn't inherit abstract
         class A(EmbeddedDocument):
             meta = {"abstract": True}
@@ -569,7 +568,7 @@ class TestInheritance(MongoDBTestCase):
 
         assert not B._meta["abstract"]
 
-    def test_inherited_collections(self):
+    async def test_inherited_collections(self):
         """Ensure that subclassed documents don't override parents'
         collections
         """
@@ -598,24 +597,22 @@ class TestInheritance(MongoDBTestCase):
 
         warnings.resetwarnings()
 
-        Drink.drop_collection()
-        AlcoholicDrink.drop_collection()
-        Drinker.drop_collection()
+        await Drink.drop_collection()
+        await AlcoholicDrink.drop_collection()
+        await Drinker.drop_collection()
 
         red_bull = Drink(name="Red Bull")
-        red_bull.save()
+        await red_bull.save()
 
         programmer = Drinker(drink=red_bull)
-        programmer.save()
+        await programmer.save()
 
         beer = AlcoholicDrink(name="Beer")
-        beer.save()
+        await beer.save()
         real_person = Drinker(drink=beer)
-        real_person.save()
+        await real_person.save()
 
-        assert Drinker.objects[0].drink.name == red_bull.name
-        assert Drinker.objects[1].drink.name == beer.name
+        assert (await Drinker.objects.get_item(0)).drink.name == red_bull.name
+        assert (await Drinker.objects.get_item(1)).drink.name == beer.name
 
 
-if __name__ == "__main__":
-    unittest.main()

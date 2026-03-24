@@ -5,17 +5,17 @@ from tests.utils import MongoDBTestCase
 
 
 class TestFloatField(MongoDBTestCase):
-    def test_float_ne_operator(self):
+    async def test_float_ne_operator(self):
         class TestDocument(Document):
             float_fld = FloatField()
 
-        TestDocument.drop_collection()
+        await TestDocument.drop_collection()
 
-        TestDocument(float_fld=None).save()
-        TestDocument(float_fld=1).save()
+        await TestDocument(float_fld=None).save()
+        await TestDocument(float_fld=1).save()
 
-        assert 1 == TestDocument.objects(float_fld__ne=None).count()
-        assert 1 == TestDocument.objects(float_fld__ne=1).count()
+        assert 1 == await TestDocument.objects(float_fld__ne=None).count()
+        assert 1 == await TestDocument.objects(float_fld__ne=1).count()
 
     def test_validation(self):
         """Ensure that invalid values cannot be assigned to float fields."""
@@ -58,8 +58,8 @@ class TestFloatField(MongoDBTestCase):
         with pytest.raises(ValidationError):
             big_person.validate()
 
-    def test_query_none_value_dont_raise(self):
+    async def test_query_none_value_dont_raise(self):
         class BigPerson(Document):
             height = FloatField()
 
-        _ = list(BigPerson.objects(height=None))
+        _ = [d async for d in BigPerson.objects(height=None)]

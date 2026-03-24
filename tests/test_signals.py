@@ -1,12 +1,11 @@
-import unittest
-
 from mongoengine import *
 from mongoengine import signals
+from tests.utils import MongoDBTestCase
 
 signal_output = []
 
 
-class TestSignal(unittest.TestCase):
+class TestSignal(MongoDBTestCase):
     """
     Testing signals before/after saving and deleting.
     """
@@ -18,8 +17,15 @@ class TestSignal(unittest.TestCase):
         fn(*args, **kwargs)
         return signal_output
 
-    def setUp(self):
-        connect(db="mongoenginetest")
+    async def get_signal_output_async(self, fn, *args, **kwargs):
+        # Flush any existing signal output
+        global signal_output
+        signal_output = []
+        await fn(*args, **kwargs)
+        return signal_output
+
+    async def setup_method(self, method=None):
+        await super().setup_method(method)
 
         class Author(Document):
             # Make the id deterministic for easier testing
@@ -93,7 +99,7 @@ class TestSignal(unittest.TestCase):
                 signal_output.append(kwargs)
 
         self.Author = Author
-        Author.drop_collection()
+        await Author.drop_collection()
         Author.id.set_next_value(0)
 
         class Another(Document):
@@ -113,7 +119,7 @@ class TestSignal(unittest.TestCase):
                 signal_output.append(kwargs)
 
         self.Another = Another
-        Another.drop_collection()
+        await Another.drop_collection()
 
         class ExplicitId(Document):
             id = IntField(primary_key=True)
@@ -127,7 +133,7 @@ class TestSignal(unittest.TestCase):
                         signal_output.append("Is updated")
 
         self.ExplicitId = ExplicitId
-        ExplicitId.drop_collection()
+        await ExplicitId.drop_collection()
 
         class Post(Document):
             title = StringField()
@@ -170,7 +176,7 @@ class TestSignal(unittest.TestCase):
                 signal_output.append(kwargs)
 
         self.Post = Post
-        Post.drop_collection()
+        await Post.drop_collection()
 
         # Save up the number of connected signals so that we can check at the
         # end that all the signals we register get properly unregistered
@@ -206,7 +212,7 @@ class TestSignal(unittest.TestCase):
         signals.pre_bulk_insert.connect(Post.pre_bulk_insert, sender=Post)
         signals.post_bulk_insert.connect(Post.post_bulk_insert, sender=Post)
 
-    def tearDown(self):
+    async def teardown_method(self, method=None):
         signals.pre_init.disconnect(self.Author.pre_init)
         signals.post_init.disconnect(self.Author.post_init)
         signals.post_delete.disconnect(self.Author.post_delete)
@@ -240,32 +246,34 @@ class TestSignal(unittest.TestCase):
             len(signals.post_bulk_insert.receivers),
         )
 
-        self.ExplicitId.objects.delete()
+        await self.ExplicitId.objects.delete()
 
         # Note that there is a chance that the following assert fails in case
         # some receivers (eventually created in other tests)
         # gets garbage collected (https://pythonhosted.org/blinker/#blinker.base.Signal.connect)
         assert self.pre_signals == post_signals
 
-    def test_model_signals(self):
+        await super().teardown_method(method)
+
+    async def test_model_signals(self):
         """Model saves should throw some signals."""
 
         def create_author():
             self.Author(name="Bill Shakespeare")
 
-        def bulk_create_author_with_load():
+        async def bulk_create_author_with_load():
             a1 = self.Author(name="Bill Shakespeare")
-            self.Author.objects.insert([a1], load_bulk=True)
+            await self.Author.objects.insert([a1], load_bulk=True)
 
-        def bulk_create_author_without_load():
+        async def bulk_create_author_without_load():
             a1 = self.Author(name="Bill Shakespeare")
-            self.Author.objects.insert([a1], load_bulk=False)
+            await self.Author.objects.insert([a1], load_bulk=False)
 
-        def load_existing_author():
+        async def load_existing_author():
             a = self.Author(name="Bill Shakespeare")
-            a.save()
+            await a.save()
             self.get_signal_output(lambda: None)  # eliminate signal output
-            _ = self.Author.objects(name="Bill Shakespeare")[0]
+            _ = await self.Author.objects(name="Bill Shakespeare").first()
 
         assert self.get_signal_output(create_author) == [
             "pre_init signal, Author",
@@ -274,7 +282,7 @@ class TestSignal(unittest.TestCase):
         ]
 
         a1 = self.Author(name="Bill Shakespeare")
-        assert self.get_signal_output(a1.save) == [
+        assert await self.get_signal_output_async(a1.save) == [
             "pre_save signal, Bill Shakespeare",
             {},
             "pre_save_post_validation signal, Bill Shakespeare",
@@ -286,9 +294,9 @@ class TestSignal(unittest.TestCase):
             {},
         ]
 
-        a1.reload()
+        await a1.reload()
         a1.name = "William Shakespeare"
-        assert self.get_signal_output(a1.save) == [
+        assert await self.get_signal_output_async(a1.save) == [
             "pre_save signal, William Shakespeare",
             {},
             "pre_save_post_validation signal, William Shakespeare",
@@ -300,20 +308,20 @@ class TestSignal(unittest.TestCase):
             {},
         ]
 
-        assert self.get_signal_output(a1.delete) == [
+        assert await self.get_signal_output_async(a1.delete) == [
             "pre_delete signal, William Shakespeare",
             {},
             "post_delete signal, William Shakespeare",
             {},
         ]
 
-        assert self.get_signal_output(load_existing_author) == [
+        assert await self.get_signal_output_async(load_existing_author) == [
             "pre_init signal, Author",
             {"id": 2, "name": "Bill Shakespeare"},
             "post_init signal, Bill Shakespeare, document._created = False",
         ]
 
-        assert self.get_signal_output(bulk_create_author_with_load) == [
+        assert await self.get_signal_output_async(bulk_create_author_with_load) == [
             "pre_init signal, Author",
             {"name": "Bill Shakespeare"},
             "post_init signal, Bill Shakespeare, document._created = True",
@@ -327,7 +335,7 @@ class TestSignal(unittest.TestCase):
             {},
         ]
 
-        assert self.get_signal_output(bulk_create_author_without_load) == [
+        assert await self.get_signal_output_async(bulk_create_author_without_load) == [
             "pre_init signal, Author",
             {"name": "Bill Shakespeare"},
             "post_init signal, Bill Shakespeare, document._created = True",
@@ -338,15 +346,15 @@ class TestSignal(unittest.TestCase):
             {},
         ]
 
-    def test_signal_kwargs(self):
+    async def test_signal_kwargs(self):
         """Make sure signal_kwargs is passed to signals calls."""
 
-        def live_and_let_die():
+        async def live_and_let_die():
             a = self.Author(name="Bill Shakespeare")
-            a.save(signal_kwargs={"live": True, "die": False})
-            a.delete(signal_kwargs={"live": False, "die": True})
+            await a.save(signal_kwargs={"live": True, "die": False})
+            await a.delete(signal_kwargs={"live": False, "die": True})
 
-        assert self.get_signal_output(live_and_let_die) == [
+        assert await self.get_signal_output_async(live_and_let_die) == [
             "pre_init signal, Author",
             {"name": "Bill Shakespeare"},
             "post_init signal, Bill Shakespeare, document._created = True",
@@ -365,11 +373,11 @@ class TestSignal(unittest.TestCase):
             {"die": True, "live": False},
         ]
 
-        def bulk_create_author():
+        async def bulk_create_author():
             a1 = self.Author(name="Bill Shakespeare")
-            self.Author.objects.insert([a1], signal_kwargs={"key": True})
+            await self.Author.objects.insert([a1], signal_kwargs={"key": True})
 
-        assert self.get_signal_output(bulk_create_author) == [
+        assert await self.get_signal_output_async(bulk_create_author) == [
             "pre_init signal, Author",
             {"name": "Bill Shakespeare"},
             "post_init signal, Bill Shakespeare, document._created = True",
@@ -383,63 +391,63 @@ class TestSignal(unittest.TestCase):
             {"key": True},
         ]
 
-    def test_queryset_delete_signals(self):
+    async def test_queryset_delete_signals(self):
         """Queryset delete should throw some signals."""
 
-        self.Another(name="Bill Shakespeare").save()
-        assert self.get_signal_output(self.Another.objects.delete) == [
+        await self.Another(name="Bill Shakespeare").save()
+        assert await self.get_signal_output_async(self.Another.objects.delete) == [
             "pre_delete signal, Bill Shakespeare",
             {},
             "post_delete signal, Bill Shakespeare",
             {},
         ]
 
-    def test_signals_with_explicit_doc_ids(self):
+    async def test_signals_with_explicit_doc_ids(self):
         """Model saves must have a created flag the first time."""
         ei = self.ExplicitId(id=123)
         # post save must received the created flag, even if there's already
         # an object id present
-        assert self.get_signal_output(ei.save) == ["Is created"]
+        assert await self.get_signal_output_async(ei.save) == ["Is created"]
         # second time, it must be an update
-        assert self.get_signal_output(ei.save) == ["Is updated"]
+        assert await self.get_signal_output_async(ei.save) == ["Is updated"]
 
-    def test_signals_with_switch_collection(self):
+    async def test_signals_with_switch_collection(self):
         ei = self.ExplicitId(id=123)
         ei.switch_collection("explicit__1")
-        assert self.get_signal_output(ei.save) == ["Is created"]
+        assert await self.get_signal_output_async(ei.save) == ["Is created"]
         ei.switch_collection("explicit__1")
-        assert self.get_signal_output(ei.save) == ["Is updated"]
+        assert await self.get_signal_output_async(ei.save) == ["Is updated"]
 
         ei.switch_collection("explicit__1", keep_created=False)
-        assert self.get_signal_output(ei.save) == ["Is created"]
+        assert await self.get_signal_output_async(ei.save) == ["Is created"]
         ei.switch_collection("explicit__1", keep_created=False)
-        assert self.get_signal_output(ei.save) == ["Is created"]
+        assert await self.get_signal_output_async(ei.save) == ["Is created"]
 
-    def test_signals_with_switch_db(self):
+    async def test_signals_with_switch_db(self):
         connect("mongoenginetest")
         register_connection("testdb-1", "mongoenginetest2")
 
         ei = self.ExplicitId(id=123)
         ei.switch_db("testdb-1")
-        assert self.get_signal_output(ei.save) == ["Is created"]
+        assert await self.get_signal_output_async(ei.save) == ["Is created"]
         ei.switch_db("testdb-1")
-        assert self.get_signal_output(ei.save) == ["Is updated"]
+        assert await self.get_signal_output_async(ei.save) == ["Is updated"]
 
         ei.switch_db("testdb-1", keep_created=False)
-        assert self.get_signal_output(ei.save) == ["Is created"]
+        assert await self.get_signal_output_async(ei.save) == ["Is created"]
         ei.switch_db("testdb-1", keep_created=False)
-        assert self.get_signal_output(ei.save) == ["Is created"]
+        assert await self.get_signal_output_async(ei.save) == ["Is created"]
 
-    def test_signals_bulk_insert(self):
-        def bulk_set_active_post():
+    async def test_signals_bulk_insert(self):
+        async def bulk_set_active_post():
             posts = [
                 self.Post(title="Post 1"),
                 self.Post(title="Post 2"),
                 self.Post(title="Post 3"),
             ]
-            self.Post.objects.insert(posts)
+            await self.Post.objects.insert(posts)
 
-        results = self.get_signal_output(bulk_set_active_post)
+        results = await self.get_signal_output_async(bulk_set_active_post)
         assert results == [
             "pre_bulk_insert signal, [(<Post: Post 1>, {'active': False}), (<Post: Post 2>, {'active': False}), (<Post: Post 3>, {'active': False})]",
             {},
@@ -447,7 +455,3 @@ class TestSignal(unittest.TestCase):
             "Is loaded",
             {},
         ]
-
-
-if __name__ == "__main__":
-    unittest.main()

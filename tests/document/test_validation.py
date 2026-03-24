@@ -1,4 +1,3 @@
-import unittest
 from datetime import datetime
 
 import pytest
@@ -8,7 +7,7 @@ from tests.utils import MongoDBTestCase
 
 
 class TestValidatorError(MongoDBTestCase):
-    def test_to_dict(self):
+    async def test_to_dict(self):
         """Ensure a ValidationError handles error to_dict correctly."""
         error = ValidationError("root")
         assert error.to_dict() == {}
@@ -53,7 +52,7 @@ class TestValidatorError(MongoDBTestCase):
 
         assert error.message == "root(2nd.3rd.4th.Inception: ['1st'])"
 
-    def test_model_validation(self):
+    async def test_model_validation(self):
         class User(Document):
             username = StringField(primary_key=True)
             name = StringField(required=True)
@@ -67,15 +66,15 @@ class TestValidatorError(MongoDBTestCase):
                 "name": "Field is required",
             }
 
-        user = User(username="RossC0", name="Ross").save()
+        user = await User(username="RossC0", name="Ross").save()
         user.name = None
         try:
-            user.save()
+            await user.save()
         except ValidationError as e:
             assert "User:RossC0" in e.message
             assert e.to_dict() == {"name": "Field is required"}
 
-    def test_fields_rewrite(self):
+    async def test_fields_rewrite(self):
         class BasePerson(Document):
             name = StringField()
             age = IntField()
@@ -88,7 +87,7 @@ class TestValidatorError(MongoDBTestCase):
         with pytest.raises(ValidationError):
             p.validate()
 
-    def test_embedded_document_validation(self):
+    async def test_embedded_document_validation(self):
         """Ensure that embedded documents may be validated."""
 
         class Comment(EmbeddedDocument):
@@ -110,7 +109,7 @@ class TestValidatorError(MongoDBTestCase):
         comment.validate()
         assert comment._instance is None
 
-    def test_embedded_db_field_validate(self):
+    async def test_embedded_db_field_validate(self):
         class SubDoc(EmbeddedDocument):
             val = IntField(required=True)
 
@@ -124,11 +123,11 @@ class TestValidatorError(MongoDBTestCase):
             assert "SubDoc:None" in e.message
             assert e.to_dict() == {"e": {"val": "OK could not be converted to int"}}
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
 
-        Doc(id="test", e=SubDoc(val=15)).save()
+        await Doc(id="test", e=SubDoc(val=15)).save()
 
-        doc = Doc.objects.first()
+        doc = await Doc.objects.first()
         keys = doc._data.keys()
         assert 2 == len(keys)
         assert "e" in keys
@@ -136,19 +135,19 @@ class TestValidatorError(MongoDBTestCase):
 
         doc.e.val = "OK"
         try:
-            doc.save()
+            await doc.save()
         except ValidationError as e:
             assert "Doc:test" in e.message
             assert e.to_dict() == {"e": {"val": "OK could not be converted to int"}}
 
-    def test_embedded_weakref(self):
+    async def test_embedded_weakref(self):
         class SubDoc(EmbeddedDocument):
             val = IntField(required=True)
 
         class Doc(Document):
             e = EmbeddedDocumentField(SubDoc, db_field="eb")
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
 
         d1 = Doc()
         d2 = Doc()
@@ -166,7 +165,7 @@ class TestValidatorError(MongoDBTestCase):
         with pytest.raises(ValidationError):
             d2.validate()
 
-    def test_parent_reference_in_child_document(self):
+    async def test_parent_reference_in_child_document(self):
         """
         Test to ensure a ReferenceField can store a reference to a parent
         class when inherited. Issue #954.
@@ -180,17 +179,17 @@ class TestValidatorError(MongoDBTestCase):
             pass
 
         parent = Parent()
-        parent.save()
+        await parent.save()
 
         child = Child(reference=parent)
 
         # Saving child should not raise a ValidationError
         try:
-            child.save()
+            await child.save()
         except ValidationError as e:
-            self.fail("ValidationError raised: %s" % e.message)
+            pytest.fail("ValidationError raised: %s" % e.message)
 
-    def test_parent_reference_set_as_attribute_in_child_document(self):
+    async def test_parent_reference_set_as_attribute_in_child_document(self):
         """
         Test to ensure a ReferenceField can store a reference to a parent
         class when inherited and when set via attribute. Issue #954.
@@ -204,14 +203,12 @@ class TestValidatorError(MongoDBTestCase):
             pass
 
         parent = Parent()
-        parent.save()
+        await parent.save()
 
         child = Child()
         child.reference = parent
 
         # Saving the child should not raise a ValidationError
-        child.save()
+        await child.save()
 
 
-if __name__ == "__main__":
-    unittest.main()

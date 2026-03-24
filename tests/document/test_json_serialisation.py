@@ -1,4 +1,4 @@
-import unittest
+import pytest
 import uuid
 from datetime import datetime
 
@@ -9,7 +9,7 @@ from tests.utils import MongoDBTestCase
 
 
 class TestJson(MongoDBTestCase):
-    def test_json_names(self):
+    async def test_json_names(self):
         """
         Going to test reported issue:
             https://github.com/MongoEngine/mongoengine/issues/654
@@ -34,7 +34,7 @@ class TestJson(MongoDBTestCase):
 
         assert doc_json == expected_json
 
-    def test_json_simple(self):
+    async def test_json_simple(self):
         class Embedded(EmbeddedDocument):
             string = StringField()
 
@@ -56,7 +56,7 @@ class TestJson(MongoDBTestCase):
 
         assert doc == Doc.from_json(doc.to_json())
 
-    def test_json_complex(self):
+    async def test_json_complex(self):
         class EmbeddedDoc(EmbeddedDocument):
             pass
 
@@ -102,5 +102,3 @@ class TestJson(MongoDBTestCase):
         assert doc == Doc.from_json(doc.to_json())
 
 
-if __name__ == "__main__":
-    unittest.main()

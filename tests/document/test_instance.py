@@ -1,7 +1,6 @@
 import copy
 import os
 import pickle
-import unittest
 import uuid
 import weakref
 from datetime import datetime
@@ -53,7 +52,7 @@ TEST_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "../fields/mongoengine
 
 
 class TestDocumentInstance(MongoDBTestCase):
-    def setUp(self):
+    async def setup_method(self, method=None):
         class Job(EmbeddedDocument):
             name = StringField()
             years = IntField()
@@ -70,12 +69,12 @@ class TestDocumentInstance(MongoDBTestCase):
         self.Person = Person
         self.Job = Job
 
-    def tearDown(self):
-        for collection in list_collection_names(self.db):
-            self.db.drop_collection(collection)
+    async def teardown_method(self, method=None):
+        for collection in await list_collection_names(self.db):
+            await self.db.drop_collection(collection)
 
-    def _assert_db_equal(self, docs):
-        assert list(self.Person._get_collection().find().sort("id")) == sorted(
+    async def _assert_db_equal(self, docs):
+        assert await (await self.Person._get_collection()).find().sort("id").to_list(None) == sorted(
             docs, key=lambda doc: doc["_id"]
         )
 
@@ -87,26 +86,26 @@ class TestDocumentInstance(MongoDBTestCase):
         else:
             assert field._instance == instance
 
-    def test_capped_collection(self):
+    async def test_capped_collection(self):
         """Ensure that capped collections work properly."""
 
         class Log(Document):
             date = DateTimeField(default=datetime.now)
             meta = {"max_documents": 10, "max_size": 4096}
 
-        Log.drop_collection()
+        await Log.drop_collection()
 
         # Ensure that the collection handles up to its maximum
         for _ in range(10):
-            Log().save()
+            await Log().save()
 
-        assert Log.objects.count() == 10
+        assert await Log.objects.count() == 10
 
         # Check that extra documents don't increase the size
-        Log().save()
-        assert Log.objects.count() == 10
+        await Log().save()
+        assert await Log.objects.count() == 10
 
-        options = Log.objects._collection.options()
+        options = await Log.objects._collection.options()
         assert options["capped"] is True
         assert options["max"] == 10
         assert options["size"] == 4096
@@ -120,19 +119,19 @@ class TestDocumentInstance(MongoDBTestCase):
         with pytest.raises(InvalidCollectionError):
             Log.objects
 
-    def test_capped_collection_default(self):
+    async def test_capped_collection_default(self):
         """Ensure that capped collections defaults work properly."""
 
         class Log(Document):
             date = DateTimeField(default=datetime.now)
             meta = {"max_documents": 10}
 
-        Log.drop_collection()
+        await Log.drop_collection()
 
         # Create a doc to create the collection
-        Log().save()
+        await Log().save()
 
-        options = Log.objects._collection.options()
+        options = await Log.objects._collection.options()
         assert options["capped"] is True
         assert options["max"] == 10
         assert options["size"] == 10 * 2**20
@@ -145,7 +144,7 @@ class TestDocumentInstance(MongoDBTestCase):
         # Create the collection by accessing Document.objects
         Log.objects
 
-    def test_capped_collection_no_max_size_problems(self):
+    async def test_capped_collection_no_max_size_problems(self):
         """Ensure that capped collections with odd max_size work properly.
         MongoDB rounds up max_size to next multiple of 256, recreating a doc
         with the same spec failed in mongoengine <0.10
@@ -155,12 +154,12 @@ class TestDocumentInstance(MongoDBTestCase):
             date = DateTimeField(default=datetime.now)
             meta = {"max_size": 10000}
 
-        Log.drop_collection()
+        await Log.drop_collection()
 
         # Create a doc to create the collection
-        Log().save()
+        await Log().save()
 
-        options = Log.objects._collection.options()
+        options = await Log.objects._collection.options()
         assert options["capped"] is True
         assert options["size"] >= 10000
 
@@ -172,7 +171,7 @@ class TestDocumentInstance(MongoDBTestCase):
         # Create the collection by accessing Document.objects
         Log.objects
 
-    def test_repr(self):
+    async def test_repr(self):
         """Ensure that unicode representation works"""
 
         class Article(Document):
@@ -185,7 +184,7 @@ class TestDocumentInstance(MongoDBTestCase):
 
         assert "<Article: привет мир>" == repr(doc)
 
-    def test_repr_none(self):
+    async def test_repr_none(self):
         """Ensure None values are handled correctly."""
 
         class Article(Document):
@@ -197,19 +196,19 @@ class TestDocumentInstance(MongoDBTestCase):
         doc = Article(title="привет мир")
         assert "<Article: None>" == repr(doc)
 
-    def test_queryset_resurrects_dropped_collection(self):
-        self.Person.drop_collection()
-        assert list(self.Person.objects()) == []
+    async def test_queryset_resurrects_dropped_collection(self):
+        await self.Person.drop_collection()
+        assert [doc async for doc in self.Person.objects()] == []
 
         # Ensure works correctly with inhertited classes
         class Actor(self.Person):
             pass
 
         Actor.objects()
-        self.Person.drop_collection()
-        assert list(Actor.objects()) == []
+        await self.Person.drop_collection()
+        assert [doc async for doc in Actor.objects()] == []
 
-    def test_polymorphic_references(self):
+    async def test_polymorphic_references(self):
         """Ensure that the correct subclasses are returned from a query
         when using references / generic references
         """
@@ -232,37 +231,37 @@ class TestDocumentInstance(MongoDBTestCase):
         class Zoo(Document):
             animals = ListField(ReferenceField(Animal))
 
-        Zoo.drop_collection()
-        Animal.drop_collection()
+        await Zoo.drop_collection()
+        await Animal.drop_collection()
 
-        Animal().save()
-        Fish().save()
-        Mammal().save()
-        Dog().save()
-        Human().save()
+        await Animal().save()
+        await Fish().save()
+        await Mammal().save()
+        await Dog().save()
+        await Human().save()
 
         # Save a reference to each animal
         zoo = Zoo(animals=Animal.objects)
-        zoo.save()
-        zoo.reload()
+        await zoo.save()
+        await zoo.reload()
 
-        classes = [a.__class__ for a in Zoo.objects.first().animals]
+        classes = [a.__class__ for a in (await Zoo.objects.first()).animals]
         assert classes == [Animal, Fish, Mammal, Dog, Human]
 
-        Zoo.drop_collection()
+        await Zoo.drop_collection()
 
         class Zoo(Document):
             animals = ListField(GenericReferenceField())
 
         # Save a reference to each animal
         zoo = Zoo(animals=Animal.objects)
-        zoo.save()
-        zoo.reload()
+        await zoo.save()
+        await zoo.reload()
 
-        classes = [a.__class__ for a in Zoo.objects.first().animals]
+        classes = [a.__class__ for a in (await Zoo.objects.first()).animals]
         assert classes == [Animal, Fish, Mammal, Dog, Human]
 
-    def test_reference_inheritance(self):
+    async def test_reference_inheritance(self):
         class Stats(Document):
             created = DateTimeField(default=datetime.now)
 
@@ -272,22 +271,22 @@ class TestDocumentInstance(MongoDBTestCase):
             generated = DateTimeField(default=datetime.now)
             stats = ListField(ReferenceField(Stats))
 
-        Stats.drop_collection()
-        CompareStats.drop_collection()
+        await Stats.drop_collection()
+        await CompareStats.drop_collection()
 
         list_stats = []
 
         for i in range(10):
             s = Stats()
-            s.save()
+            await s.save()
             list_stats.append(s)
 
         cmp_stats = CompareStats(stats=list_stats)
-        cmp_stats.save()
+        await cmp_stats.save()
 
-        assert list_stats == CompareStats.objects.first().stats
+        assert list_stats == (await CompareStats.objects.first()).stats
 
-    def test_db_field_load(self):
+    async def test_db_field_load(self):
         """Ensure we load data correctly from the right db field."""
 
         class Person(Document):
@@ -298,16 +297,16 @@ class TestDocumentInstance(MongoDBTestCase):
             def rank(self):
                 return self._rank or "Private"
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
-        Person(name="Jack", _rank="Corporal").save()
+        await Person(name="Jack", _rank="Corporal").save()
 
-        Person(name="Fred").save()
+        await Person(name="Fred").save()
 
-        assert Person.objects.get(name="Jack").rank == "Corporal"
-        assert Person.objects.get(name="Fred").rank == "Private"
+        assert (await Person.objects.get(name="Jack")).rank == "Corporal"
+        assert (await Person.objects.get(name="Fred")).rank == "Private"
 
-    def test_db_embedded_doc_field_load(self):
+    async def test_db_embedded_doc_field_load(self):
         """Ensure we load embedded document data correctly."""
 
         class Rank(EmbeddedDocument):
@@ -323,15 +322,15 @@ class TestDocumentInstance(MongoDBTestCase):
                     return "Private"
                 return self.rank_.title
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
-        Person(name="Jack", rank_=Rank(title="Corporal")).save()
-        Person(name="Fred").save()
+        await Person(name="Jack", rank_=Rank(title="Corporal")).save()
+        await Person(name="Fred").save()
 
-        assert Person.objects.get(name="Jack").rank == "Corporal"
-        assert Person.objects.get(name="Fred").rank == "Private"
+        assert (await Person.objects.get(name="Jack")).rank == "Corporal"
+        assert (await Person.objects.get(name="Fred")).rank == "Private"
 
-    def test_custom_id_field(self):
+    async def test_custom_id_field(self):
         """Ensure that documents may be created with custom primary keys."""
 
         class User(Document):
@@ -340,19 +339,19 @@ class TestDocumentInstance(MongoDBTestCase):
 
             meta = {"allow_inheritance": True}
 
-        User.drop_collection()
+        await User.drop_collection()
 
         assert User._fields["username"].db_field == "_id"
         assert User._meta["id_field"] == "username"
 
-        User.objects.create(username="test", name="test user")
-        user = User.objects.first()
+        await User.objects.create(username="test", name="test user")
+        user = await User.objects.first()
         assert user.id == "test"
         assert user.pk == "test"
-        user_dict = User.objects._collection.find_one()
+        user_dict = await User.objects._collection.find_one()
         assert user_dict["_id"] == "test"
 
-    def test_change_custom_id_field_in_subclass(self):
+    async def test_change_custom_id_field_in_subclass(self):
         """Subclasses cannot override which field is the primary key."""
 
         class User(Document):
@@ -365,7 +364,7 @@ class TestDocumentInstance(MongoDBTestCase):
             class EmailUser(User):
                 email = StringField(primary_key=True)
 
-    def test_custom_id_field_is_required(self):
+    async def test_custom_id_field_is_required(self):
         """Ensure the custom primary key field is required."""
 
         class User(Document):
@@ -373,10 +372,10 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField()
 
         with pytest.raises(ValidationError) as exc_info:
-            User(name="test").save()
+            await User(name="test").save()
         assert "Field is required: ['username']" in str(exc_info.value)
 
-    def test_document_not_registered(self):
+    async def test_document_not_registered(self):
         class Place(Document):
             name = StringField()
 
@@ -385,19 +384,19 @@ class TestDocumentInstance(MongoDBTestCase):
         class NicePlace(Place):
             pass
 
-        Place.drop_collection()
+        await Place.drop_collection()
 
-        Place(name="London").save()
-        NicePlace(name="Buckingham Palace").save()
+        await Place(name="London").save()
+        await NicePlace(name="Buckingham Palace").save()
 
         # Mimic Place and NicePlace definitions being in a different file
         # and the NicePlace model not being imported in at query time.
         _DocumentRegistry.unregister("Place.NicePlace")
 
         with pytest.raises(NotRegistered):
-            list(Place.objects.all())
+            [doc async for doc in Place.objects.all()]
 
-    def test_document_registry_regressions(self):
+    async def test_document_registry_regressions(self):
         class Location(Document):
             name = StringField()
             meta = {"allow_inheritance": True}
@@ -405,42 +404,42 @@ class TestDocumentInstance(MongoDBTestCase):
         class Area(Location):
             location = ReferenceField("Location", dbref=True)
 
-        Location.drop_collection()
+        await Location.drop_collection()
 
         assert Area == _DocumentRegistry.get("Area")
         assert Area == _DocumentRegistry.get("Location.Area")
 
-    def test_creation(self):
+    async def test_creation(self):
         """Ensure that document may be created using keyword arguments."""
         person = self.Person(name="Test User", age=30)
         assert person.name == "Test User"
         assert person.age == 30
 
-    def test__qs_property_does_not_raise(self):
+    async def test__qs_property_does_not_raise(self):
         # ensures no regression of #2500
         class MyDocument(Document):
             pass
 
-        MyDocument.drop_collection()
+        await MyDocument.drop_collection()
         object = MyDocument()
-        object._qs().insert([MyDocument()])
-        assert MyDocument.objects.count() == 1
+        await object._qs().insert([MyDocument()])
+        assert await MyDocument.objects.count() == 1
 
-    def test_to_dbref(self):
+    async def test_to_dbref(self):
         """Ensure that you can get a dbref of a document."""
         person = self.Person(name="Test User", age=30)
         with pytest.raises(OperationError):
             person.to_dbref()
-        person.save()
+        await person.save()
         person.to_dbref()
 
-    def test_key_like_attribute_access(self):
+    async def test_key_like_attribute_access(self):
         person = self.Person(age=30)
         assert person["age"] == 30
         with pytest.raises(KeyError):
             person["unknown_attr"]
 
-    def test_save_abstract_document(self):
+    async def test_save_abstract_document(self):
         """Saving an abstract document should fail."""
 
         class Doc(Document):
@@ -448,67 +447,67 @@ class TestDocumentInstance(MongoDBTestCase):
             meta = {"abstract": True}
 
         with pytest.raises(InvalidDocumentError):
-            Doc(name="aaa").save()
+            await Doc(name="aaa").save()
 
-    def test_reload(self):
+    async def test_reload(self):
         """Ensure that attributes may be reloaded."""
         person = self.Person(name="Test User", age=20)
-        person.save()
+        await person.save()
 
-        person_obj = self.Person.objects.first()
+        person_obj = await self.Person.objects.first()
         person_obj.name = "Mr Test User"
         person_obj.age = 21
-        person_obj.save()
+        await person_obj.save()
 
         assert person.name == "Test User"
         assert person.age == 20
 
-        person.reload("age")
+        await person.reload("age")
         assert person.name == "Test User"
         assert person.age == 21
 
-        person.reload()
+        await person.reload()
         assert person.name == "Mr Test User"
         assert person.age == 21
 
-        person.reload()
+        await person.reload()
         assert person.name == "Mr Test User"
         assert person.age == 21
 
-    def test_reload_sharded(self):
+    async def test_reload_sharded(self):
         class Animal(Document):
             superphylum = StringField()
             meta = {"shard_key": ("superphylum",)}
 
-        Animal.drop_collection()
-        doc = Animal.objects.create(superphylum="Deuterostomia")
+        await Animal.drop_collection()
+        doc = await Animal.objects.create(superphylum="Deuterostomia")
 
         mongo_db = get_mongodb_version()
         CMD_QUERY_KEY = "command" if mongo_db >= MONGODB_36 else "query"
-        with query_counter() as q:
-            doc.reload()
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.animal"})[0]
+        async with query_counter() as q:
+            await doc.reload()
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.animal"}).to_list(None))[0]
             assert set(query_op[CMD_QUERY_KEY]["filter"].keys()) == {
                 "_id",
                 "superphylum",
             }
 
-    def test_reload_sharded_with_db_field(self):
+    async def test_reload_sharded_with_db_field(self):
         class Person(Document):
             nationality = StringField(db_field="country")
             meta = {"shard_key": ("nationality",)}
 
-        Person.drop_collection()
-        doc = Person.objects.create(nationality="Poland")
+        await Person.drop_collection()
+        doc = await Person.objects.create(nationality="Poland")
 
         mongo_db = get_mongodb_version()
         CMD_QUERY_KEY = "command" if mongo_db >= MONGODB_36 else "query"
-        with query_counter() as q:
-            doc.reload()
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.person"})[0]
+        async with query_counter() as q:
+            await doc.reload()
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.person"}).to_list(None))[0]
             assert set(query_op[CMD_QUERY_KEY]["filter"].keys()) == {"_id", "country"}
 
-    def test_reload_sharded_nested(self):
+    async def test_reload_sharded_nested(self):
         class SuperPhylum(EmbeddedDocument):
             name = StringField()
 
@@ -516,13 +515,13 @@ class TestDocumentInstance(MongoDBTestCase):
             superphylum = EmbeddedDocumentField(SuperPhylum)
             meta = {"shard_key": ("superphylum.name",)}
 
-        Animal.drop_collection()
+        await Animal.drop_collection()
         doc = Animal(superphylum=SuperPhylum(name="Deuterostomia"))
-        doc.save()
-        doc.reload()
-        Animal.drop_collection()
+        await doc.save()
+        await doc.reload()
+        await Animal.drop_collection()
 
-    def test_save_update_shard_key_routing(self):
+    async def test_save_update_shard_key_routing(self):
         """Ensures updating a doc with a specified shard_key includes it in
         the query.
         """
@@ -532,20 +531,20 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField()
             meta = {"shard_key": ("is_mammal", "id")}
 
-        Animal.drop_collection()
+        await Animal.drop_collection()
         doc = Animal(is_mammal=True, name="Dog")
-        doc.save()
+        await doc.save()
 
-        with query_counter() as q:
+        async with query_counter() as q:
             doc.name = "Cat"
-            doc.save()
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.animal"})[0]
+            await doc.save()
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.animal"}).to_list(None))[0]
             assert query_op["op"] == "update"
             assert set(query_op["command"]["q"].keys()) == {"_id", "is_mammal"}
 
-        Animal.drop_collection()
+        await Animal.drop_collection()
 
-    def test_save_create_shard_key_routing(self):
+    async def test_save_create_shard_key_routing(self):
         """Ensures inserting a doc with a specified shard_key includes it in
         the query.
         """
@@ -556,39 +555,39 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField()
             meta = {"shard_key": ("is_mammal",)}
 
-        Animal.drop_collection()
+        await Animal.drop_collection()
         doc = Animal(is_mammal=True, name="Dog")
 
-        with query_counter() as q:
-            doc.save()
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.animal"})[0]
+        async with query_counter() as q:
+            await doc.save()
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.animal"}).to_list(None))[0]
             assert query_op["op"] == "command"
             assert query_op["command"]["findAndModify"] == "animal"
             assert set(query_op["command"]["query"].keys()) == {"_id", "is_mammal"}
 
-        Animal.drop_collection()
+        await Animal.drop_collection()
 
-    def test_reload_with_changed_fields(self):
+    async def test_reload_with_changed_fields(self):
         """Ensures reloading will not affect changed fields"""
 
         class User(Document):
             name = StringField()
             number = IntField()
 
-        User.drop_collection()
+        await User.drop_collection()
 
-        user = User(name="Bob", number=1).save()
+        user = await User(name="Bob", number=1).save()
         user.name = "John"
         user.number = 2
 
         assert user._get_changed_fields() == ["name", "number"]
-        user.reload("number")
+        await user.reload("number")
         assert user._get_changed_fields() == ["name"]
-        user.save()
-        user.reload()
+        await user.save()
+        await user.reload()
         assert user.name == "John"
 
-    def test_reload_referencing(self):
+    async def test_reload_referencing(self):
         """Ensures reloading updates weakrefs correctly."""
 
         class Embedded(EmbeddedDocument):
@@ -600,7 +599,7 @@ class TestDocumentInstance(MongoDBTestCase):
             list_field = ListField()
             embedded_field = EmbeddedDocumentField(Embedded)
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
         doc = Doc()
         doc.dict_field = {"hello": "world"}
         doc.list_field = ["1", 2, {"hello": "world"}]
@@ -609,9 +608,9 @@ class TestDocumentInstance(MongoDBTestCase):
         embedded_1.dict_field = {"hello": "world"}
         embedded_1.list_field = ["1", 2, {"hello": "world"}]
         doc.embedded_field = embedded_1
-        doc.save()
+        await doc.save()
 
-        doc = doc.reload(10)
+        doc = await doc.reload(10)
         doc.list_field.append(1)
         doc.dict_field["woot"] = "woot"
         doc.embedded_field.list_field.append(1)
@@ -624,10 +623,10 @@ class TestDocumentInstance(MongoDBTestCase):
             "embedded_field.list_field",
             "embedded_field.dict_field.woot",
         ]
-        doc.save()
+        await doc.save()
 
         assert len(doc.list_field) == 4
-        doc = doc.reload(10)
+        doc = await doc.reload(10)
         assert doc._get_changed_fields() == []
         assert len(doc.list_field) == 4
         assert len(doc.dict_field) == 2
@@ -635,30 +634,30 @@ class TestDocumentInstance(MongoDBTestCase):
         assert len(doc.embedded_field.dict_field) == 2
 
         doc.list_field.append(1)
-        doc.save()
+        await doc.save()
         doc.dict_field["extra"] = 1
-        doc = doc.reload(10, "list_field")
+        doc = await doc.reload(10, "list_field")
         assert doc._get_changed_fields() == ["dict_field.extra"]
         assert len(doc.list_field) == 5
         assert len(doc.dict_field) == 3
         assert len(doc.embedded_field.list_field) == 4
         assert len(doc.embedded_field.dict_field) == 2
 
-    def test_reload_doesnt_exist(self):
+    async def test_reload_doesnt_exist(self):
         class Foo(Document):
             pass
 
         f = Foo()
         with pytest.raises(Foo.DoesNotExist):
-            f.reload()
+            await f.reload()
 
-        f.save()
-        f.delete()
+        await f.save()
+        await f.delete()
 
         with pytest.raises(Foo.DoesNotExist):
-            f.reload()
+            await f.reload()
 
-    def test_reload_of_non_strict_with_special_field_name(self):
+    async def test_reload_of_non_strict_with_special_field_name(self):
         """Ensures reloading works for documents with meta strict is False."""
 
         class Post(Document):
@@ -666,18 +665,18 @@ class TestDocumentInstance(MongoDBTestCase):
             title = StringField()
             items = ListField()
 
-        Post.drop_collection()
+        await Post.drop_collection()
 
-        Post._get_collection().insert_one(
+        await (await Post._get_collection()).insert_one(
             {"title": "Items eclipse", "items": ["more lorem", "even more ipsum"]}
         )
 
-        post = Post.objects.first()
-        post.reload()
+        post = await Post.objects.first()
+        await post.reload()
         assert post.title == "Items eclipse"
         assert post.items == ["more lorem", "even more ipsum"]
 
-    def test_dictionary_access(self):
+    async def test_dictionary_access(self):
         """Ensure that dictionary-style field access works properly."""
         person = self.Person(name="Test User", age=30, job=self.Job())
         assert person["name"] == "Test User"
@@ -698,7 +697,7 @@ class TestDocumentInstance(MongoDBTestCase):
         assert "age" not in person
         assert "nationality" not in person
 
-    def test_embedded_document_to_mongo(self):
+    async def test_embedded_document_to_mongo(self):
         class Person(EmbeddedDocument):
             name = StringField()
             age = IntField()
@@ -720,14 +719,14 @@ class TestDocumentInstance(MongoDBTestCase):
             "salary",
         ]
 
-    def test_embedded_document_to_mongo_id(self):
+    async def test_embedded_document_to_mongo_id(self):
         class SubDoc(EmbeddedDocument):
             id = StringField(required=True)
 
         sub_doc = SubDoc(id="abc")
         assert list(sub_doc.to_mongo().keys()) == ["id"]
 
-    def test_embedded_document(self):
+    async def test_embedded_document(self):
         """Ensure that embedded documents are set up correctly."""
 
         class Comment(EmbeddedDocument):
@@ -736,7 +735,7 @@ class TestDocumentInstance(MongoDBTestCase):
         assert "content" in Comment._fields
         assert "id" not in Comment._fields
 
-    def test_embedded_document_instance(self):
+    async def test_embedded_document_instance(self):
         """Ensure that embedded documents can reference parent instance."""
 
         class Embedded(EmbeddedDocument):
@@ -745,16 +744,16 @@ class TestDocumentInstance(MongoDBTestCase):
         class Doc(Document):
             embedded_field = EmbeddedDocumentField(Embedded)
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
 
         doc = Doc(embedded_field=Embedded(string="Hi"))
         self._assert_has_instance(doc.embedded_field, doc)
 
-        doc.save()
-        doc = Doc.objects.get()
+        await doc.save()
+        doc = await Doc.objects.get()
         self._assert_has_instance(doc.embedded_field, doc)
 
-    def test_embedded_document_complex_instance(self):
+    async def test_embedded_document_complex_instance(self):
         """Ensure that embedded documents in complex fields can reference
         parent instance.
         """
@@ -765,15 +764,15 @@ class TestDocumentInstance(MongoDBTestCase):
         class Doc(Document):
             embedded_field = ListField(EmbeddedDocumentField(Embedded))
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
         doc = Doc(embedded_field=[Embedded(string="Hi")])
         self._assert_has_instance(doc.embedded_field[0], doc)
 
-        doc.save()
-        doc = Doc.objects.get()
+        await doc.save()
+        doc = await Doc.objects.get()
         self._assert_has_instance(doc.embedded_field[0], doc)
 
-    def test_embedded_document_complex_instance_no_use_db_field(self):
+    async def test_embedded_document_complex_instance_no_use_db_field(self):
         """Ensure that use_db_field is propagated to list of Emb Docs."""
 
         class Embedded(EmbeddedDocument):
@@ -789,40 +788,40 @@ class TestDocumentInstance(MongoDBTestCase):
         )
         assert d["embedded_field"] == [{"string": "Hi"}]
 
-    def test_instance_is_set_on_setattr(self):
+    async def test_instance_is_set_on_setattr(self):
         class Email(EmbeddedDocument):
             email = EmailField()
 
         class Account(Document):
             email = EmbeddedDocumentField(Email)
 
-        Account.drop_collection()
+        await Account.drop_collection()
 
         acc = Account()
         acc.email = Email(email="test@example.com")
         self._assert_has_instance(acc._data["email"], acc)
-        acc.save()
+        await acc.save()
 
-        acc1 = Account.objects.first()
+        acc1 = await Account.objects.first()
         self._assert_has_instance(acc1._data["email"], acc1)
 
-    def test_instance_is_set_on_setattr_on_embedded_document_list(self):
+    async def test_instance_is_set_on_setattr_on_embedded_document_list(self):
         class Email(EmbeddedDocument):
             email = EmailField()
 
         class Account(Document):
             emails = EmbeddedDocumentListField(Email)
 
-        Account.drop_collection()
+        await Account.drop_collection()
         acc = Account()
         acc.emails = [Email(email="test@example.com")]
         self._assert_has_instance(acc._data["emails"][0], acc)
-        acc.save()
+        await acc.save()
 
-        acc1 = Account.objects.first()
+        acc1 = await Account.objects.first()
         self._assert_has_instance(acc1._data["emails"][0], acc1)
 
-    def test_save_checks_that_clean_is_called(self):
+    async def test_save_checks_that_clean_is_called(self):
         class CustomError(Exception):
             pass
 
@@ -831,11 +830,11 @@ class TestDocumentInstance(MongoDBTestCase):
                 raise CustomError()
 
         with pytest.raises(CustomError):
-            TestDocument().save()
+            await TestDocument().save()
 
-        TestDocument().save(clean=False)
+        await TestDocument().save(clean=False)
 
-    def test_save_signal_pre_save_post_validation_makes_change_to_doc(self):
+    async def test_save_signal_pre_save_post_validation_makes_change_to_doc(self):
         class BlogPost(Document):
             content = StringField()
 
@@ -847,19 +846,19 @@ class TestDocumentInstance(MongoDBTestCase):
             BlogPost.pre_save_post_validation, sender=BlogPost
         )
 
-        BlogPost.drop_collection()
+        await BlogPost.drop_collection()
 
-        post = BlogPost(content="unchecked").save()
+        post = await BlogPost(content="unchecked").save()
         assert post.content == "checked"
         # Make sure pre_save_post_validation changes makes it to the db
-        raw_doc = get_as_pymongo(post)
+        raw_doc = await get_as_pymongo(post)
         assert raw_doc == {"content": "checked", "_id": post.id}
 
         # Important to disconnect as it could cause some assertions in test_signals
         # to fail (due to the garbage collection timing of this signal)
         signals.pre_save_post_validation.disconnect(BlogPost.pre_save_post_validation)
 
-    def test_document_clean(self):
+    async def test_document_clean(self):
         class TestDocument(Document):
             status = StringField()
             cleaned = BooleanField(default=False)
@@ -867,26 +866,26 @@ class TestDocumentInstance(MongoDBTestCase):
             def clean(self):
                 self.cleaned = True
 
-        TestDocument.drop_collection()
+        await TestDocument.drop_collection()
 
         t = TestDocument(status="draft")
 
         # Ensure clean=False prevent call to clean
         t = TestDocument(status="published")
-        t.save(clean=False)
+        await t.save(clean=False)
         assert t.status == "published"
         assert t.cleaned is False
 
         t = TestDocument(status="published")
         assert t.cleaned is False
-        t.save(clean=True)
+        await t.save(clean=True)
         assert t.status == "published"
         assert t.cleaned is True
-        raw_doc = get_as_pymongo(t)
+        raw_doc = await get_as_pymongo(t)
         # Make sure clean changes makes it to the db
         assert raw_doc == {"status": "published", "cleaned": True, "_id": t.id}
 
-    def test_document_embedded_clean(self):
+    async def test_document_embedded_clean(self):
         class TestEmbeddedDocument(EmbeddedDocument):
             x = IntField(required=True)
             y = IntField(required=True)
@@ -905,65 +904,65 @@ class TestDocumentInstance(MongoDBTestCase):
             doc = EmbeddedDocumentField(TestEmbeddedDocument)
             status = StringField()
 
-        TestDocument.drop_collection()
+        await TestDocument.drop_collection()
 
         t = TestDocument(doc=TestEmbeddedDocument(x=10, y=25, z=15))
 
         with pytest.raises(ValidationError) as exc_info:
-            t.save()
+            await t.save()
 
         expected_msg = "Value of z != x + y"
         assert expected_msg in str(exc_info.value)
         assert exc_info.value.to_dict() == {"doc": {"__all__": expected_msg}}
 
-        t = TestDocument(doc=TestEmbeddedDocument(x=10, y=25)).save()
+        t = await TestDocument(doc=TestEmbeddedDocument(x=10, y=25)).save()
         assert t.doc.z == 35
 
         # Asserts not raises
         t = TestDocument(doc=TestEmbeddedDocument(x=15, y=35, z=5))
-        t.save(clean=False)
+        await t.save(clean=False)
 
-    def test_modify_empty(self):
-        doc = self.Person(name="bob", age=10).save()
+    async def test_modify_empty(self):
+        doc = await self.Person(name="bob", age=10).save()
 
         with pytest.raises(InvalidDocumentError):
-            self.Person().modify(set__age=10)
+            await self.Person().modify(set__age=10)
 
-        self._assert_db_equal([dict(doc.to_mongo())])
+        await self._assert_db_equal([dict(doc.to_mongo())])
 
-    def test_modify_invalid_query(self):
-        doc1 = self.Person(name="bob", age=10).save()
-        doc2 = self.Person(name="jim", age=20).save()
+    async def test_modify_invalid_query(self):
+        doc1 = await self.Person(name="bob", age=10).save()
+        doc2 = await self.Person(name="jim", age=20).save()
         docs = [dict(doc1.to_mongo()), dict(doc2.to_mongo())]
 
         with pytest.raises(InvalidQueryError):
-            doc1.modify({"id": doc2.id}, set__value=20)
+            await doc1.modify({"id": doc2.id}, set__value=20)
 
-        self._assert_db_equal(docs)
+        await self._assert_db_equal(docs)
 
-    def test_modify_match_another_document(self):
-        doc1 = self.Person(name="bob", age=10).save()
-        doc2 = self.Person(name="jim", age=20).save()
+    async def test_modify_match_another_document(self):
+        doc1 = await self.Person(name="bob", age=10).save()
+        doc2 = await self.Person(name="jim", age=20).save()
         docs = [dict(doc1.to_mongo()), dict(doc2.to_mongo())]
 
-        n_modified = doc1.modify({"name": doc2.name}, set__age=100)
+        n_modified = await doc1.modify({"name": doc2.name}, set__age=100)
         assert n_modified == 0
 
-        self._assert_db_equal(docs)
+        await self._assert_db_equal(docs)
 
-    def test_modify_not_exists(self):
-        doc1 = self.Person(name="bob", age=10).save()
+    async def test_modify_not_exists(self):
+        doc1 = await self.Person(name="bob", age=10).save()
         doc2 = self.Person(id=ObjectId(), name="jim", age=20)
         docs = [dict(doc1.to_mongo())]
 
-        n_modified = doc2.modify({"name": doc2.name}, set__age=100)
+        n_modified = await doc2.modify({"name": doc2.name}, set__age=100)
         assert n_modified == 0
 
-        self._assert_db_equal(docs)
+        await self._assert_db_equal(docs)
 
-    def test_modify_update(self):
-        other_doc = self.Person(name="bob", age=10).save()
-        doc = self.Person(
+    async def test_modify_update(self):
+        other_doc = await self.Person(name="bob", age=10).save()
+        doc = await self.Person(
             name="jim", age=20, job=self.Job(name="10gen", years=3)
         ).save()
 
@@ -974,7 +973,7 @@ class TestDocumentInstance(MongoDBTestCase):
         doc.job.name = "Google"
         doc.job.years = 3
 
-        n_modified = doc.modify(
+        n_modified = await doc.modify(
             set__age=21, set__job__name="MongoDB", unset__job__years=True
         )
         assert n_modified == 1
@@ -985,9 +984,9 @@ class TestDocumentInstance(MongoDBTestCase):
         assert doc.to_json() == doc_copy.to_json()
         assert doc._get_changed_fields() == []
 
-        self._assert_db_equal([dict(other_doc.to_mongo()), dict(doc.to_mongo())])
+        await self._assert_db_equal([dict(other_doc.to_mongo()), dict(doc.to_mongo())])
 
-    def test_modify_with_positional_push(self):
+    async def test_modify_with_positional_push(self):
         class Content(EmbeddedDocument):
             keywords = ListField(StringField())
 
@@ -995,39 +994,39 @@ class TestDocumentInstance(MongoDBTestCase):
             tags = ListField(StringField())
             content = EmbeddedDocumentField(Content)
 
-        post = BlogPost.objects.create(
+        post = await BlogPost.objects.create(
             tags=["python"], content=Content(keywords=["ipsum"])
         )
 
         assert post.tags == ["python"]
-        post.modify(push__tags__0=["code", "mongo"])
+        await post.modify(push__tags__0=["code", "mongo"])
         assert post.tags == ["code", "mongo", "python"]
 
         # Assert same order of the list items is maintained in the db
-        assert BlogPost._get_collection().find_one({"_id": post.pk})["tags"] == [
+        assert (await (await BlogPost._get_collection()).find_one({"_id": post.pk}))["tags"] == [
             "code",
             "mongo",
             "python",
         ]
 
         assert post.content.keywords == ["ipsum"]
-        post.modify(push__content__keywords__0=["lorem"])
+        await post.modify(push__content__keywords__0=["lorem"])
         assert post.content.keywords == ["lorem", "ipsum"]
 
         # Assert same order of the list items is maintained in the db
-        assert BlogPost._get_collection().find_one({"_id": post.pk})["content"][
+        assert (await (await BlogPost._get_collection()).find_one({"_id": post.pk}))["content"][
             "keywords"
         ] == ["lorem", "ipsum"]
 
-    def test_save(self):
+    async def test_save(self):
         """Ensure that a document may be saved in the database."""
 
         # Create person object and save it to the database
         person = self.Person(name="Test User", age=30)
-        person.save()
+        await person.save()
 
         # Ensure that the object is in the database
-        raw_doc = get_as_pymongo(person)
+        raw_doc = await get_as_pymongo(person)
         assert raw_doc == {
             "_cls": "Person",
             "name": "Test User",
@@ -1035,7 +1034,7 @@ class TestDocumentInstance(MongoDBTestCase):
             "_id": person.id,
         }
 
-    def test_save_write_concern(self):
+    async def test_save_write_concern(self):
         class Recipient(Document):
             email = EmailField(required=True)
 
@@ -1043,215 +1042,215 @@ class TestDocumentInstance(MongoDBTestCase):
 
         fn = Mock()
         rec._save_create = fn
-        rec.save(write_concern={"w": 0})
+        await rec.save(write_concern={"w": 0})
         assert fn.call_args[1]["write_concern"] == {"w": 0}
 
-    def test_save_skip_validation(self):
+    async def test_save_skip_validation(self):
         class Recipient(Document):
             email = EmailField(required=True)
 
         recipient = Recipient(email="not-an-email")
         with pytest.raises(ValidationError):
-            recipient.save()
+            await recipient.save()
 
-        recipient.save(validate=False)
-        raw_doc = get_as_pymongo(recipient)
+        await recipient.save(validate=False)
+        raw_doc = await get_as_pymongo(recipient)
         assert raw_doc == {"email": "not-an-email", "_id": recipient.id}
 
-    def test_save_with_bad_id(self):
+    async def test_save_with_bad_id(self):
         class Clown(Document):
             id = IntField(primary_key=True)
 
         with pytest.raises(ValidationError):
-            Clown(id="not_an_int").save()
+            await Clown(id="not_an_int").save()
 
-    def test_save_to_a_value_that_equates_to_false(self):
+    async def test_save_to_a_value_that_equates_to_false(self):
         class Thing(EmbeddedDocument):
             count = IntField()
 
         class User(Document):
             thing = EmbeddedDocumentField(Thing)
 
-        User.drop_collection()
+        await User.drop_collection()
 
         user = User(thing=Thing(count=1))
-        user.save()
-        user.reload()
+        await user.save()
+        await user.reload()
 
         user.thing.count = 0
-        user.save()
+        await user.save()
 
-        user.reload()
+        await user.reload()
         assert user.thing.count == 0
 
-    def test_save_max_recursion_not_hit(self):
+    async def test_save_max_recursion_not_hit(self):
         class Person(Document):
             name = StringField()
             parent = ReferenceField("self")
             friend = ReferenceField("self")
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         p1 = Person(name="Wilson Snr")
         p1.parent = None
-        p1.save()
+        await p1.save()
 
         p2 = Person(name="Wilson Jr")
         p2.parent = p1
-        p2.save()
+        await p2.save()
 
         p1.friend = p2
-        p1.save()
+        await p1.save()
 
         # Confirm can save and it resets the changed fields without hitting
         # max recursion error
-        p0 = Person.objects.first()
+        p0 = await Person.objects.first()
         p0.name = "wpjunior"
-        p0.save()
+        await p0.save()
 
-    def test_save_max_recursion_not_hit_with_file_field(self):
+    async def test_save_max_recursion_not_hit_with_file_field(self):
         class Foo(Document):
             name = StringField()
             picture = FileField()
             bar = ReferenceField("self")
 
-        Foo.drop_collection()
+        await Foo.drop_collection()
 
-        a = Foo(name="hello").save()
+        a = await Foo(name="hello").save()
 
         a.bar = a
         with open(TEST_IMAGE_PATH, "rb") as test_image:
             a.picture = test_image
-            a.save()
+            await a.save()
 
             # Confirm can save and it resets the changed fields without hitting
             # max recursion error
-            b = Foo.objects.with_id(a.id)
+            b = await Foo.objects.with_id(a.id)
             b.name = "world"
-            b.save()
+            await b.save()
 
             assert b.picture == b.bar.picture, b.bar.bar.picture
 
-    def test_save_cascades(self):
+    async def test_save_cascades(self):
         class Person(Document):
             name = StringField()
             parent = ReferenceField("self")
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         p1 = Person(name="Wilson Snr")
         p1.parent = None
-        p1.save()
+        await p1.save()
 
         p2 = Person(name="Wilson Jr")
         p2.parent = p1
-        p2.save()
+        await p2.save()
 
-        p = Person.objects(name="Wilson Jr").get()
+        p = await Person.objects(name="Wilson Jr").get()
         p.parent.name = "Daddy Wilson"
-        p.save(cascade=True)
+        await p.save(cascade=True)
 
-        p1.reload()
+        await p1.reload()
         assert p1.name == p.parent.name
 
-    def test_save_cascade_kwargs(self):
+    async def test_save_cascade_kwargs(self):
         class Person(Document):
             name = StringField()
             parent = ReferenceField("self")
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         p1 = Person(name="Wilson Snr")
         p1.parent = None
-        p1.save()
+        await p1.save()
 
         p2 = Person(name="Wilson Jr")
         p2.parent = p1
         p1.name = "Daddy Wilson"
-        p2.save(force_insert=True, cascade_kwargs={"force_insert": False})
+        await p2.save(force_insert=True, cascade_kwargs={"force_insert": False})
 
-        p1.reload()
-        p2.reload()
+        await p1.reload()
+        await p2.reload()
         assert p1.name == p2.parent.name
 
-    def test_save_cascade_meta_false(self):
+    async def test_save_cascade_meta_false(self):
         class Person(Document):
             name = StringField()
             parent = ReferenceField("self")
 
             meta = {"cascade": False}
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         p1 = Person(name="Wilson Snr")
         p1.parent = None
-        p1.save()
+        await p1.save()
 
         p2 = Person(name="Wilson Jr")
         p2.parent = p1
-        p2.save()
+        await p2.save()
 
-        p = Person.objects(name="Wilson Jr").get()
+        p = await Person.objects(name="Wilson Jr").get()
         p.parent.name = "Daddy Wilson"
-        p.save()
+        await p.save()
 
-        p1.reload()
+        await p1.reload()
         assert p1.name != p.parent.name
 
-        p.save(cascade=True)
-        p1.reload()
+        await p.save(cascade=True)
+        await p1.reload()
         assert p1.name == p.parent.name
 
-    def test_save_cascade_meta_true(self):
+    async def test_save_cascade_meta_true(self):
         class Person(Document):
             name = StringField()
             parent = ReferenceField("self")
 
             meta = {"cascade": False}
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         p1 = Person(name="Wilson Snr")
         p1.parent = None
-        p1.save()
+        await p1.save()
 
         p2 = Person(name="Wilson Jr")
         p2.parent = p1
-        p2.save(cascade=True)
+        await p2.save(cascade=True)
 
-        p = Person.objects(name="Wilson Jr").get()
+        p = await Person.objects(name="Wilson Jr").get()
         p.parent.name = "Daddy Wilson"
-        p.save()
+        await p.save()
 
-        p1.reload()
+        await p1.reload()
         assert p1.name != p.parent.name
 
-    def test_save_cascades_generically(self):
+    async def test_save_cascades_generically(self):
         class Person(Document):
             name = StringField()
             parent = GenericReferenceField()
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         p1 = Person(name="Wilson Snr")
-        p1.save()
+        await p1.save()
 
         p2 = Person(name="Wilson Jr")
         p2.parent = p1
-        p2.save()
+        await p2.save()
 
-        p = Person.objects(name="Wilson Jr").get()
+        p = await Person.objects(name="Wilson Jr").get()
         p.parent.name = "Daddy Wilson"
-        p.save()
+        await p.save()
 
-        p1.reload()
+        await p1.reload()
         assert p1.name != p.parent.name
 
-        p.save(cascade=True)
-        p1.reload()
+        await p.save(cascade=True)
+        await p1.reload()
         assert p1.name == p.parent.name
 
-    def test_save_atomicity_condition(self):
+    async def test_save_atomicity_condition(self):
         class Widget(Document):
             toggle = BooleanField(default=False)
             count = IntField(default=0)
@@ -1264,13 +1263,13 @@ class TestDocumentInstance(MongoDBTestCase):
         def UUID(i):
             return uuid.UUID(int=i)
 
-        Widget.drop_collection()
+        await Widget.drop_collection()
 
         w1 = Widget(toggle=False, save_id=UUID(1))
 
         # ignore save_condition on new record creation
-        w1.save(save_condition={"save_id": UUID(42)})
-        w1.reload()
+        await w1.save(save_condition={"save_id": UUID(42)})
+        await w1.reload()
         assert not w1.toggle
         assert w1.save_id == UUID(1)
         assert w1.count == 0
@@ -1280,8 +1279,8 @@ class TestDocumentInstance(MongoDBTestCase):
         assert w1.toggle
         assert w1.count == 1
         with pytest.raises(SaveConditionError):
-            w1.save(save_condition={"save_id": UUID(42)})
-        w1.reload()
+            await w1.save(save_condition={"save_id": UUID(42)})
+        await w1.reload()
         assert not w1.toggle
         assert w1.count == 0
 
@@ -1289,107 +1288,107 @@ class TestDocumentInstance(MongoDBTestCase):
         flip(w1)
         assert w1.toggle
         assert w1.count == 1
-        w1.save(save_condition={"save_id": UUID(1)})
-        w1.reload()
+        await w1.save(save_condition={"save_id": UUID(1)})
+        await w1.reload()
         assert w1.toggle
         assert w1.count == 1
 
         # save_condition can be used to ensure atomic read & updates
         # i.e., prevent interleaved reads and writes from separate contexts
-        w2 = Widget.objects.get()
+        w2 = await Widget.objects.get()
         assert w1 == w2
         old_id = w1.save_id
 
         flip(w1)
         w1.save_id = UUID(2)
-        w1.save(save_condition={"save_id": old_id})
-        w1.reload()
+        await w1.save(save_condition={"save_id": old_id})
+        await w1.reload()
         assert not w1.toggle
         assert w1.count == 2
         flip(w2)
         flip(w2)
         with pytest.raises(SaveConditionError):
-            w2.save(save_condition={"save_id": old_id})
-        w2.reload()
+            await w2.save(save_condition={"save_id": old_id})
+        await w2.reload()
         assert not w2.toggle
         assert w2.count == 2
 
         # save_condition uses mongoengine-style operator syntax
         flip(w1)
-        w1.save(save_condition={"count__lt": w1.count})
-        w1.reload()
+        await w1.save(save_condition={"count__lt": w1.count})
+        await w1.reload()
         assert w1.toggle
         assert w1.count == 3
         flip(w1)
         with pytest.raises(SaveConditionError):
-            w1.save(save_condition={"count__gte": w1.count})
-        w1.reload()
+            await w1.save(save_condition={"count__gte": w1.count})
+        await w1.reload()
         assert w1.toggle
         assert w1.count == 3
 
-    def test_save_update_selectively(self):
+    async def test_save_update_selectively(self):
         class WildBoy(Document):
             age = IntField()
             name = StringField()
 
-        WildBoy.drop_collection()
+        await WildBoy.drop_collection()
 
-        WildBoy(age=12, name="John").save()
+        await WildBoy(age=12, name="John").save()
 
-        boy1 = WildBoy.objects().first()
-        boy2 = WildBoy.objects().first()
+        boy1 = await WildBoy.objects().first()
+        boy2 = await WildBoy.objects().first()
 
         boy1.age = 99
-        boy1.save()
+        await boy1.save()
         boy2.name = "Bob"
-        boy2.save()
+        await boy2.save()
 
-        fresh_boy = WildBoy.objects().first()
+        fresh_boy = await WildBoy.objects().first()
         assert fresh_boy.age == 99
         assert fresh_boy.name == "Bob"
 
-    def test_save_update_selectively_with_custom_pk(self):
+    async def test_save_update_selectively_with_custom_pk(self):
         # Prevents regression of #2082
         class WildBoy(Document):
             pk_id = StringField(primary_key=True)
             age = IntField()
             name = StringField()
 
-        WildBoy.drop_collection()
+        await WildBoy.drop_collection()
 
-        WildBoy(pk_id="A", age=12, name="John").save()
+        await WildBoy(pk_id="A", age=12, name="John").save()
 
-        boy1 = WildBoy.objects().first()
-        boy2 = WildBoy.objects().first()
+        boy1 = await WildBoy.objects().first()
+        boy2 = await WildBoy.objects().first()
 
         boy1.age = 99
-        boy1.save()
+        await boy1.save()
         boy2.name = "Bob"
-        boy2.save()
+        await boy2.save()
 
-        fresh_boy = WildBoy.objects().first()
+        fresh_boy = await WildBoy.objects().first()
         assert fresh_boy.age == 99
         assert fresh_boy.name == "Bob"
 
-    def test_update(self):
+    async def test_update(self):
         """Ensure that an existing document is updated instead of be
         overwritten.
         """
         # Create person object and save it to the database
         person = self.Person(name="Test User", age=30)
-        person.save()
+        await person.save()
 
         # Create same person object, with same id, without age
         same_person = self.Person(name="Test")
         same_person.id = person.id
-        same_person.save()
+        await same_person.save()
 
         # Confirm only one object
-        assert self.Person.objects.count() == 1
+        assert await self.Person.objects.count() == 1
 
         # reload
-        person.reload()
-        same_person.reload()
+        await person.reload()
+        await same_person.reload()
 
         # Confirm the same
         assert person == same_person
@@ -1401,82 +1400,82 @@ class TestDocumentInstance(MongoDBTestCase):
         assert person.age == 30
 
         # Test only / exclude only updates included fields
-        person = self.Person.objects.only("name").get()
+        person = await self.Person.objects.only("name").get()
         person.name = "User"
-        person.save()
+        await person.save()
 
-        person.reload()
+        await person.reload()
         assert person.name == "User"
         assert person.age == 30
 
         # test exclude only updates set fields
-        person = self.Person.objects.exclude("name").get()
+        person = await self.Person.objects.exclude("name").get()
         person.age = 21
-        person.save()
+        await person.save()
 
-        person.reload()
+        await person.reload()
         assert person.name == "User"
         assert person.age == 21
 
         # Test only / exclude can set non excluded / included fields
-        person = self.Person.objects.only("name").get()
+        person = await self.Person.objects.only("name").get()
         person.name = "Test"
         person.age = 30
-        person.save()
+        await person.save()
 
-        person.reload()
+        await person.reload()
         assert person.name == "Test"
         assert person.age == 30
 
         # test exclude only updates set fields
-        person = self.Person.objects.exclude("name").get()
+        person = await self.Person.objects.exclude("name").get()
         person.name = "User"
         person.age = 21
-        person.save()
+        await person.save()
 
-        person.reload()
+        await person.reload()
         assert person.name == "User"
         assert person.age == 21
 
         # Confirm does remove unrequired fields
-        person = self.Person.objects.exclude("name").get()
+        person = await self.Person.objects.exclude("name").get()
         person.age = None
-        person.save()
+        await person.save()
 
-        person.reload()
+        await person.reload()
         assert person.name == "User"
         assert person.age is None
 
-        person = self.Person.objects.get()
+        person = await self.Person.objects.get()
         person.name = None
         person.age = None
-        person.save()
+        await person.save()
 
-        person.reload()
+        await person.reload()
         assert person.name is None
         assert person.age is None
 
-    def test_update_rename_operator(self):
+    async def test_update_rename_operator(self):
         """Test the $rename operator."""
-        coll = self.Person._get_collection()
-        doc = self.Person(name="John").save()
-        raw_doc = coll.find_one({"_id": doc.pk})
+        coll = await self.Person._get_collection()
+        doc = await self.Person(name="John").save()
+        raw_doc = await coll.find_one({"_id": doc.pk})
         assert set(raw_doc.keys()) == {"_id", "_cls", "name"}
 
-        doc.update(rename__name="first_name")
-        raw_doc = coll.find_one({"_id": doc.pk})
+        await doc.update(rename__name="first_name")
+        raw_doc = await coll.find_one({"_id": doc.pk})
         assert set(raw_doc.keys()) == {"_id", "_cls", "first_name"}
         assert raw_doc["first_name"] == "John"
 
-    def test_inserts_if_you_set_the_pk(self):
-        _ = self.Person(name="p1", id=bson.ObjectId()).save()
+    async def test_inserts_if_you_set_the_pk(self):
+        _ = await self.Person(name="p1", id=bson.ObjectId()).save()
         p2 = self.Person(name="p2")
         p2.id = bson.ObjectId()
-        p2.save()
+        await p2.save()
 
-        assert 2 == self.Person.objects.count()
+        assert 2 == await self.Person.objects.count()
 
-    def test_can_save_if_not_included(self):
+    async def test_can_save_if_not_included(self):
         class EmbeddedDoc(EmbeddedDocument):
             pass
 
@@ -1513,56 +1512,56 @@ class TestDocumentInstance(MongoDBTestCase):
                 default=lambda: EmbeddedDoc()
             )
 
-        Simple.drop_collection()
-        Doc.drop_collection()
+        await Simple.drop_collection()
+        await Doc.drop_collection()
 
-        Doc().save()
-        my_doc = Doc.objects.only("string_field").first()
+        await Doc().save()
+        my_doc = await Doc.objects.only("string_field").first()
         my_doc.string_field = "string"
-        my_doc.save()
+        await my_doc.save()
 
-        my_doc = Doc.objects.get(string_field="string")
+        my_doc = await Doc.objects.get(string_field="string")
         assert my_doc.string_field == "string"
         assert my_doc.int_field == 1
 
-    def test_document_update(self):
+    async def test_document_update(self):
         # try updating a non-saved document
         with pytest.raises(OperationError):
             person = self.Person(name="dcrosta")
-            person.update(set__name="Dan Crosta")
+            await person.update(set__name="Dan Crosta")
 
         author = self.Person(name="dcrosta")
-        author.save()
+        await author.save()
 
-        author.update(set__name="Dan Crosta")
-        author.reload()
+        await author.update(set__name="Dan Crosta")
+        await author.reload()
 
-        p1 = self.Person.objects.first()
+        p1 = await self.Person.objects.first()
         assert p1.name == author.name
 
         # try sending an empty update
         with pytest.raises(OperationError):
-            person = self.Person.objects.first()
-            person.update()
+            person = await self.Person.objects.first()
+            await person.update()
 
         # update that doesn't explicitly specify an operator should default
         # to 'set__'
-        person = self.Person.objects.first()
-        person.update(name="Dan")
-        person.reload()
+        person = await self.Person.objects.first()
+        await person.update(name="Dan")
+        await person.reload()
         assert "Dan" == person.name
 
-    def test_update_unique_field(self):
+    async def test_update_unique_field(self):
         class Doc(Document):
             name = StringField(unique=True)
 
-        doc1 = Doc(name="first").save()
-        doc2 = Doc(name="second").save()
+        doc1 = await Doc(name="first").save()
+        doc2 = await Doc(name="second").save()
 
         with pytest.raises(NotUniqueError):
-            doc2.update(set__name=doc1.name)
+            await doc2.update(set__name=doc1.name)
 
-    def test_embedded_update(self):
+    async def test_embedded_update(self):
         """Test update on `EmbeddedDocumentField` fields."""
 
         class Page(EmbeddedDocument):
@@ -1571,36 +1570,36 @@ class TestDocumentInstance(MongoDBTestCase):
         class Site(Document):
             page = EmbeddedDocumentField(Page)
 
-        Site.drop_collection()
+        await Site.drop_collection()
         site = Site(page=Page(log_message="Warning: Dummy message"))
-        site.save()
+        await site.save()
 
         # Update
-        site = Site.objects.first()
+        site = await Site.objects.first()
         site.page.log_message = "Error: Dummy message"
-        site.save()
+        await site.save()
 
-        site = Site.objects.first()
+        site = await Site.objects.first()
         assert site.page.log_message == "Error: Dummy message"
 
-    def test_update_list_field(self):
+    async def test_update_list_field(self):
         """Test update on `ListField` with $pull + $in."""
 
         class Doc(Document):
             foo = ListField(StringField())
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
         doc = Doc(foo=["a", "b", "c"])
-        doc.save()
+        await doc.save()
 
         # Update
-        doc = Doc.objects.first()
-        doc.update(pull__foo__in=["a", "c"])
+        doc = await Doc.objects.first()
+        await doc.update(pull__foo__in=["a", "c"])
 
-        doc = Doc.objects.first()
+        doc = await Doc.objects.first()
         assert doc.foo == ["b"]
 
-    def test_embedded_update_db_field(self):
+    async def test_embedded_update_db_field(self):
         """Test update on `EmbeddedDocumentField` fields when db_field
         is other than default.
         """
@@ -1613,48 +1612,48 @@ class TestDocumentInstance(MongoDBTestCase):
         class Site(Document):
             page = EmbeddedDocumentField(Page)
 
-        Site.drop_collection()
+        await Site.drop_collection()
 
         site = Site(page=Page(log_message="Warning: Dummy message"))
-        site.save()
+        await site.save()
 
         # Update
-        site = Site.objects.first()
+        site = await Site.objects.first()
         site.page.log_message = "Error: Dummy message"
-        site.save()
+        await site.save()
 
-        site = Site.objects.first()
+        site = await Site.objects.first()
         assert site.page.log_message == "Error: Dummy message"
 
-    def test_save_only_changed_fields(self):
+    async def test_save_only_changed_fields(self):
         """Ensure save only sets / unsets changed fields."""
 
         class User(self.Person):
             active = BooleanField(default=True)
 
-        User.drop_collection()
+        await User.drop_collection()
 
         # Create person object and save it to the database
         user = User(name="Test User", age=30, active=True)
-        user.save()
-        user.reload()
+        await user.save()
+        await user.reload()
 
         # Simulated Race condition
-        same_person = self.Person.objects.get()
+        same_person = await self.Person.objects.get()
         same_person.active = False
 
         user.age = 21
-        user.save()
+        await user.save()
 
         same_person.name = "User"
-        same_person.save()
+        await same_person.save()
 
-        person = self.Person.objects.get()
+        person = await self.Person.objects.get()
         assert person.name == "User"
         assert person.age == 21
         assert person.active is False
 
-    def test__get_changed_fields_same_ids_reference_field_does_not_enters_infinite_loop_embedded_doc(
+    async def test__get_changed_fields_same_ids_reference_field_does_not_enters_infinite_loop_embedded_doc(
         self,
     ):
         # Refers to Issue #1685
@@ -1668,7 +1667,7 @@ class TestDocumentInstance(MongoDBTestCase):
         changed_fields = ParentModel(child=emb)._get_changed_fields()
         assert changed_fields == []
 
-    def test__get_changed_fields_same_ids_reference_field_does_not_enters_infinite_loop_different_doc(
+    async def test__get_changed_fields_same_ids_reference_field_does_not_enters_infinite_loop_different_doc(
         self,
     ):
         # Refers to Issue #1685
@@ -1680,17 +1679,17 @@ class TestDocumentInstance(MongoDBTestCase):
             id = IntField(primary_key=True)
             author = ReferenceField(User)
 
-        Message.drop_collection()
+        await Message.drop_collection()
 
         # All objects share the same id, but each in a different collection
-        user = User(id=1, name="user-name").save()
-        message = Message(id=1, author=user).save()
+        user = await User(id=1, name="user-name").save()
+        message = await Message(id=1, author=user).save()
 
         message.author.name = "tutu"
         assert message._get_changed_fields() == []
         assert user._get_changed_fields() == ["name"]
 
-    def test__get_changed_fields_same_ids_embedded(self):
+    async def test__get_changed_fields_same_ids_embedded(self):
         # Refers to Issue #1768
         class User(EmbeddedDocument):
             id = IntField()
@@ -1700,20 +1699,20 @@ class TestDocumentInstance(MongoDBTestCase):
             id = IntField(primary_key=True)
             author = EmbeddedDocumentField(User)
 
-        Message.drop_collection()
+        await Message.drop_collection()
 
         # All objects share the same id, but each in a different collection
-        user = User(id=1, name="user-name")  # .save()
-        message = Message(id=1, author=user).save()
+        user = User(id=1, name="user-name")  # await .save()
+        message = await Message(id=1, author=user).save()
 
         message.author.name = "tutu"
         assert message._get_changed_fields() == ["author.name"]
-        message.save()
+        await message.save()
 
-        message_fetched = Message.objects.with_id(message.id)
+        message_fetched = await Message.objects.with_id(message.id)
         assert message_fetched.author.name == "tutu"
 
-    def test_query_count_when_saving(self):
+    async def test_query_count_when_saving(self):
         """Ensure references don't cause extra fetches when saving"""
 
         class Organization(Document):
@@ -1731,20 +1730,20 @@ class TestDocumentInstance(MongoDBTestCase):
             user = ReferenceField(User)
             feed = ReferenceField(Feed)
 
-        Organization.drop_collection()
-        User.drop_collection()
-        Feed.drop_collection()
-        UserSubscription.drop_collection()
+        await Organization.drop_collection()
+        await User.drop_collection()
+        await Feed.drop_collection()
+        await UserSubscription.drop_collection()
 
-        o1 = Organization(name="o1").save()
-        o2 = Organization(name="o2").save()
+        o1 = await Organization(name="o1").save()
+        o2 = await Organization(name="o2").save()
 
-        u1 = User(name="Ross", orgs=[o1, o2]).save()
-        f1 = Feed(name="MongoEngine").save()
+        u1 = await User(name="Ross", orgs=[o1, o2]).save()
+        f1 = await Feed(name="MongoEngine").save()
 
-        sub = UserSubscription(user=u1, feed=f1).save()
+        sub = await UserSubscription(user=u1, feed=f1).save()
 
-        user = User.objects.first()
+        user = await User.objects.first()
         # Even if stored as ObjectId's internally mongoengine uses DBRefs
         # As ObjectId's aren't automatically dereferenced
         assert isinstance(user._data["orgs"][0], DBRef)
@@ -1752,62 +1751,62 @@ class TestDocumentInstance(MongoDBTestCase):
         assert isinstance(user._data["orgs"][0], Organization)
 
         # Changing a value
-        with query_counter() as q:
-            assert q == 0
-            sub = UserSubscription.objects.first()
-            assert q == 1
+        async with query_counter() as q:
+            assert await q.get_count() == 0
+            sub = await UserSubscription.objects.first()
+            assert await q.get_count() == 1
             sub.name = "Test Sub"
-            sub.save()
-            assert q == 2
+            await sub.save()
+            assert await q.get_count() == 2
 
         # Changing a value that will cascade
-        with query_counter() as q:
-            assert q == 0
-            sub = UserSubscription.objects.first()
-            assert q == 1
+        async with query_counter() as q:
+            assert await q.get_count() == 0
+            sub = await UserSubscription.objects.first()
+            assert await q.get_count() == 1
             sub.user.name = "Test"
-            assert q == 2
-            sub.save(cascade=True)
-            assert q == 3
+            assert await q.get_count() == 2
+            await sub.save(cascade=True)
+            assert await q.get_count() == 3
 
         # Changing a value and one that will cascade
-        with query_counter() as q:
-            assert q == 0
-            sub = UserSubscription.objects.first()
+        async with query_counter() as q:
+            assert await q.get_count() == 0
+            sub = await UserSubscription.objects.first()
             sub.name = "Test Sub 2"
-            assert q == 1
+            assert await q.get_count() == 1
             sub.user.name = "Test 2"
-            assert q == 2
-            sub.save(cascade=True)
-            assert q == 4  # One for the UserSub and one for the User
+            assert await q.get_count() == 2
+            await sub.save(cascade=True)
+            assert await q.get_count() == 4  # One for the UserSub and one for the User
 
         # Saving with just the refs
-        with query_counter() as q:
-            assert q == 0
+        async with query_counter() as q:
+            assert await q.get_count() == 0
             sub = UserSubscription(user=u1.pk, feed=f1.pk)
-            assert q == 0
-            sub.save()
-            assert q == 1
+            assert await q.get_count() == 0
+            await sub.save()
+            assert await q.get_count() == 1
 
         # Saving with just the refs on a ListField
-        with query_counter() as q:
-            assert q == 0
-            User(name="Bob", orgs=[o1.pk, o2.pk]).save()
-            assert q == 1
+        async with query_counter() as q:
+            assert await q.get_count() == 0
+            await User(name="Bob", orgs=[o1.pk, o2.pk]).save()
+            assert await q.get_count() == 1
 
         # Saving new objects
-        with query_counter() as q:
-            assert q == 0
-            user = User.objects.first()
-            assert q == 1
-            feed = Feed.objects.first()
-            assert q == 2
+        async with query_counter() as q:
+            assert await q.get_count() == 0
+            user = await User.objects.first()
+            assert await q.get_count() == 1
+            feed = await Feed.objects.first()
+            assert await q.get_count() == 2
             sub = UserSubscription(user=user, feed=feed)
-            assert q == 2  # Check no change
-            sub.save()
-            assert q == 3
+            assert await q.get_count() == 2  # Check no change
+            await sub.save()
+            assert await q.get_count() == 3
 
-    def test_set_unset_one_operation(self):
+    async def test_set_unset_one_operation(self):
         """Ensure that $set and $unset actions are performed in the
         same operation.
         """
@@ -1816,21 +1815,21 @@ class TestDocumentInstance(MongoDBTestCase):
             foo = StringField(default=None)
             bar = StringField(default=None)
 
-        FooBar.drop_collection()
+        await FooBar.drop_collection()
 
         # write an entity with a single prop
-        foo = FooBar(foo="foo").save()
+        foo = await FooBar(foo="foo").save()
 
         assert foo.foo == "foo"
         del foo.foo
         foo.bar = "bar"
 
-        with query_counter() as q:
-            assert 0 == q
-            foo.save()
-            assert 1 == q
+        async with query_counter() as q:
+            assert 0 == await q.get_count()
+            await foo.save()
+            assert 1 == await q.get_count()
 
-    def test_save_only_changed_fields_recursive(self):
+    async def test_save_only_changed_fields_recursive(self):
         """Ensure save only sets / unsets changed fields."""
 
         class Comment(EmbeddedDocument):
@@ -1841,38 +1840,38 @@ class TestDocumentInstance(MongoDBTestCase):
             comments = ListField(EmbeddedDocumentField(Comment))
             active = BooleanField(default=True)
 
-        User.drop_collection()
+        await User.drop_collection()
 
         # Create person object and save it to the database
         person = User(name="Test User", age=30, active=True)
         person.comments.append(Comment())
-        person.save()
-        person.reload()
+        await person.save()
+        await person.reload()
 
-        person = self.Person.objects.get()
+        person = await self.Person.objects.get()
         assert person.comments[0].published
 
         person.comments[0].published = False
-        person.save()
+        await person.save()
 
-        person = self.Person.objects.get()
+        person = await self.Person.objects.get()
         assert not person.comments[0].published
 
         # Simple dict w
         person.comments_dict["first_post"] = Comment()
-        person.save()
+        await person.save()
 
-        person = self.Person.objects.get()
+        person = await self.Person.objects.get()
         assert person.comments_dict["first_post"].published
 
         person.comments_dict["first_post"].published = False
-        person.save()
+        await person.save()
 
-        person = self.Person.objects.get()
+        person = await self.Person.objects.get()
         assert not person.comments_dict["first_post"].published
 
     @requires_mongodb_gte_44
-    def test_update_propagates_hint_collation_and_comment(self):
+    async def test_update_propagates_hint_collation_and_comment(self):
         """Make sure adding a hint/comment/collation to the query gets added to the query"""
         mongo_ver = get_mongodb_version()
 
@@ -1885,49 +1884,49 @@ class TestDocumentInstance(MongoDBTestCase):
                 "indexes": [{"fields": ["name"], "name": index_name, "collation": base}]
             }
 
-        AggPerson.drop_collection()
-        _ = AggPerson.objects.first()
+        await AggPerson.drop_collection()
+        _ = await AggPerson.objects.first()
 
         comment = "test_comment"
 
         if PYMONGO_VERSION >= (4, 1):
-            with db_ops_tracker() as q:
-                _ = AggPerson.objects.comment(comment).update_one(name="something")
-                query_op = q.db.system.profile.find(
+            async with db_ops_tracker() as q:
+                _ = await AggPerson.objects.comment(comment).update_one(name="something")
+                query_op = (await q.db.system.profile.find(
                     {"ns": "mongoenginetest.agg_person"}
-                )[0]
+                ).to_list(None))[0]
                 CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
                 assert "hint" not in query_op[CMD_QUERY_KEY]
                 assert query_op[CMD_QUERY_KEY]["comment"] == comment
                 assert "collation" not in query_op[CMD_QUERY_KEY]
 
-        with db_ops_tracker() as q:
-            _ = AggPerson.objects.hint(index_name).update_one(name="something")
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.agg_person"})[0]
+        async with db_ops_tracker() as q:
+            _ = await AggPerson.objects.hint(index_name).update_one(name="something")
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
             CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
 
             assert query_op[CMD_QUERY_KEY]["hint"] == {"$hint": index_name}
             assert "comment" not in query_op[CMD_QUERY_KEY]
             assert "collation" not in query_op[CMD_QUERY_KEY]
 
-        with db_ops_tracker() as q:
-            _ = AggPerson.objects.collation(base).update_one(name="something")
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.agg_person"})[0]
+        async with db_ops_tracker() as q:
+            _ = await AggPerson.objects.collation(base).update_one(name="something")
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
             CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
             assert "hint" not in query_op[CMD_QUERY_KEY]
             assert "comment" not in query_op[CMD_QUERY_KEY]
             assert query_op[CMD_QUERY_KEY]["collation"] == base
 
-    def test_delete(self):
+    async def test_delete(self):
         """Ensure that document may be deleted using the delete method."""
         person = self.Person(name="Test User", age=30)
-        person.save()
-        assert self.Person.objects.count() == 1
-        person.delete()
-        assert self.Person.objects.count() == 0
+        await person.save()
+        assert await self.Person.objects.count() == 1
+        await person.delete()
+        assert await self.Person.objects.count() == 0
 
     @requires_mongodb_gte_44
-    def test_delete_propagates_hint_collation_and_comment(self):
+    async def test_delete_propagates_hint_collation_and_comment(self):
         """Make sure adding a hint/comment/collation to the query gets added to the query"""
         mongo_ver = get_mongodb_version()
 
@@ -1940,65 +1939,65 @@ class TestDocumentInstance(MongoDBTestCase):
                 "indexes": [{"fields": ["name"], "name": index_name, "collation": base}]
             }
 
-        AggPerson.drop_collection()
-        _ = AggPerson.objects.first()
+        await AggPerson.drop_collection()
+        _ = await AggPerson.objects.first()
 
         comment = "test_comment"
 
         if PYMONGO_VERSION >= (4, 1):
-            with db_ops_tracker() as q:
-                _ = AggPerson.objects().comment(comment).delete()
-                query_op = q.db.system.profile.find(
+            async with db_ops_tracker() as q:
+                _ = await AggPerson.objects().comment(comment).delete()
+                query_op = (await q.db.system.profile.find(
                     {"ns": "mongoenginetest.agg_person"}
-                )[0]
+                ).to_list(None))[0]
                 CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
                 assert "hint" not in query_op[CMD_QUERY_KEY]
                 assert query_op[CMD_QUERY_KEY]["comment"] == comment
                 assert "collation" not in query_op[CMD_QUERY_KEY]
 
-        with db_ops_tracker() as q:
-            _ = AggPerson.objects.hint(index_name).delete()
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.agg_person"})[0]
+        async with db_ops_tracker() as q:
+            _ = await AggPerson.objects.hint(index_name).delete()
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
             CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
 
             assert query_op[CMD_QUERY_KEY]["hint"] == {"$hint": index_name}
             assert "comment" not in query_op[CMD_QUERY_KEY]
             assert "collation" not in query_op[CMD_QUERY_KEY]
 
-        with db_ops_tracker() as q:
-            _ = AggPerson.objects.collation(base).delete()
-            query_op = q.db.system.profile.find({"ns": "mongoenginetest.agg_person"})[0]
+        async with db_ops_tracker() as q:
+            _ = await AggPerson.objects.collation(base).delete()
+            query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
             CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
             assert "hint" not in query_op[CMD_QUERY_KEY]
             assert "comment" not in query_op[CMD_QUERY_KEY]
             assert query_op[CMD_QUERY_KEY]["collation"] == base
 
-    def test_save_custom_id(self):
+    async def test_save_custom_id(self):
         """Ensure that a document may be saved with a custom _id."""
 
         # Create person object and save it to the database
         person = self.Person(name="Test User", age=30, id="497ce96f395f2f052a494fd4")
-        person.save()
+        await person.save()
 
         # Ensure that the object is in the database with the correct _id
         collection = self.db[self.Person._get_collection_name()]
-        person_obj = collection.find_one({"name": "Test User"})
+        person_obj = await collection.find_one({"name": "Test User"})
         assert str(person_obj["_id"]) == "497ce96f395f2f052a494fd4"
 
-    def test_save_custom_pk(self):
+    async def test_save_custom_pk(self):
         """Ensure that a document may be saved with a custom _id using
         pk alias.
         """
         # Create person object and save it to the database
         person = self.Person(name="Test User", age=30, pk="497ce96f395f2f052a494fd4")
-        person.save()
+        await person.save()
 
         # Ensure that the object is in the database with the correct _id
         collection = self.db[self.Person._get_collection_name()]
-        person_obj = collection.find_one({"name": "Test User"})
+        person_obj = await collection.find_one({"name": "Test User"})
         assert str(person_obj["_id"]) == "497ce96f395f2f052a494fd4"
 
-    def test_save_list(self):
+    async def test_save_list(self):
         """Ensure that a list field may be properly saved."""
 
         class Comment(EmbeddedDocument):
@@ -2009,21 +2008,21 @@ class TestDocumentInstance(MongoDBTestCase):
             comments = ListField(EmbeddedDocumentField(Comment))
             tags = ListField(StringField())
 
-        BlogPost.drop_collection()
+        await BlogPost.drop_collection()
 
         post = BlogPost(content="Went for a walk today...")
         post.tags = tags = ["fun", "leisure"]
         comments = [Comment(content="Good for you"), Comment(content="Yay.")]
         post.comments = comments
-        post.save()
+        await post.save()
 
         collection = self.db[BlogPost._get_collection_name()]
-        post_obj = collection.find_one()
+        post_obj = await collection.find_one()
         assert post_obj["tags"] == tags
         for comment_obj, comment in zip(post_obj["comments"], comments):
             assert comment_obj["content"] == comment["content"]
 
-    def test_list_search_by_embedded(self):
+    async def test_list_search_by_embedded(self):
         class User(Document):
             username = StringField(required=True)
 
@@ -2042,17 +2041,17 @@ class TestDocumentInstance(MongoDBTestCase):
                 "indexes": [{"fields": ["comments.user"]}],
             }
 
-        User.drop_collection()
-        Page.drop_collection()
+        await User.drop_collection()
+        await Page.drop_collection()
 
         u1 = User(username="wilson")
-        u1.save()
+        await u1.save()
 
         u2 = User(username="rozza")
-        u2.save()
+        await u2.save()
 
         u3 = User(username="hmarr")
-        u3.save()
+        await u3.save()
 
         p1 = Page(
             comments=[
@@ -2062,7 +2061,7 @@ class TestDocumentInstance(MongoDBTestCase):
                 Comment(user=u1, comment="I like a beer"),
             ]
         )
-        p1.save()
+        await p1.save()
 
         p2 = Page(
             comments=[
@@ -2070,19 +2069,19 @@ class TestDocumentInstance(MongoDBTestCase):
                 Comment(user=u2, comment="Hello world"),
             ]
         )
-        p2.save()
+        await p2.save()
 
         p3 = Page(comments=[Comment(user=u3, comment="Its very good")])
-        p3.save()
+        await p3.save()
 
         p4 = Page(comments=[Comment(user=u2, comment="Heavy Metal song")])
-        p4.save()
+        await p4.save()
 
-        assert [p1, p2] == list(Page.objects.filter(comments__user=u1))
-        assert [p1, p2, p4] == list(Page.objects.filter(comments__user=u2))
-        assert [p1, p3] == list(Page.objects.filter(comments__user=u3))
+        assert [p1, p2] == [doc async for doc in Page.objects.filter(comments__user=u1)]
+        assert [p1, p2, p4] == [doc async for doc in Page.objects.filter(comments__user=u2)]
+        assert [p1, p3] == [doc async for doc in Page.objects.filter(comments__user=u3)]
 
-    def test_save_embedded_document(self):
+    async def test_save_embedded_document(self):
         """Ensure that a document with an embedded document field may
         be saved in the database.
         """
@@ -2097,18 +2096,18 @@ class TestDocumentInstance(MongoDBTestCase):
         # Create employee object and save it to the database
         employee = Employee(name="Test Employee", age=50, salary=20000)
         employee.details = EmployeeDetails(position="Developer")
-        employee.save()
+        await employee.save()
 
         # Ensure that the object is in the database
         collection = self.db[self.Person._get_collection_name()]
-        employee_obj = collection.find_one({"name": "Test Employee"})
+        employee_obj = await collection.find_one({"name": "Test Employee"})
         assert employee_obj["name"] == "Test Employee"
         assert employee_obj["age"] == 50
 
         # Ensure that the 'details' embedded object saved correctly
         assert employee_obj["details"]["position"] == "Developer"
 
-    def test_embedded_update_after_save(self):
+    async def test_embedded_update_after_save(self):
         """Test update of `EmbeddedDocumentField` attached to a newly
         saved document.
         """
@@ -2119,18 +2118,18 @@ class TestDocumentInstance(MongoDBTestCase):
         class Site(Document):
             page = EmbeddedDocumentField(Page)
 
-        Site.drop_collection()
+        await Site.drop_collection()
         site = Site(page=Page(log_message="Warning: Dummy message"))
-        site.save()
+        await site.save()
 
         # Update
         site.page.log_message = "Error: Dummy message"
-        site.save()
+        await site.save()
 
-        site = Site.objects.first()
+        site = await Site.objects.first()
         assert site.page.log_message == "Error: Dummy message"
 
-    def test_updating_an_embedded_document(self):
+    async def test_updating_an_embedded_document(self):
         """Ensure that a document with an embedded document field may
         be saved in the database.
         """
@@ -2145,14 +2144,14 @@ class TestDocumentInstance(MongoDBTestCase):
         # Create employee object and save it to the database
         employee = Employee(name="Test Employee", age=50, salary=20000)
         employee.details = EmployeeDetails(position="Developer")
-        employee.save()
+        await employee.save()
 
         # Test updating an embedded document
-        promoted_employee = Employee.objects.get(name="Test Employee")
+        promoted_employee = await Employee.objects.get(name="Test Employee")
         promoted_employee.details.position = "Senior Developer"
-        promoted_employee.save()
+        await promoted_employee.save()
 
-        promoted_employee.reload()
+        await promoted_employee.reload()
         assert promoted_employee.name == "Test Employee"
         assert promoted_employee.age == 50
 
@@ -2161,12 +2160,12 @@ class TestDocumentInstance(MongoDBTestCase):
 
         # Test removal
         promoted_employee.details = None
-        promoted_employee.save()
+        await promoted_employee.save()
 
-        promoted_employee.reload()
+        await promoted_employee.reload()
         assert promoted_employee.details is None
 
-    def test_object_mixins(self):
+    async def test_object_mixins(self):
         class NameMixin:
             name = StringField()
 
@@ -2180,7 +2179,7 @@ class TestDocumentInstance(MongoDBTestCase):
 
         assert ["id", "name", "widgets"] == sorted(Bar._fields.keys())
 
-    def test_mixin_inheritance(self):
+    async def test_mixin_inheritance(self):
         class BaseMixIn:
             count = IntField()
             data = StringField()
@@ -2191,19 +2190,19 @@ class TestDocumentInstance(MongoDBTestCase):
         class TestDoc(Document, DoubleMixIn):
             age = IntField()
 
-        TestDoc.drop_collection()
+        await TestDoc.drop_collection()
         t = TestDoc(count=12, data="test", comment="great!", age=19)
 
-        t.save()
+        await t.save()
 
-        t = TestDoc.objects.first()
+        t = await TestDoc.objects.first()
 
         assert t.age == 19
         assert t.comment == "great!"
         assert t.data == "test"
         assert t.count == 12
 
-    def test_save_reference(self):
+    async def test_save_reference(self):
         """Ensure that a document reference field may be saved in the
         database.
         """
@@ -2213,17 +2212,17 @@ class TestDocumentInstance(MongoDBTestCase):
             content = StringField()
             author = ReferenceField(self.Person)
 
-        BlogPost.drop_collection()
+        await BlogPost.drop_collection()
 
         author = self.Person(name="Test User")
-        author.save()
+        await author.save()
 
         post = BlogPost(content="Watched some TV today... how exciting.")
         # Should only reference author when saving
         post.author = author
-        post.save()
+        await post.save()
 
-        post_obj = BlogPost.objects.first()
+        post_obj = await BlogPost.objects.first()
 
         # Test laziness
         assert isinstance(post_obj._data["author"], bson.DBRef)
@@ -2232,12 +2231,12 @@ class TestDocumentInstance(MongoDBTestCase):
 
         # Ensure that the dereferenced object may be changed and saved
         post_obj.author.age = 25
-        post_obj.author.save()
+        await post_obj.author.save()
 
-        author = list(self.Person.objects(name="Test User"))[-1]
+        author = [doc async for doc in self.Person.objects(name="Test User")][-1]
         assert author.age == 25
 
-    def test_duplicate_db_fields_raise_invalid_document_error(self):
+    async def test_duplicate_db_fields_raise_invalid_document_error(self):
         """Ensure a InvalidDocumentError is thrown if duplicate fields
         declare the same db_field.
         """
@@ -2247,7 +2246,7 @@ class TestDocumentInstance(MongoDBTestCase):
                 name = StringField()
                 name2 = StringField(db_field="name")
 
-    def test_invalid_son(self):
+    async def test_invalid_son(self):
         """Raise an error if loading invalid data."""
 
         class Occurrence(EmbeddedDocument):
@@ -2273,7 +2272,7 @@ class TestDocumentInstance(MongoDBTestCase):
         with pytest.raises(ValueError):
             Word._from_son("this is not a valid SON dict")
 
-    def test_reverse_delete_rule_cascade_and_nullify(self):
+    async def test_reverse_delete_rule_cascade_and_nullify(self):
         """Ensure that a referenced document is also deleted upon
         deletion.
         """
@@ -2283,30 +2282,30 @@ class TestDocumentInstance(MongoDBTestCase):
             author = ReferenceField(self.Person, reverse_delete_rule=CASCADE)
             reviewer = ReferenceField(self.Person, reverse_delete_rule=NULLIFY)
 
-        self.Person.drop_collection()
-        BlogPost.drop_collection()
+        await self.Person.drop_collection()
+        await BlogPost.drop_collection()
 
         author = self.Person(name="Test User")
-        author.save()
+        await author.save()
 
         reviewer = self.Person(name="Re Viewer")
-        reviewer.save()
+        await reviewer.save()
 
         post = BlogPost(content="Watched some TV")
         post.author = author
         post.reviewer = reviewer
-        post.save()
+        await post.save()
 
-        reviewer.delete()
+        await reviewer.delete()
         # No effect on the BlogPost
-        assert BlogPost.objects.count() == 1
-        assert BlogPost.objects.get().reviewer is None
+        assert await BlogPost.objects.count() == 1
+        assert (await BlogPost.objects.get()).reviewer is None
 
         # Delete the Person, which should lead to deletion of the BlogPost, too
-        author.delete()
-        assert BlogPost.objects.count() == 0
+        await author.delete()
+        assert await BlogPost.objects.count() == 0
 
-    def test_reverse_delete_rule_pull(self):
+    async def test_reverse_delete_rule_pull(self):
         """Ensure that a referenced document is also deleted with
         pull.
         """
@@ -2315,17 +2314,17 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField()
             children = ListField(ReferenceField("self", reverse_delete_rule=PULL))
 
-        Record.drop_collection()
+        await Record.drop_collection()
 
-        parent_record = Record(name="parent").save()
-        child_record = Record(name="child").save()
+        parent_record = await Record(name="parent").save()
+        child_record = await Record(name="child").save()
         parent_record.children.append(child_record)
-        parent_record.save()
+        await parent_record.save()
 
-        child_record.delete()
-        assert Record.objects(name="parent").get().children == []
+        await child_record.delete()
+        assert (await Record.objects(name="parent").get()).children == []
 
-    def test_reverse_delete_rule_with_custom_id_field(self):
+    async def test_reverse_delete_rule_with_custom_id_field(self):
         """Ensure that a referenced document with custom primary key
         is also deleted upon deletion.
         """
@@ -2337,21 +2336,21 @@ class TestDocumentInstance(MongoDBTestCase):
             author = ReferenceField(User, reverse_delete_rule=CASCADE)
             reviewer = ReferenceField(User, reverse_delete_rule=NULLIFY)
 
-        User.drop_collection()
-        Book.drop_collection()
+        await User.drop_collection()
+        await Book.drop_collection()
 
-        user = User(name="Mike").save()
-        reviewer = User(name="John").save()
-        _ = Book(author=user, reviewer=reviewer).save()
+        user = await User(name="Mike").save()
+        reviewer = await User(name="John").save()
+        _ = await Book(author=user, reviewer=reviewer).save()
 
-        reviewer.delete()
-        assert Book.objects.count() == 1
-        assert Book.objects.get().reviewer is None
+        await reviewer.delete()
+        assert await Book.objects.count() == 1
+        assert (await Book.objects.get()).reviewer is None
 
-        user.delete()
-        assert Book.objects.count() == 0
+        await user.delete()
+        assert await Book.objects.count() == 0
 
-    def test_reverse_delete_rule_with_shared_id_among_collections(self):
+    async def test_reverse_delete_rule_with_shared_id_among_collections(self):
         """Ensure that cascade delete rule doesn't mix id among
         collections.
         """
@@ -2363,28 +2362,28 @@ class TestDocumentInstance(MongoDBTestCase):
             id = IntField(primary_key=True)
             author = ReferenceField(User, reverse_delete_rule=CASCADE)
 
-        User.drop_collection()
-        Book.drop_collection()
+        await User.drop_collection()
+        await Book.drop_collection()
 
-        user_1 = User(id=1).save()
-        user_2 = User(id=2).save()
-        _ = Book(id=1, author=user_2).save()
-        book_2 = Book(id=2, author=user_1).save()
+        user_1 = await User(id=1).save()
+        user_2 = await User(id=2).save()
+        _ = await Book(id=1, author=user_2).save()
+        book_2 = await Book(id=2, author=user_1).save()
 
-        user_2.delete()
+        await user_2.delete()
         # Deleting user_2 should also delete book_1 but not book_2
-        assert Book.objects.count() == 1
-        assert Book.objects.get() == book_2
+        assert await Book.objects.count() == 1
+        assert await Book.objects.get() == book_2
 
-        user_3 = User(id=3).save()
-        _ = Book(id=3, author=user_3).save()
+        user_3 = await User(id=3).save()
+        _ = await Book(id=3, author=user_3).save()
 
-        user_3.delete()
+        await user_3.delete()
         # Deleting user_3 should also delete book_3
-        assert Book.objects.count() == 1
-        assert Book.objects.get() == book_2
+        assert await Book.objects.count() == 1
+        assert await Book.objects.get() == book_2
 
-    def test_reverse_delete_rule_with_document_inheritance(self):
+    async def test_reverse_delete_rule_with_document_inheritance(self):
         """Ensure that a referenced document is also deleted upon
         deletion of a child document.
         """
@@ -2397,29 +2396,29 @@ class TestDocumentInstance(MongoDBTestCase):
             author = ReferenceField(self.Person, reverse_delete_rule=CASCADE)
             reviewer = ReferenceField(self.Person, reverse_delete_rule=NULLIFY)
 
-        self.Person.drop_collection()
-        BlogPost.drop_collection()
+        await self.Person.drop_collection()
+        await BlogPost.drop_collection()
 
         author = Writer(name="Test User")
-        author.save()
+        await author.save()
 
         reviewer = Writer(name="Re Viewer")
-        reviewer.save()
+        await reviewer.save()
 
         post = BlogPost(content="Watched some TV")
         post.author = author
         post.reviewer = reviewer
-        post.save()
+        await post.save()
 
-        reviewer.delete()
-        assert BlogPost.objects.count() == 1
-        assert BlogPost.objects.get().reviewer is None
+        await reviewer.delete()
+        assert await BlogPost.objects.count() == 1
+        assert (await BlogPost.objects.get()).reviewer is None
 
         # Delete the Writer should lead to deletion of the BlogPost
-        author.delete()
-        assert BlogPost.objects.count() == 0
+        await author.delete()
+        assert await BlogPost.objects.count() == 0
 
-    def test_reverse_delete_rule_cascade_and_nullify_complex_field(self):
+    async def test_reverse_delete_rule_cascade_and_nullify_complex_field(self):
         """Ensure that a referenced document is also deleted upon
         deletion for complex fields.
         """
@@ -2433,30 +2432,30 @@ class TestDocumentInstance(MongoDBTestCase):
                 ReferenceField(self.Person, reverse_delete_rule=NULLIFY)
             )
 
-        self.Person.drop_collection()
-        BlogPost.drop_collection()
+        await self.Person.drop_collection()
+        await BlogPost.drop_collection()
 
         author = self.Person(name="Test User")
-        author.save()
+        await author.save()
 
         reviewer = self.Person(name="Re Viewer")
-        reviewer.save()
+        await reviewer.save()
 
         post = BlogPost(content="Watched some TV")
         post.authors = [author]
         post.reviewers = [reviewer]
-        post.save()
+        await post.save()
 
         # Deleting the reviewer should have no effect on the BlogPost
-        reviewer.delete()
-        assert BlogPost.objects.count() == 1
-        assert BlogPost.objects.get().reviewers == []
+        await reviewer.delete()
+        assert await BlogPost.objects.count() == 1
+        assert (await BlogPost.objects.get()).reviewers == []
 
         # Delete the Person, which should lead to deletion of the BlogPost, too
-        author.delete()
-        assert BlogPost.objects.count() == 0
+        await author.delete()
+        assert await BlogPost.objects.count() == 0
 
-    def test_reverse_delete_rule_cascade_triggers_pre_delete_signal(self):
+    async def test_reverse_delete_rule_cascade_triggers_pre_delete_signal(self):
         """Ensure the pre_delete signal is triggered upon a cascading
         deletion setup a blog post with content, an author and editor
         delete the author which triggers deletion of blogpost via
@@ -2474,26 +2473,26 @@ class TestDocumentInstance(MongoDBTestCase):
             @classmethod
             def pre_delete(cls, sender, document, **kwargs):
                 # decrement the docs-to-review count
-                document.editor.update(dec__review_queue=1)
+                await document.editor.update(dec__review_queue=1)
 
         signals.pre_delete.connect(BlogPost.pre_delete, sender=BlogPost)
 
-        self.Person.drop_collection()
-        BlogPost.drop_collection()
-        Editor.drop_collection()
+        await self.Person.drop_collection()
+        await BlogPost.drop_collection()
+        await Editor.drop_collection()
 
-        author = self.Person(name="Will S.").save()
-        editor = Editor(name="Max P.", review_queue=1).save()
-        BlogPost(content="wrote some books", author=author, editor=editor).save()
+        author = await self.Person(name="Will S.").save()
+        editor = await Editor(name="Max P.", review_queue=1).save()
+        await BlogPost(content="wrote some books", author=author, editor=editor).save()
 
         # delete the author, the post is also deleted due to the CASCADE rule
-        author.delete()
+        await author.delete()
 
         # the pre-delete signal should have decremented the editor's queue
-        editor = Editor.objects(name="Max P.").get()
+        editor = await Editor.objects(name="Max P.").get()
         assert editor.review_queue == 0
 
-    def test_two_way_reverse_delete_rule(self):
+    async def test_two_way_reverse_delete_rule(self):
         """Ensure that Bi-Directional relationships work with
         reverse_delete_rule
         """
@@ -2509,24 +2508,24 @@ class TestDocumentInstance(MongoDBTestCase):
         Bar.register_delete_rule(Foo, "bar", NULLIFY)
         Foo.register_delete_rule(Bar, "foo", NULLIFY)
 
-        Bar.drop_collection()
-        Foo.drop_collection()
+        await Bar.drop_collection()
+        await Foo.drop_collection()
 
         b = Bar(content="Hello")
-        b.save()
+        await b.save()
 
         f = Foo(content="world", bar=b)
-        f.save()
+        await f.save()
 
         b.foo = f
-        b.save()
+        await b.save()
 
-        f.delete()
+        await f.delete()
 
-        assert Bar.objects.count() == 1  # No effect on the BlogPost
-        assert Bar.objects.get().foo is None
+        assert await Bar.objects.count() == 1  # No effect on the BlogPost
+        assert (await Bar.objects.get()).foo is None
 
-    def test_invalid_reverse_delete_rule_raise_errors(self):
+    async def test_invalid_reverse_delete_rule_raise_errors(self):
         with pytest.raises(InvalidDocumentError):
 
             class Blog(Document):
@@ -2544,7 +2543,7 @@ class TestDocumentInstance(MongoDBTestCase):
                 father = ReferenceField("Person", reverse_delete_rule=DENY)
                 mother = ReferenceField("Person", reverse_delete_rule=DENY)
 
-    def test_reverse_delete_rule_cascade_recurs(self):
+    async def test_reverse_delete_rule_cascade_recurs(self):
         """Ensure that a chain of documents is also deleted upon
         cascaded deletion.
         """
@@ -2557,27 +2556,27 @@ class TestDocumentInstance(MongoDBTestCase):
             text = StringField()
             post = ReferenceField(BlogPost, reverse_delete_rule=CASCADE)
 
-        self.Person.drop_collection()
-        BlogPost.drop_collection()
-        Comment.drop_collection()
+        await self.Person.drop_collection()
+        await BlogPost.drop_collection()
+        await Comment.drop_collection()
 
         author = self.Person(name="Test User")
-        author.save()
+        await author.save()
 
         post = BlogPost(content="Watched some TV")
         post.author = author
-        post.save()
+        await post.save()
 
         comment = Comment(text="Kudos.")
         comment.post = post
-        comment.save()
+        await comment.save()
 
         # Delete the Person, which should lead to deletion of the BlogPost,
         # and, recursively to the Comment, too
-        author.delete()
-        assert Comment.objects.count() == 0
+        await author.delete()
+        assert await Comment.objects.count() == 0
 
-    def test_reverse_delete_rule_deny(self):
+    async def test_reverse_delete_rule_deny(self):
         """Ensure that a document cannot be referenced if there are
         still documents referring to it.
         """
@@ -2586,48 +2585,48 @@ class TestDocumentInstance(MongoDBTestCase):
             content = StringField()
             author = ReferenceField(self.Person, reverse_delete_rule=DENY)
 
-        self.Person.drop_collection()
-        BlogPost.drop_collection()
+        await self.Person.drop_collection()
+        await BlogPost.drop_collection()
 
         author = self.Person(name="Test User")
-        author.save()
+        await author.save()
 
         post = BlogPost(content="Watched some TV")
         post.author = author
-        post.save()
+        await post.save()
 
         # Delete the Person should be denied
         with pytest.raises(OperationError):
-            author.delete()  # Should raise denied error
-        assert BlogPost.objects.count() == 1  # No objects may have been deleted
-        assert self.Person.objects.count() == 1
+            await author.delete()  # Should raise denied error
+        assert await BlogPost.objects.count() == 1  # No objects may have been deleted
+        assert await self.Person.objects.count() == 1
 
         # Other users, that don't have BlogPosts must be removable, like normal
         author = self.Person(name="Another User")
-        author.save()
+        await author.save()
 
-        assert self.Person.objects.count() == 2
-        author.delete()
-        assert self.Person.objects.count() == 1
+        assert await self.Person.objects.count() == 2
+        await author.delete()
+        assert await self.Person.objects.count() == 1
 
-    def subclasses_and_unique_keys_works(self):
+    async def subclasses_and_unique_keys_works(self):
         class A(Document):
             pass
 
         class B(A):
             foo = BooleanField(unique=True)
 
-        A.drop_collection()
-        B.drop_collection()
+        await A.drop_collection()
+        await B.drop_collection()
 
-        A().save()
-        A().save()
-        B(foo=True).save()
+        await A().save()
+        await A().save()
+        await B(foo=True).save()
 
-        assert A.objects.count() == 2
-        assert B.objects.count() == 1
+        assert await A.objects.count() == 2
+        assert await B.objects.count() == 1
 
-    def test_document_hash(self):
+    async def test_document_hash(self):
         """Test document in list, dict, set."""
 
         class User(Document):
@@ -2637,20 +2636,20 @@ class TestDocumentInstance(MongoDBTestCase):
             pass
 
         # Clear old data
-        User.drop_collection()
-        BlogPost.drop_collection()
+        await User.drop_collection()
+        await BlogPost.drop_collection()
 
-        u1 = User.objects.create()
-        u2 = User.objects.create()
-        u3 = User.objects.create()
+        u1 = await User.objects.create()
+        u2 = await User.objects.create()
+        u3 = await User.objects.create()
         u4 = User()  # New object
 
-        b1 = BlogPost.objects.create()
-        b2 = BlogPost.objects.create()
+        b1 = await BlogPost.objects.create()
+        b2 = await BlogPost.objects.create()
 
         # Make sure docs are properly identified in a list (__eq__ is used
         # for the comparison).
-        all_user_list = list(User.objects.all())
+        all_user_list = [doc async for doc in User.objects.all()]
         assert u1 in all_user_list
         assert u2 in all_user_list
         assert u3 in all_user_list
@@ -2661,7 +2660,7 @@ class TestDocumentInstance(MongoDBTestCase):
         # Make sure docs can be used as keys in a dict (__hash__ is used
         # for hashing the docs).
         all_user_dic = {}
-        for u in User.objects.all():
+        async for u in User.objects.all():
             all_user_dic[u] = "OK"
 
         assert all_user_dic.get(u1, False) == "OK"
@@ -2673,7 +2672,7 @@ class TestDocumentInstance(MongoDBTestCase):
 
         # Make sure docs are properly identified in a set (__hash__ is used
         # for hashing the docs).
-        all_user_set = set(User.objects.all())
+        all_user_set = {doc async for doc in User.objects.all()}
         assert u1 in all_user_set
         assert u4 not in all_user_set
         assert b1 not in all_user_list
@@ -2686,13 +2685,13 @@ class TestDocumentInstance(MongoDBTestCase):
         all_user_set.add(u3)
         assert len(all_user_set) == 3
 
-    def test_picklable(self):
+    async def test_picklable(self):
         pickle_doc = PickleTest(number=1, string="One", lists=["1", "2"])
         pickle_doc.embedded = PickleEmbedded()
         pickled_doc = pickle.dumps(
             pickle_doc
         )  # make sure pickling works even before the doc is saved
-        pickle_doc.save()
+        await pickle_doc.save()
 
         pickled_doc = pickle.dumps(pickle_doc)
         resurrected = pickle.loads(pickled_doc)
@@ -2706,19 +2705,19 @@ class TestDocumentInstance(MongoDBTestCase):
 
         assert resurrected == pickle_doc
         resurrected.string = "Two"
-        resurrected.save()
+        await resurrected.save()
 
-        pickle_doc = PickleTest.objects.first()
+        pickle_doc = await PickleTest.objects.first()
         assert resurrected == pickle_doc
         assert pickle_doc.string == "Two"
         assert pickle_doc.lists == ["1", "2", "3"]
 
-    def test_regular_document_pickle(self):
+    async def test_regular_document_pickle(self):
         pickle_doc = PickleTest(number=1, string="One", lists=["1", "2"])
         pickled_doc = pickle.dumps(
             pickle_doc
         )  # make sure pickling works even before the doc is saved
-        pickle_doc.save()
+        await pickle_doc.save()
 
         pickled_doc = pickle.dumps(pickle_doc)
 
@@ -2737,7 +2736,7 @@ class TestDocumentInstance(MongoDBTestCase):
         # The local PickleTest is still a ref to the original
         fixtures.PickleTest = PickleTest
 
-    def test_dynamic_document_pickle(self):
+    async def test_dynamic_document_pickle(self):
         pickle_doc = PickleDynamicTest(
             name="test", number=1, string="One", lists=["1", "2"]
         )
@@ -2746,7 +2745,7 @@ class TestDocumentInstance(MongoDBTestCase):
             pickle_doc
         )  # make sure pickling works even before the doc is saved
 
-        pickle_doc.save()
+        await pickle_doc.save()
 
         pickled_doc = pickle.dumps(pickle_doc)
         resurrected = pickle.loads(pickled_doc)
@@ -2764,13 +2763,13 @@ class TestDocumentInstance(MongoDBTestCase):
             == pickle_doc.embedded._dynamic_fields.keys()
         )
 
-    def test_picklable_on_signals(self):
+    async def test_picklable_on_signals(self):
         pickle_doc = PickleSignalsTest(number=1, string="One", lists=["1", "2"])
         pickle_doc.embedded = PickleEmbedded()
-        pickle_doc.save()
-        pickle_doc.delete()
+        await pickle_doc.save()
+        await pickle_doc.delete()
 
-    def test_override_method_with_field(self):
+    async def test_override_method_with_field(self):
         """Test creating a field with a field name that would override
         the "validate" method.
         """
@@ -2779,18 +2778,18 @@ class TestDocumentInstance(MongoDBTestCase):
             class Blog(Document):
                 validate = DictField()
 
-    def test_mutating_documents(self):
+    async def test_mutating_documents(self):
         class B(EmbeddedDocument):
             field1 = StringField(default="field1")
 
         class A(Document):
             b = EmbeddedDocumentField(B, default=lambda: B())
 
-        A.drop_collection()
+        await A.drop_collection()
 
         a = A()
-        a.save()
-        a.reload()
+        await a.save()
+        await a.reload()
         assert a.b.field1 == "field1"
 
         class C(EmbeddedDocument):
@@ -2803,45 +2802,45 @@ class TestDocumentInstance(MongoDBTestCase):
         class A(Document):
             b = EmbeddedDocumentField(B, default=lambda: B())
 
-        a = A.objects()[0]
+        a = await A.objects().get_item(0)
         a.b.field2.c_field = "new value"
-        a.save()
+        await a.save()
 
-        a.reload()
+        await a.reload()
         assert a.b.field2.c_field == "new value"
 
-    def test_can_save_false_values(self):
+    async def test_can_save_false_values(self):
         """Ensures you can save False values on save."""
 
         class Doc(Document):
             foo = StringField()
             archived = BooleanField(default=False, required=True)
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
 
         d = Doc()
-        d.save()
+        await d.save()
         d.archived = False
-        d.save()
+        await d.save()
 
-        assert Doc.objects(archived=False).count() == 1
+        assert await Doc.objects(archived=False).count() == 1
 
-    def test_can_save_false_values_dynamic(self):
+    async def test_can_save_false_values_dynamic(self):
         """Ensures you can save False values on dynamic docs."""
 
         class Doc(DynamicDocument):
             foo = StringField()
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
 
         d = Doc()
-        d.save()
+        await d.save()
         d.archived = False
-        d.save()
+        await d.save()
 
-        assert Doc.objects(archived=False).count() == 1
+        assert await Doc.objects(archived=False).count() == 1
 
-    def test_do_not_save_unchanged_references(self):
+    async def test_do_not_save_unchanged_references(self):
         """Ensures cascading saves dont auto update"""
 
         class Job(Document):
@@ -2852,12 +2851,12 @@ class TestDocumentInstance(MongoDBTestCase):
             age = IntField()
             job = ReferenceField(Job)
 
-        Job.drop_collection()
-        Person.drop_collection()
+        await Job.drop_collection()
+        await Person.drop_collection()
 
         job = Job(name="Job 1")
         # job should not have any changed fields after the save
-        job.save()
+        await job.save()
 
         person = Person(name="name", age=10, job=job)
 
@@ -2867,15 +2866,15 @@ class TestDocumentInstance(MongoDBTestCase):
         try:
 
             def fake_update_one(*args, **kwargs):
-                self.fail("Unexpected update for %s" % args[0].name)
+                pytest.fail("Unexpected update for %s" % args[0].name)
                 return orig_update_one(*args, **kwargs)
 
             Collection.update_one = fake_update_one
-            person.save()
+            await person.save()
         finally:
             Collection.update_one = orig_update_one
 
-    def test_db_alias_tests(self):
+    async def test_db_alias_tests(self):
         """DB Alias tests."""
         # mongoenginetest - Is default connection alias from setUp()
         # Register Aliases
@@ -2892,16 +2891,16 @@ class TestDocumentInstance(MongoDBTestCase):
             meta = {"db_alias": "testdb-2"}
 
         # Drops
-        User.drop_collection()
-        Book.drop_collection()
+        await User.drop_collection()
+        await Book.drop_collection()
 
         # Create
-        bob = User.objects.create(name="Bob")
-        hp = Book.objects.create(name="Harry Potter")
+        bob = await User.objects.create(name="Bob")
+        hp = await Book.objects.create(name="Harry Potter")
 
         # Selects
-        assert User.objects.first() == bob
-        assert Book.objects.first() == hp
+        assert await User.objects.first() == bob
+        assert await Book.objects.first() == hp
 
         # DeReference
         class AuthorBooks(Document):
@@ -2910,16 +2909,16 @@ class TestDocumentInstance(MongoDBTestCase):
             meta = {"db_alias": "testdb-3"}
 
         # Drops
-        AuthorBooks.drop_collection()
+        await AuthorBooks.drop_collection()
 
-        ab = AuthorBooks.objects.create(author=bob, book=hp)
+        ab = await AuthorBooks.objects.create(author=bob, book=hp)
 
         # select
-        assert AuthorBooks.objects.first() == ab
-        assert AuthorBooks.objects.first().book == hp
-        assert AuthorBooks.objects.first().author == bob
-        assert AuthorBooks.objects.filter(author=bob).first() == ab
-        assert AuthorBooks.objects.filter(book=hp).first() == ab
+        assert await AuthorBooks.objects.first() == ab
+        assert (await AuthorBooks.objects.first()).book == hp
+        assert (await AuthorBooks.objects.first()).author == bob
+        assert await AuthorBooks.objects.filter(author=bob).first() == ab
+        assert await AuthorBooks.objects.filter(book=hp).first() == ab
 
         # DB Alias
         assert User._get_db() == get_db("testdb-1")
@@ -2927,14 +2926,14 @@ class TestDocumentInstance(MongoDBTestCase):
         assert AuthorBooks._get_db() == get_db("testdb-3")
 
         # Collections
-        assert User._get_collection() == get_db("testdb-1")[User._get_collection_name()]
-        assert Book._get_collection() == get_db("testdb-2")[Book._get_collection_name()]
+        assert await User._get_collection() == get_db("testdb-1")[User._get_collection_name()]
+        assert await Book._get_collection() == get_db("testdb-2")[Book._get_collection_name()]
         assert (
-            AuthorBooks._get_collection()
+            await AuthorBooks._get_collection()
             == get_db("testdb-3")[AuthorBooks._get_collection_name()]
         )
 
-    def test_db_alias_overrides(self):
+    async def test_db_alias_overrides(self):
         """Test db_alias can be overriden."""
         # Register a connection with db_alias testdb-2
         register_connection("testdb-2", "mongoenginetest2")
@@ -2953,10 +2952,10 @@ class TestDocumentInstance(MongoDBTestCase):
         A.objects.all()
 
         assert "testdb-2" == B._meta.get("db_alias")
-        assert "mongoenginetest" == A._get_collection().database.name
-        assert "mongoenginetest2" == B._get_collection().database.name
+        assert "mongoenginetest" == (await A._get_collection()).database.name
+        assert "mongoenginetest2" == (await B._get_collection()).database.name
 
-    def test_db_alias_propagates(self):
+    async def test_db_alias_propagates(self):
         """db_alias propagates?"""
         register_connection("testdb-1", "mongoenginetest2")
 
@@ -2969,7 +2968,7 @@ class TestDocumentInstance(MongoDBTestCase):
 
         assert "testdb-1" == B._meta.get("db_alias")
 
-    def test_db_ref_usage(self):
+    async def test_db_ref_usage(self):
         """DB Ref usage in dict_fields."""
 
         class User(Document):
@@ -2988,43 +2987,43 @@ class TestDocumentInstance(MongoDBTestCase):
                 return self.name
 
         # Drops
-        User.drop_collection()
-        Book.drop_collection()
+        await User.drop_collection()
+        await Book.drop_collection()
 
         # Authors
-        bob = User.objects.create(name="Bob")
-        jon = User.objects.create(name="Jon")
+        bob = await User.objects.create(name="Bob")
+        jon = await User.objects.create(name="Jon")
 
         # Redactors
-        karl = User.objects.create(name="Karl")
-        susan = User.objects.create(name="Susan")
-        peter = User.objects.create(name="Peter")
+        karl = await User.objects.create(name="Karl")
+        susan = await User.objects.create(name="Susan")
+        peter = await User.objects.create(name="Peter")
 
         # Bob
-        Book.objects.create(
+        await Book.objects.create(
             name="1",
             author=bob,
             extra={"a": bob.to_dbref(), "b": [karl.to_dbref(), susan.to_dbref()]},
         )
-        Book.objects.create(
+        await Book.objects.create(
             name="2", author=bob, extra={"a": bob.to_dbref(), "b": karl.to_dbref()}
         )
-        Book.objects.create(
+        await Book.objects.create(
             name="3",
             author=bob,
             extra={"a": bob.to_dbref(), "c": [jon.to_dbref(), peter.to_dbref()]},
         )
-        Book.objects.create(name="4", author=bob)
+        await Book.objects.create(name="4", author=bob)
 
         # Jon
-        Book.objects.create(name="5", author=jon)
-        Book.objects.create(name="6", author=peter)
-        Book.objects.create(name="7", author=jon)
-        Book.objects.create(name="8", author=jon)
-        Book.objects.create(name="9", author=jon, extra={"a": peter.to_dbref()})
+        await Book.objects.create(name="5", author=jon)
+        await Book.objects.create(name="6", author=peter)
+        await Book.objects.create(name="7", author=jon)
+        await Book.objects.create(name="8", author=jon)
+        await Book.objects.create(name="9", author=jon, extra={"a": peter.to_dbref()})
 
         # Checks
-        assert ",".join([str(b) for b in Book.objects.all()]) == "1,2,3,4,5,6,7,8,9"
+        assert ",".join([str(b) async for b in Book.objects.all()]) == "1,2,3,4,5,6,7,8,9"
         # bob related books
         bob_books_qs = Book.objects.filter(
             Q(extra__a=bob) | Q(author=bob) | Q(extra__b=bob)
@@ -3057,89 +3056,89 @@ class TestDocumentInstance(MongoDBTestCase):
         if PYMONGO_VERSION < (4,):
             assert custom_qs.count() == 2
 
-    def test_switch_db_instance(self):
+    async def test_switch_db_instance(self):
         register_connection("testdb-1", "mongoenginetest2")
 
         class Group(Document):
             name = StringField()
 
-        Group.drop_collection()
-        with switch_db(Group, "testdb-1") as Group:
-            Group.drop_collection()
+        await Group.drop_collection()
+        async with switch_db(Group, "testdb-1") as Group:
+            await Group.drop_collection()
 
-        Group(name="hello - default").save()
-        assert 1 == Group.objects.count()
+        await Group(name="hello - default").save()
+        assert 1 == await Group.objects.count()
 
-        group = Group.objects.first()
-        group.switch_db("testdb-1")
+        group = await Group.objects.first()
+        await group.switch_db("testdb-1")
         group.name = "hello - testdb!"
-        group.save()
+        await group.save()
 
-        with switch_db(Group, "testdb-1") as Group:
-            group = Group.objects.first()
+        async with switch_db(Group, "testdb-1") as Group:
+            group = await Group.objects.first()
             assert "hello - testdb!" == group.name
 
-        group = Group.objects.first()
+        group = await Group.objects.first()
         assert "hello - default" == group.name
 
         # Slightly contrived now - perform an update
         # Only works as they have the same object_id
-        group.switch_db("testdb-1")
-        group.update(set__name="hello - update")
+        await group.switch_db("testdb-1")
+        await group.update(set__name="hello - update")
 
-        with switch_db(Group, "testdb-1") as Group:
-            group = Group.objects.first()
+        async with switch_db(Group, "testdb-1") as Group:
+            group = await Group.objects.first()
             assert "hello - update" == group.name
-            Group.drop_collection()
-            assert 0 == Group.objects.count()
+            await Group.drop_collection()
+            assert 0 == await Group.objects.count()
 
-        group = Group.objects.first()
+        group = await Group.objects.first()
         assert "hello - default" == group.name
 
         # Totally contrived now - perform a delete
         # Only works as they have the same object_id
-        group.switch_db("testdb-1")
-        group.delete()
+        await group.switch_db("testdb-1")
+        await group.delete()
 
-        with switch_db(Group, "testdb-1") as Group:
-            assert 0 == Group.objects.count()
+        async with switch_db(Group, "testdb-1") as Group:
+            assert 0 == await Group.objects.count()
 
-        group = Group.objects.first()
+        group = await Group.objects.first()
         assert "hello - default" == group.name
 
-    def test_load_undefined_fields(self):
+    async def test_load_undefined_fields(self):
         class User(Document):
             name = StringField()
 
-        User.drop_collection()
+        await User.drop_collection()
 
-        User._get_collection().insert_one(
+        await (await User._get_collection()).insert_one(
             {"name": "John", "foo": "Bar", "data": [1, 2, 3]}
         )
 
         with pytest.raises(FieldDoesNotExist):
-            User.objects.first()
+            await User.objects.first()
 
-    def test_load_undefined_fields_with_strict_false(self):
+    async def test_load_undefined_fields_with_strict_false(self):
         class User(Document):
             name = StringField()
 
             meta = {"strict": False}
 
-        User.drop_collection()
+        await User.drop_collection()
 
-        User._get_collection().insert_one(
+        await (await User._get_collection()).insert_one(
             {"name": "John", "foo": "Bar", "data": [1, 2, 3]}
         )
 
-        user = User.objects.first()
+        user = await User.objects.first()
         assert user.name == "John"
         assert not hasattr(user, "foo")
         assert user._data["foo"] == "Bar"
         assert not hasattr(user, "data")
         assert user._data["data"] == [1, 2, 3]
 
-    def test_load_undefined_fields_on_embedded_document(self):
+    async def test_load_undefined_fields_on_embedded_document(self):
         class Thing(EmbeddedDocument):
             name = StringField()
 
@@ -3147,9 +3146,9 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField()
             thing = EmbeddedDocumentField(Thing)
 
-        User.drop_collection()
+        await User.drop_collection()
 
-        User._get_collection().insert_one(
+        await (await User._get_collection()).insert_one(
             {
                 "name": "John",
                 "thing": {"name": "My thing", "foo": "Bar", "data": [1, 2, 3]},
@@ -3157,9 +3156,9 @@ class TestDocumentInstance(MongoDBTestCase):
         )
 
         with pytest.raises(FieldDoesNotExist):
-            User.objects.first()
+            await User.objects.first()
 
-    def test_load_undefined_fields_on_embedded_document_with_strict_false_on_doc(self):
+    async def test_load_undefined_fields_on_embedded_document_with_strict_false_on_doc(self):
         class Thing(EmbeddedDocument):
             name = StringField()
 
@@ -3169,9 +3168,9 @@ class TestDocumentInstance(MongoDBTestCase):
 
             meta = {"strict": False}
 
-        User.drop_collection()
+        await User.drop_collection()
 
-        User._get_collection().insert_one(
+        await (await User._get_collection()).insert_one(
             {
                 "name": "John",
                 "thing": {"name": "My thing", "foo": "Bar", "data": [1, 2, 3]},
@@ -3179,9 +3178,9 @@ class TestDocumentInstance(MongoDBTestCase):
         )
 
         with pytest.raises(FieldDoesNotExist):
-            User.objects.first()
+            await User.objects.first()
 
-    def test_load_undefined_fields_on_embedded_document_with_strict_false(self):
+    async def test_load_undefined_fields_on_embedded_document_with_strict_false(self):
         class Thing(EmbeddedDocument):
             name = StringField()
 
@@ -3191,16 +3190,16 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField()
             thing = EmbeddedDocumentField(Thing)
 
-        User.drop_collection()
+        await User.drop_collection()
 
-        User._get_collection().insert_one(
+        await (await User._get_collection()).insert_one(
             {
                 "name": "John",
                 "thing": {"name": "My thing", "foo": "Bar", "data": [1, 2, 3]},
             }
         )
 
-        user = User.objects.first()
+        user = await User.objects.first()
         assert user.name == "John"
         assert user.thing.name == "My thing"
         assert not hasattr(user.thing, "foo")
@@ -3208,44 +3207,44 @@ class TestDocumentInstance(MongoDBTestCase):
         assert not hasattr(user.thing, "data")
         assert user.thing._data["data"] == [1, 2, 3]
 
-    def test_spaces_in_keys(self):
+    async def test_spaces_in_keys(self):
         class Embedded(DynamicEmbeddedDocument):
             pass
 
         class Doc(DynamicDocument):
             pass
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
         doc = Doc()
         setattr(doc, "hello world", 1)
-        doc.save()
+        await doc.save()
 
-        one = Doc.objects.filter(**{"hello world": 1}).count()
+        one = await Doc.objects.filter(**{"hello world": 1}).count()
         assert 1 == one
 
-    def test_shard_key(self):
+    async def test_shard_key(self):
         class LogEntry(Document):
             machine = StringField()
             log = StringField()
 
             meta = {"shard_key": ("machine",)}
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
         log = LogEntry()
         log.machine = "Localhost"
-        log.save()
+        await log.save()
 
         assert log.id is not None
 
         log.log = "Saving"
-        log.save()
+        await log.save()
 
         # try to change the shard key
         with pytest.raises(OperationError):
             log.machine = "127.0.0.1"
 
-    def test_shard_key_in_embedded_document(self):
+    async def test_shard_key_in_embedded_document(self):
         class Foo(EmbeddedDocument):
             foo = StringField()
 
@@ -3256,41 +3255,41 @@ class TestDocumentInstance(MongoDBTestCase):
 
         foo_doc = Foo(foo="hello")
         bar_doc = Bar(foo=foo_doc, bar="world")
-        bar_doc.save()
+        await bar_doc.save()
 
         assert bar_doc.id is not None
 
         bar_doc.bar = "baz"
-        bar_doc.save()
+        await bar_doc.save()
 
         # try to change the shard key
         with pytest.raises(OperationError):
             bar_doc.foo.foo = "something"
-            bar_doc.save()
+            await bar_doc.save()
 
-    def test_shard_key_primary(self):
+    async def test_shard_key_primary(self):
         class LogEntry(Document):
             machine = StringField(primary_key=True)
             log = StringField()
 
             meta = {"shard_key": ("machine",)}
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
         log = LogEntry()
         log.machine = "Localhost"
-        log.save()
+        await log.save()
 
         assert log.id is not None
 
         log.log = "Saving"
-        log.save()
+        await log.save()
 
         # try to change the shard key
         with pytest.raises(OperationError):
             log.machine = "127.0.0.1"
 
-    def test_kwargs_simple(self):
+    async def test_kwargs_simple(self):
         class Embedded(EmbeddedDocument):
             name = StringField()
 
@@ -3307,7 +3306,7 @@ class TestDocumentInstance(MongoDBTestCase):
         assert classic_doc == dict_doc
         assert classic_doc._data == dict_doc._data
 
-    def test_kwargs_complex(self):
+    async def test_kwargs_complex(self):
         class Embedded(EmbeddedDocument):
             name = StringField()
 
@@ -3332,7 +3331,7 @@ class TestDocumentInstance(MongoDBTestCase):
         assert classic_doc == dict_doc
         assert classic_doc._data == dict_doc._data
 
-    def test_positional_creation(self):
+    async def test_positional_creation(self):
         """Document cannot be instantiated using positional arguments."""
         with pytest.raises(TypeError) as exc_info:
             self.Person("Test User", 42)
@@ -3343,7 +3342,7 @@ class TestDocumentInstance(MongoDBTestCase):
         )
         assert str(exc_info.value) == expected_msg
 
-    def test_mixed_creation(self):
+    async def test_mixed_creation(self):
         """Document cannot be instantiated using mixed arguments."""
         with pytest.raises(TypeError) as exc_info:
             self.Person("Test User", age=42)
@@ -3354,7 +3353,7 @@ class TestDocumentInstance(MongoDBTestCase):
         )
         assert str(exc_info.value) == expected_msg
 
-    def test_positional_creation_embedded(self):
+    async def test_positional_creation_embedded(self):
         """Embedded document cannot be created using positional arguments."""
         with pytest.raises(TypeError) as exc_info:
             self.Job("Test Job", 4)
@@ -3365,7 +3364,7 @@ class TestDocumentInstance(MongoDBTestCase):
         )
         assert str(exc_info.value) == expected_msg
 
-    def test_mixed_creation_embedded(self):
+    async def test_mixed_creation_embedded(self):
         """Embedded document cannot be created using mixed arguments."""
         with pytest.raises(TypeError) as exc_info:
             self.Job("Test Job", years=4)
@@ -3376,20 +3375,20 @@ class TestDocumentInstance(MongoDBTestCase):
         )
         assert str(exc_info.value) == expected_msg
 
-    def test_data_contains_id_field(self):
+    async def test_data_contains_id_field(self):
         """Ensure that asking for _data returns 'id'."""
 
         class Person(Document):
             name = StringField()
 
-        Person.drop_collection()
-        Person(name="Harry Potter").save()
+        await Person.drop_collection()
+        await Person(name="Harry Potter").save()
 
-        person = Person.objects.first()
+        person = await Person.objects.first()
         assert "id" in person._data.keys()
         assert person._data.get("id") == person.id
 
-    def test_complex_nesting_document_and_embedded_document(self):
+    async def test_complex_nesting_document_and_embedded_document(self):
         class Macro(EmbeddedDocument):
             value = DynamicField(default="UNDEFINED")
 
@@ -3411,35 +3410,35 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField(required=True)
             nodes = MapField(ReferenceField(Node, dbref=False))
 
-            def save(self, *args, **kwargs):
+            async def save(self, *args, **kwargs):
                 for node_name, node in self.nodes.items():
                     node.expand()
-                    node.save(*args, **kwargs)
-                super().save(*args, **kwargs)
+                    await node.save(*args, **kwargs)
+                await super().save(*args, **kwargs)
 
-        NodesSystem.drop_collection()
-        Node.drop_collection()
+        await NodesSystem.drop_collection()
+        await Node.drop_collection()
 
         system = NodesSystem(name="system")
         system.nodes["node"] = Node()
-        system.save()
+        await system.save()
         system.nodes["node"].parameters["param"] = Parameter()
-        system.save()
+        await system.save()
 
-        system = NodesSystem.objects.first()
+        system = await NodesSystem.objects.first()
         assert (
             "UNDEFINED" == system.nodes["node"].parameters["param"].macros["test"].value
         )
 
-    def test_embedded_document_equality(self):
+    async def test_embedded_document_equality(self):
         class Test(Document):
             field = StringField(required=True)
 
         class Embedded(EmbeddedDocument):
             ref = ReferenceField(Test)
 
-        Test.drop_collection()
-        test = Test(field="123").save()  # has id
+        await Test.drop_collection()
+        test = await Test(field="123").save()  # has id
 
         e = Embedded(ref=test)
         f1 = Embedded._from_son(e.to_mongo())
@@ -3449,7 +3448,7 @@ class TestDocumentInstance(MongoDBTestCase):
         f1.ref  # Dereferences lazily
         assert f1 == f2
 
-    def test_embedded_document_equality_with_lazy_ref(self):
+    async def test_embedded_document_equality_with_lazy_ref(self):
         class Job(EmbeddedDocument):
             boss = LazyReferenceField("Person")
             boss_dbref = LazyReferenceField("Person", dbref=True)
@@ -3457,14 +3456,14 @@ class TestDocumentInstance(MongoDBTestCase):
         class Person(Document):
             job = EmbeddedDocumentField(Job)
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         boss = Person()
         worker = Person(job=Job(boss=boss, boss_dbref=boss))
-        boss.save()
-        worker.save()
+        await boss.save()
+        await worker.save()
 
-        worker1 = Person.objects.get(id=worker.id)
+        worker1 = await Person.objects.get(id=worker.id)
 
         # worker1.job should be equal to the job used originally to create the
         # document.
@@ -3477,12 +3476,12 @@ class TestDocumentInstance(MongoDBTestCase):
 
         # The above equalities should also hold after worker1.job.boss has been
         # fetch()ed.
-        worker1.job.boss.fetch()
+        await worker1.job.boss.fetch()
         assert worker1.job == worker.job
         assert worker1.job == Job(boss=boss, boss_dbref=boss)
         assert worker1.job == Job(boss=boss.id, boss_dbref=boss.id)
 
-    def test_dbref_equality(self):
+    async def test_dbref_equality(self):
         class Test2(Document):
             name = StringField()
 
@@ -3494,16 +3493,16 @@ class TestDocumentInstance(MongoDBTestCase):
             test2 = ReferenceField("Test2")
             test3 = ReferenceField("Test3")
 
-        Test.drop_collection()
-        Test2.drop_collection()
-        Test3.drop_collection()
+        await Test.drop_collection()
+        await Test2.drop_collection()
+        await Test3.drop_collection()
 
         t2 = Test2(name="a")
-        t2.save()
+        await t2.save()
 
         t3 = Test3(name="x")
         t3.id = t2.id
-        t3.save()
+        await t3.save()
 
         t = Test(name="b", test2=t2, test3=t3)
 
@@ -3542,19 +3541,19 @@ class TestDocumentInstance(MongoDBTestCase):
         assert obj3 != dbref2
         assert dbref2 != obj3
 
-    def test_default_values_dont_get_override_upon_save_when_only_is_used(self):
+    async def test_default_values_dont_get_override_upon_save_when_only_is_used(self):
         class Person(Document):
             created_on = DateTimeField(default=lambda: datetime.utcnow())
             name = StringField()
 
         p = Person(name="alon")
-        p.save()
-        orig_created_on = Person.objects().only("created_on")[0].created_on
+        await p.save()
+        orig_created_on = (await Person.objects().only("created_on").get_item(0)).created_on
 
-        p2 = Person.objects().only("name")[0]
+        p2 = await Person.objects().only("name").get_item(0)
         p2.name = "alon2"
-        p2.save()
-        p3 = Person.objects().only("created_on")[0]
+        await p2.save()
+        p3 = await Person.objects().only("created_on").get_item(0)
         assert orig_created_on == p3.created_on
 
         class Person(Document):
@@ -3562,22 +3561,22 @@ class TestDocumentInstance(MongoDBTestCase):
             name = StringField()
             height = IntField(default=189)
 
-        p4 = Person.objects()[0]
-        p4.save()
+        p4 = await Person.objects().get_item(0)
+        await p4.save()
         assert p4.height == 189
 
         # However the default will not be fixed in DB
-        assert Person.objects(height=189).count() == 0
+        assert await Person.objects(height=189).count() == 0
 
         # alter DB for the new default
-        coll = Person._get_collection()
-        for person in Person.objects.as_pymongo():
+        coll = await Person._get_collection()
+        async for person in Person.objects.as_pymongo():
             if "height" not in person:
-                coll.update_one({"_id": person["_id"]}, {"$set": {"height": 189}})
+                await coll.update_one({"_id": person["_id"]}, {"$set": {"height": 189}})
 
-        assert Person.objects(height=189).count() == 1
+        assert await Person.objects(height=189).count() == 1
 
-    def test_shard_key_mutability_after_from_json(self):
+    async def test_shard_key_mutability_after_from_json(self):
         """Ensure that a document ID can be modified after from_json.
 
         If you instantiate a document by using from_json/_from_son and you
@@ -3601,7 +3600,7 @@ class TestDocumentInstance(MongoDBTestCase):
         assert p.name == "new name"
         assert p.id == "12345"
 
-    def test_shard_key_mutability_after_from_son(self):
+    async def test_shard_key_mutability_after_from_son(self):
         """Ensure that a document ID can be modified after _from_son.
 
         See `test_shard_key_mutability_after_from_json` above for more details.
@@ -3619,29 +3618,29 @@ class TestDocumentInstance(MongoDBTestCase):
         assert p.name == "new name"
         assert p.id == "12345"
 
-    def test_from_json_created_false_without_an_id(self):
+    async def test_from_json_created_false_without_an_id(self):
         class Person(Document):
             name = StringField()
 
-        Person.objects.delete()
+        await Person.objects.delete()
 
         p = Person.from_json('{"name": "name"}', created=False)
         assert p._created is False
         assert p.id is None
 
         # Make sure the document is subsequently persisted correctly.
-        p.save()
+        await p.save()
         assert p.id is not None
-        saved_p = Person.objects.get(id=p.id)
+        saved_p = await Person.objects.get(id=p.id)
         assert saved_p.name == "name"
 
-    def test_from_json_created_false_with_an_id(self):
+    async def test_from_json_created_false_with_an_id(self):
         """See https://github.com/mongoengine/mongoengine/issues/1854"""
 
         class Person(Document):
             name = StringField()
 
-        Person.objects.delete()
+        await Person.objects.delete()
 
         p = Person.from_json(
             '{"_id": "5b85a8b04ec5dc2da388296e", "name": "name"}', created=False
@@ -3650,7 +3649,7 @@ class TestDocumentInstance(MongoDBTestCase):
         assert p._changed_fields == []
         assert p.name == "name"
         assert p.id == ObjectId("5b85a8b04ec5dc2da388296e")
-        p.save()
+        await p.save()
 
         with pytest.raises(DoesNotExist):
             # Since the object is considered as already persisted (thanks to
@@ -3658,20 +3657,20 @@ class TestDocumentInstance(MongoDBTestCase):
             # fields (i.e. `_changed_fields` is empty), the document is
             # considered unchanged and hence the `save()` call above did
             # nothing.
-            Person.objects.get(id=p.id)
+            await Person.objects.get(id=p.id)
 
         assert not p._created
         p.name = "a new name"
         assert p._changed_fields == ["name"]
-        p.save()
-        saved_p = Person.objects.get(id=p.id)
+        await p.save()
+        saved_p = await Person.objects.get(id=p.id)
         assert saved_p.name == p.name
 
-    def test_from_json_created_true_with_an_id(self):
+    async def test_from_json_created_true_with_an_id(self):
         class Person(Document):
             name = StringField()
 
-        Person.objects.delete()
+        await Person.objects.delete()
 
         p = Person.from_json(
             '{"_id": "5b85a8b04ec5dc2da388296e", "name": "name"}', created=True
@@ -3680,13 +3679,13 @@ class TestDocumentInstance(MongoDBTestCase):
         assert p._changed_fields == []
         assert p.name == "name"
         assert p.id == ObjectId("5b85a8b04ec5dc2da388296e")
-        p.save()
+        await p.save()
 
-        saved_p = Person.objects.get(id=p.id)
+        saved_p = await Person.objects.get(id=p.id)
         assert saved_p == p
         assert saved_p.name == "name"
 
-    def test_null_field(self):
+    async def test_null_field(self):
         # 734
         class User(Document):
             name = StringField()
@@ -3697,11 +3696,11 @@ class TestDocumentInstance(MongoDBTestCase):
             dt_fld = DateTimeField(null=True)
             cdt_fld = ComplexDateTimeField(null=True)
 
-        User.objects.delete()
-        u = User(name="user").save()
-        u_from_db = User.objects.get(name="user")
+        await User.objects.delete()
+        u = await User(name="user").save()
+        u_from_db = await User.objects.get(name="user")
         u_from_db.height = None
-        u_from_db.save()
+        await u_from_db.save()
         assert u_from_db.height is None
         # 864
         assert u_from_db.str_fld is None
@@ -3711,14 +3710,14 @@ class TestDocumentInstance(MongoDBTestCase):
         assert u_from_db.cdt_fld is None
 
         # 735
-        User.objects.delete()
+        await User.objects.delete()
         u = User(name="user")
-        u.save()
-        User.objects(name="user").update_one(set__height=None, upsert=True)
-        u_from_db = User.objects.get(name="user")
+        await u.save()
+        await User.objects(name="user").update_one(set__height=None, upsert=True)
+        u_from_db = await User.objects.get(name="user")
         assert u_from_db.height is None
 
-    def test_not_saved_eq(self):
+    async def test_not_saved_eq(self):
         """Ensure we can compare documents not saved."""
 
         class Person(Document):
@@ -3729,7 +3728,7 @@ class TestDocumentInstance(MongoDBTestCase):
         assert p != p1
         assert p == p
 
-    def test_list_iter(self):
+    async def test_list_iter(self):
         # 914
         class B(EmbeddedDocument):
             v = StringField()
@@ -3737,60 +3736,54 @@ class TestDocumentInstance(MongoDBTestCase):
         class A(Document):
             array = ListField(EmbeddedDocumentField(B))
 
-        A.objects.delete()
-        A(array=[B(v="1"), B(v="2"), B(v="3")]).save()
-        a = A.objects.get()
+        await A.objects.delete()
+        await A(array=[B(v="1"), B(v="2"), B(v="3")]).save()
+        a = await A.objects.get()
         assert a.array._instance == a
         for idx, b in enumerate(a.array):
             assert b._instance == a
         assert idx == 2
 
-    def test_updating_listfield_manipulate_list(self):
+    async def test_updating_listfield_manipulate_list(self):
         class Company(Document):
             name = StringField()
             employees = ListField(field=DictField())
 
-        Company.drop_collection()
+        await Company.drop_collection()
 
         comp = Company(name="BigBank", employees=[{"name": "John"}])
-        comp.save()
+        await comp.save()
         comp.employees.append({"name": "Bill"})
-        comp.save()
+        await comp.save()
 
-        stored_comp = get_as_pymongo(comp)
-        self.assertEqual(
-            stored_comp,
-            {
-                "_id": comp.id,
-                "employees": [{"name": "John"}, {"name": "Bill"}],
-                "name": "BigBank",
-            },
-        )
+        stored_comp = await get_as_pymongo(comp)
+        assert stored_comp == {
+            "_id": comp.id,
+            "employees": [{"name": "John"}, {"name": "Bill"}],
+            "name": "BigBank",
+        }
 
-        comp = comp.reload()
+        comp = await comp.reload()
         comp.employees[0]["color"] = "red"
         comp.employees[-1]["color"] = "blue"
         comp.employees[-1].update({"size": "xl"})
-        comp.save()
+        await comp.save()
 
         assert len(comp.employees) == 2
         assert comp.employees[0] == {"name": "John", "color": "red"}
         assert comp.employees[1] == {"name": "Bill", "size": "xl", "color": "blue"}
 
-        stored_comp = get_as_pymongo(comp)
-        self.assertEqual(
-            stored_comp,
-            {
-                "_id": comp.id,
-                "employees": [
-                    {"name": "John", "color": "red"},
-                    {"size": "xl", "color": "blue", "name": "Bill"},
-                ],
-                "name": "BigBank",
-            },
-        )
+        stored_comp = await get_as_pymongo(comp)
+        assert stored_comp == {
+            "_id": comp.id,
+            "employees": [
+                {"name": "John", "color": "red"},
+                {"size": "xl", "color": "blue", "name": "Bill"},
+            ],
+            "name": "BigBank",
+        }
 
-    def test_falsey_pk(self):
+    async def test_falsey_pk(self):
         """Ensure that we can create and update a document with Falsey PK."""
 
         class Person(Document):
@@ -3800,11 +3793,11 @@ class TestDocumentInstance(MongoDBTestCase):
         person = Person()
         person.age = 0
         person.height = 1.89
-        person.save()
+        await person.save()
 
-        person.update(set__height=2.0)
+        await person.update(set__height=2.0)
 
-    def test_push_with_position(self):
+    async def test_push_with_position(self):
         """Ensure that push with position works properly for an instance."""
 
         class BlogPost(Document):
@@ -3814,30 +3807,30 @@ class TestDocumentInstance(MongoDBTestCase):
         blog = BlogPost()
         blog.slug = "ABC"
         blog.tags = ["python"]
-        blog.save()
+        await blog.save()
 
-        blog.update(push__tags__0=["mongodb", "code"])
-        blog.reload()
+        await blog.update(push__tags__0=["mongodb", "code"])
+        await blog.reload()
         assert blog.tags == ["mongodb", "code", "python"]
 
-    def test_push_nested_list(self):
+    async def test_push_nested_list(self):
         """Ensure that push update works in nested list"""
 
         class BlogPost(Document):
             slug = StringField()
             tags = ListField()
 
-        blog = BlogPost(slug="test").save()
-        blog.update(push__tags=["value1", 123])
-        blog.reload()
+        blog = await BlogPost(slug="test").save()
+        await blog.update(push__tags=["value1", 123])
+        await blog.reload()
         assert blog.tags == [["value1", 123]]
 
-    def test_accessing_objects_with_indexes_error(self):
-        insert_result = self.db.company.insert_many(
+    async def test_accessing_objects_with_indexes_error(self):
+        insert_result = await self.db.company.insert_many(
             [{"name": "Foo"}, {"name": "Foo"}]
         )  # Force 2 doc with same name
         REF_OID = insert_result.inserted_ids[0]
-        self.db.user.insert_one({"company": REF_OID})  # Force 2 doc with same name
+        await self.db.user.insert_one({"company": REF_OID})  # Force 2 doc with same name
 
         class Company(Document):
             name = StringField(unique=True)
@@ -3847,9 +3840,9 @@ class TestDocumentInstance(MongoDBTestCase):
 
         # Ensure index creation exception aren't swallowed (#1688)
         with pytest.raises(DuplicateKeyError):
-            User.objects().select_related()
+            await User.objects().select_related()
 
-    def test_deepcopy(self):
+    async def test_deepcopy(self):
         regex_field = StringField(regex=r"(^ABC\d\d\d\d$)")
         no_regex_field = StringField()
         # Copy copied field object
@@ -3861,17 +3854,17 @@ class TestDocumentInstance(MongoDBTestCase):
         copy.deepcopy(no_regex_field)
         copy.deepcopy(no_regex_field)
 
-    def test_deepcopy_with_reference_itself(self):
+    async def test_deepcopy_with_reference_itself(self):
         class User(Document):
             name = StringField(regex=r"(.*)")
             other_user = ReferenceField("self")
 
-        user1 = User(name="John").save()
-        User(name="Bob", other_user=user1).save()
+        user1 = await User(name="John").save()
+        await User(name="Bob", other_user=user1).save()
 
         user1.other_user = user1
-        user1.save()
-        for u in User.objects:
+        await user1.save()
+        async for u in User.objects:
             copied_u = copy.deepcopy(u)
             assert copied_u is not u
             assert copied_u._fields["name"] is u._fields["name"]
@@ -3879,7 +3872,7 @@ class TestDocumentInstance(MongoDBTestCase):
                 copied_u._fields["name"].regex is u._fields["name"].regex
             )  # Compiled regex objects are atomic
 
-    def test_from_son_with_auto_dereference_disabled(self):
+    async def test_from_son_with_auto_dereference_disabled(self):
         class User(Document):
             name = StringField(regex=r"(^ABC\d\d\d\d$)")
 
@@ -3896,7 +3889,7 @@ class TestDocumentInstance(MongoDBTestCase):
             user_obj._fields["name"].regex is copied_user._fields["name"].regex
         )  # Compiled regex are atomic
 
-    def test_embedded_document_failed_while_loading_instance_when_it_is_not_a_dict(
+    async def test_embedded_document_failed_while_loading_instance_when_it_is_not_a_dict(
         self,
     ):
         class LightSaber(EmbeddedDocument):
@@ -3905,16 +3898,16 @@ class TestDocumentInstance(MongoDBTestCase):
         class Jedi(Document):
             light_saber = EmbeddedDocumentField(LightSaber)
 
-        coll = Jedi._get_collection()
-        Jedi(light_saber=LightSaber(color="red")).save()
-        _ = list(Jedi.objects)  # Ensure a proper document loads without errors
+        coll = await Jedi._get_collection()
+        await Jedi(light_saber=LightSaber(color="red")).save()
+        _ = [doc async for doc in Jedi.objects]  # Ensure a proper document loads without errors
 
         # Forces a document with a wrong shape (may occur in case of migration)
         value = "I_should_be_a_dict"
-        coll.insert_one({"light_saber": value})
+        await coll.insert_one({"light_saber": value})
 
         with pytest.raises(InvalidDocumentError) as exc_info:
-            list(Jedi.objects)
+            [doc async for doc in Jedi.objects]
 
         assert str(
             exc_info.value
@@ -3924,7 +3917,7 @@ class TestDocumentInstance(MongoDBTestCase):
 
 
 class ObjectKeyTestCase(MongoDBTestCase):
-    def test_object_key_simple_document(self):
+    async def test_object_key_simple_document(self):
         class Book(Document):
             title = StringField()
 
@@ -3934,7 +3927,7 @@ class ObjectKeyTestCase(MongoDBTestCase):
         book.pk = ObjectId()
         assert book._object_key == {"pk": book.pk}
 
-    def test_object_key_with_custom_primary_key(self):
+    async def test_object_key_with_custom_primary_key(self):
         class Book(Document):
             isbn = StringField(primary_key=True)
             title = StringField()
@@ -3945,7 +3938,7 @@ class ObjectKeyTestCase(MongoDBTestCase):
         book = Book(pk="0062316117")
         assert book._object_key == {"pk": "0062316117"}
 
-    def test_object_key_in_a_sharded_collection(self):
+    async def test_object_key_in_a_sharded_collection(self):
         class Book(Document):
             title = StringField()
             meta = {"shard_key": ("pk", "title")}
@@ -3955,7 +3948,7 @@ class ObjectKeyTestCase(MongoDBTestCase):
         book = Book(pk=ObjectId(), title="Sapiens")
         assert book._object_key == {"pk": book.pk, "title": "Sapiens"}
 
-    def test_object_key_with_custom_db_field(self):
+    async def test_object_key_with_custom_db_field(self):
         class Book(Document):
             author = StringField(db_field="creator")
             meta = {"shard_key": ("pk", "author")}
@@ -3963,7 +3956,7 @@ class ObjectKeyTestCase(MongoDBTestCase):
         book = Book(pk=ObjectId(), author="Author")
         assert book._object_key == {"pk": book.pk, "author": "Author"}
 
-    def test_object_key_with_nested_shard_key(self):
+    async def test_object_key_with_nested_shard_key(self):
         class Author(EmbeddedDocument):
             name = StringField()
 
@@ -3976,7 +3969,7 @@ class ObjectKeyTestCase(MongoDBTestCase):
 
 
 class DBFieldMappingTest(MongoDBTestCase):
-    def setUp(self):
+    async def setup_method(self, method=None):
         class Fields:
             w1 = BooleanField(db_field="w2")
 
@@ -3998,47 +3991,47 @@ class DBFieldMappingTest(MongoDBTestCase):
         self.Doc = Doc
         self.DynDoc = DynDoc
 
-    def tearDown(self):
-        for collection in list_collection_names(self.db):
-            self.db.drop_collection(collection)
+    async def teardown_method(self, method=None):
+        for collection in await list_collection_names(self.db):
+            await self.db.drop_collection(collection)
 
-    def test_setting_fields_in_constructor_of_strict_doc_uses_model_names(self):
+    async def test_setting_fields_in_constructor_of_strict_doc_uses_model_names(self):
         doc = self.Doc(z1=True, z2=False)
         assert doc.z1 is True
         assert doc.z2 is False
 
-    def test_setting_fields_in_constructor_of_dyn_doc_uses_model_names(self):
+    async def test_setting_fields_in_constructor_of_dyn_doc_uses_model_names(self):
         doc = self.DynDoc(z1=True, z2=False)
         assert doc.z1 is True
         assert doc.z2 is False
 
-    def test_setting_unknown_field_in_constructor_of_dyn_doc_does_not_overwrite_model_fields(
+    async def test_setting_unknown_field_in_constructor_of_dyn_doc_does_not_overwrite_model_fields(
         self,
     ):
         doc = self.DynDoc(w2=True)
         assert doc.w1 is None
         assert doc.w2 is True
 
-    def test_unknown_fields_of_strict_doc_do_not_overwrite_dbfields_1(self):
+    async def test_unknown_fields_of_strict_doc_do_not_overwrite_dbfields_1(self):
         doc = self.Doc()
         doc.w2 = True
         doc.x3 = True
         doc.y0 = True
-        doc.save()
-        reloaded = self.Doc.objects.get(id=doc.id)
+        await doc.save()
+        reloaded = await self.Doc.objects.get(id=doc.id)
         assert reloaded.w1 is None
         assert reloaded.x1 is None
         assert reloaded.x2 is None
         assert reloaded.y1 is None
         assert reloaded.y2 is None
 
-    def test_dbfields_are_loaded_to_the_right_modelfield_for_strict_doc_2(self):
+    async def test_dbfields_are_loaded_to_the_right_modelfield_for_strict_doc_2(self):
         doc = self.Doc()
         doc.x2 = True
         doc.y2 = True
         doc.z2 = True
-        doc.save()
-        reloaded = self.Doc.objects.get(id=doc.id)
+        await doc.save()
+        reloaded = await self.Doc.objects.get(id=doc.id)
         assert (
             reloaded.x1,
             reloaded.x2,
@@ -4048,13 +4041,13 @@ class DBFieldMappingTest(MongoDBTestCase):
             reloaded.z2,
         ) == (doc.x1, doc.x2, doc.y1, doc.y2, doc.z1, doc.z2)
 
-    def test_dbfields_are_loaded_to_the_right_modelfield_for_dyn_doc_2(self):
+    async def test_dbfields_are_loaded_to_the_right_modelfield_for_dyn_doc_2(self):
         doc = self.DynDoc()
         doc.x2 = True
         doc.y2 = True
         doc.z2 = True
-        doc.save()
-        reloaded = self.DynDoc.objects.get(id=doc.id)
+        await doc.save()
+        reloaded = await self.DynDoc.objects.get(id=doc.id)
         assert (
             reloaded.x1,
             reloaded.x2,
@@ -4065,5 +4058,3 @@ class DBFieldMappingTest(MongoDBTestCase):
         ) == (doc.x1, doc.x2, doc.y1, doc.y2, doc.z1, doc.z2)
 
 
-if __name__ == "__main__":
-    unittest.main()

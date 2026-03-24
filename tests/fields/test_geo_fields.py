@@ -1,5 +1,3 @@
-import unittest
-
 from mongoengine import *
 from tests.utils import MongoDBTestCase
 
@@ -8,7 +6,7 @@ class TestGeoField(MongoDBTestCase):
     def _test_for_expected_error(self, Cls, loc, expected):
         try:
             Cls(loc=loc).validate()
-            self.fail(f"Should not validate the location {loc}")
+            assert False, f"Should not validate the location {loc}"
         except ValidationError as e:
             assert expected == e.to_dict()["loc"]
 
@@ -347,7 +345,7 @@ class TestGeoField(MongoDBTestCase):
         assert {"fields": [("venue.polygon", "2dsphere")]} in geo_indicies
         assert {"fields": [("venue.point", "2dsphere")]} in geo_indicies
 
-    def test_geo_indexes_recursion(self):
+    async def test_geo_indexes_recursion(self):
         class Location(Document):
             name = StringField()
             location = GeoPointField()
@@ -356,19 +354,19 @@ class TestGeoField(MongoDBTestCase):
             name = StringField()
             location = ReferenceField(Location)
 
-        Location.drop_collection()
-        Parent.drop_collection()
+        await Location.drop_collection()
+        await Parent.drop_collection()
 
-        Parent(name="Berlin").save()
-        info = Parent._get_collection().index_information()
+        await Parent(name="Berlin").save()
+        info = await Parent._get_collection().index_information()
         assert "location_2d" not in info
-        info = Location._get_collection().index_information()
+        info = await Location._get_collection().index_information()
         assert "location_2d" in info
 
         assert len(Parent._geo_indices()) == 0
         assert len(Location._geo_indices()) == 1
 
-    def test_geo_indexes_auto_index(self):
+    async def test_geo_indexes_auto_index(self):
         # Test just listing the fields
         class Log(Document):
             location = PointField(auto_index=False)
@@ -378,10 +376,10 @@ class TestGeoField(MongoDBTestCase):
 
         assert Log._geo_indices() == []
 
-        Log.drop_collection()
-        Log.ensure_indexes()
+        await Log.drop_collection()
+        await Log.ensure_indexes()
 
-        info = Log._get_collection().index_information()
+        info = await Log._get_collection().index_information()
         assert info["location_2dsphere_datetime_1"]["key"] == [
             ("location", "2dsphere"),
             ("datetime", 1),
@@ -398,15 +396,11 @@ class TestGeoField(MongoDBTestCase):
 
         assert Log._geo_indices() == []
 
-        Log.drop_collection()
-        Log.ensure_indexes()
+        await Log.drop_collection()
+        await Log.ensure_indexes()
 
-        info = Log._get_collection().index_information()
+        info = await Log._get_collection().index_information()
         assert info["location_2dsphere_datetime_1"]["key"] == [
             ("location", "2dsphere"),
             ("datetime", 1),
         ]
-
-
-if __name__ == "__main__":
-    unittest.main()

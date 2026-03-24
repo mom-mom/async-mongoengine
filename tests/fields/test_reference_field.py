@@ -26,7 +26,7 @@ class TestReferenceField(MongoDBTestCase):
             class Test(Document):  # noqa: F811
                 author = ReferenceField(NonDocumentSubClass)
 
-    def test_reference_validation(self):
+    async def test_reference_validation(self):
         """Ensure that invalid document objects cannot be assigned to
         reference fields.
         """
@@ -38,8 +38,8 @@ class TestReferenceField(MongoDBTestCase):
             content = StringField()
             author = ReferenceField(User)
 
-        User.drop_collection()
-        BlogPost.drop_collection()
+        await User.drop_collection()
+        await BlogPost.drop_collection()
 
         # Make sure ReferenceField only accepts a document class or a string
         # with a document class name.
@@ -57,7 +57,7 @@ class TestReferenceField(MongoDBTestCase):
             "documents once they have been saved to the database"
         )
         with pytest.raises(ValidationError, match=expected_error):
-            post1.save()
+            await post1.save()
 
         # Check that an invalid object type cannot be used
         post2 = BlogPost(content="Chips and chilli taste good.")
@@ -70,37 +70,38 @@ class TestReferenceField(MongoDBTestCase):
         user_object_id = user.pk
         post3 = BlogPost(content="Chips and curry sauce taste good.")
         post3.author = user_object_id
-        post3.save()
+        await post3.save()
 
         # Make sure referencing a saved document of the right type works
-        user.save()
+        await user.save()
         post1.author = user
-        post1.save()
+        await post1.save()
 
         # Make sure referencing a saved document of the *wrong* type fails
-        post2.save()
+        await post2.save()
         post1.author = post2
         with pytest.raises(ValidationError):
             post1.validate()
 
-    def test_dbref_reference_fields(self):
+    async def test_dbref_reference_fields(self):
         """Make sure storing references as bson.dbref.DBRef works."""
 
         class Person(Document):
             name = StringField()
             parent = ReferenceField("self", dbref=True)
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
-        p1 = Person(name="John").save()
-        Person(name="Ross", parent=p1).save()
+        p1 = await Person(name="John").save()
+        await Person(name="Ross", parent=p1).save()
 
-        assert Person._get_collection().find_one({"name": "Ross"})["parent"] == DBRef(
-            "person", p1.pk
-        )
+        raw = await Person._get_collection().find_one({"name": "Ross"})
+        assert raw["parent"] == DBRef("person", p1.pk)
 
-        p = Person.objects.get(name="Ross")
-        assert p.parent == p1
+        p = await Person.objects.get(name="Ross")
+        # No auto-dereference: p.parent is a DBRef
+        assert isinstance(p.parent, DBRef)
+        assert p.parent.id == p1.pk
 
     def test_dbref_to_mongo(self):
         """Make sure that calling to_mongo on a ReferenceField which
@@ -115,24 +116,25 @@ class TestReferenceField(MongoDBTestCase):
         p = Person(name="Steve", parent=DBRef("person", "abcdefghijklmnop"))
         assert p.to_mongo() == SON([("name", "Steve"), ("parent", "abcdefghijklmnop")])
 
-    def test_objectid_reference_fields(self):
+    async def test_objectid_reference_fields(self):
         class Person(Document):
             name = StringField()
             parent = ReferenceField("self", dbref=False)
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
-        p1 = Person(name="John").save()
-        Person(name="Ross", parent=p1).save()
+        p1 = await Person(name="John").save()
+        await Person(name="Ross", parent=p1).save()
 
         col = Person._get_collection()
-        data = col.find_one({"name": "Ross"})
+        data = await col.find_one({"name": "Ross"})
         assert data["parent"] == p1.pk
 
-        p = Person.objects.get(name="Ross")
-        assert p.parent == p1
+        p = await Person.objects.get(name="Ross")
+        # No auto-dereference: p.parent is an ObjectId
+        assert p.parent == p1.pk
 
-    def test_undefined_reference(self):
+    async def test_undefined_reference(self):
         """Ensure that ReferenceFields may reference undefined Documents."""
 
         class Product(Document):
@@ -142,28 +144,29 @@ class TestReferenceField(MongoDBTestCase):
         class Company(Document):
             name = StringField()
 
-        Product.drop_collection()
-        Company.drop_collection()
+        await Product.drop_collection()
+        await Company.drop_collection()
 
         ten_gen = Company(name="10gen")
-        ten_gen.save()
+        await ten_gen.save()
         mongodb = Product(name="MongoDB", company=ten_gen)
-        mongodb.save()
+        await mongodb.save()
 
         me = Product(name="MongoEngine")
-        me.save()
+        await me.save()
 
-        obj = Product.objects(company=ten_gen).first()
+        obj = await Product.objects(company=ten_gen).first()
         assert obj == mongodb
-        assert obj.company == ten_gen
+        # No auto-dereference: obj.company is an ObjectId
+        assert obj.company == ten_gen.pk
 
-        obj = Product.objects(company=None).first()
+        obj = await Product.objects(company=None).first()
         assert obj == me
 
-        obj = Product.objects.get(company=None)
+        obj = await Product.objects.get(company=None)
         assert obj == me
 
-    def test_reference_query_conversion(self):
+    async def test_reference_query_conversion(self):
         """Ensure that ReferenceFields can be queried using objects and values
         of the type of the primary key of the referenced object.
         """
@@ -175,27 +178,27 @@ class TestReferenceField(MongoDBTestCase):
             title = StringField()
             author = ReferenceField(Member, dbref=False)
 
-        Member.drop_collection()
-        BlogPost.drop_collection()
+        await Member.drop_collection()
+        await BlogPost.drop_collection()
 
         m1 = Member(user_num=1)
-        m1.save()
+        await m1.save()
         m2 = Member(user_num=2)
-        m2.save()
+        await m2.save()
 
         post1 = BlogPost(title="post 1", author=m1)
-        post1.save()
+        await post1.save()
 
         post2 = BlogPost(title="post 2", author=m2)
-        post2.save()
+        await post2.save()
 
-        post = BlogPost.objects(author=m1).first()
+        post = await BlogPost.objects(author=m1).first()
         assert post.id == post1.id
 
-        post = BlogPost.objects(author=m2).first()
+        post = await BlogPost.objects(author=m2).first()
         assert post.id == post2.id
 
-    def test_reference_query_conversion_dbref(self):
+    async def test_reference_query_conversion_dbref(self):
         """Ensure that ReferenceFields can be queried using objects and values
         of the type of the primary key of the referenced object.
         """
@@ -207,22 +210,22 @@ class TestReferenceField(MongoDBTestCase):
             title = StringField()
             author = ReferenceField(Member, dbref=True)
 
-        Member.drop_collection()
-        BlogPost.drop_collection()
+        await Member.drop_collection()
+        await BlogPost.drop_collection()
 
         m1 = Member(user_num=1)
-        m1.save()
+        await m1.save()
         m2 = Member(user_num=2)
-        m2.save()
+        await m2.save()
 
         post1 = BlogPost(title="post 1", author=m1)
-        post1.save()
+        await post1.save()
 
         post2 = BlogPost(title="post 2", author=m2)
-        post2.save()
+        await post2.save()
 
-        post = BlogPost.objects(author=m1).first()
+        post = await BlogPost.objects(author=m1).first()
         assert post.id == post1.id
 
-        post = BlogPost.objects(author=m2).first()
+        post = await BlogPost.objects(author=m2).first()
         assert post.id == post2.id

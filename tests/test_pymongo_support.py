@@ -4,13 +4,13 @@ from tests.utils import MongoDBTestCase
 
 
 class TestPymongoSupport(MongoDBTestCase):
-    def test_count_documents(self):
+    async def test_count_documents(self):
         class Test(Document):
             pass
 
-        Test.drop_collection()
-        Test().save()
-        Test().save()
-        assert count_documents(Test._get_collection(), filter={}) == 2
-        assert count_documents(Test._get_collection(), filter={}, skip=1) == 1
-        assert count_documents(Test._get_collection(), filter={}, limit=0) == 0
+        await Test.drop_collection()
+        await Test().save()
+        await Test().save()
+        assert count_documents(await Test._get_collection(), filter={}) == 2
+        assert count_documents(await Test._get_collection(), filter={}, skip=1) == 1
+        assert count_documents(await Test._get_collection(), filter={}, limit=0) == 0

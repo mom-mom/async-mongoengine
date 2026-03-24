@@ -10,7 +10,7 @@ from tests.utils import MongoDBTestCase
 
 
 class ComplexDateTimeFieldTest(MongoDBTestCase):
-    def test_complexdatetime_storage(self):
+    async def test_complexdatetime_storage(self):
         """Tests for complex datetime fields - which can handle
         microseconds without rounding.
         """
@@ -19,31 +19,31 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
             date = ComplexDateTimeField()
             date_with_dots = ComplexDateTimeField(separator=".")
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
         # Post UTC - microseconds are rounded (down) nearest millisecond and
         # dropped - with default datetimefields
         d1 = datetime.datetime(1970, 1, 1, 0, 0, 1, 999)
         log = LogEntry()
         log.date = d1
-        log.save()
-        log.reload()
+        await log.save()
+        await log.reload()
         assert log.date == d1
 
         # Post UTC - microseconds are rounded (down) nearest millisecond - with
         # default datetimefields
         d1 = datetime.datetime(1970, 1, 1, 0, 0, 1, 9999)
         log.date = d1
-        log.save()
-        log.reload()
+        await log.save()
+        await log.reload()
         assert log.date == d1
 
         # Pre UTC dates microseconds below 1000 are dropped - with default
         # datetimefields
         d1 = datetime.datetime(1969, 12, 31, 23, 59, 59, 999)
         log.date = d1
-        log.save()
-        log.reload()
+        await log.save()
+        await log.reload()
         assert log.date == d1
 
         # Pre UTC microseconds above 1000 is wonky - with default datetimefields
@@ -52,10 +52,10 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
         for i in range(1001, 3113, 33):
             d1 = datetime.datetime(1969, 12, 31, 23, 59, 59, i)
             log.date = d1
-            log.save()
-            log.reload()
+            await log.save()
+            await log.reload()
             assert log.date == d1
-            log1 = LogEntry.objects.get(date=d1)
+            log1 = await LogEntry.objects.get(date=d1)
             assert log == log1
 
         # Test string padding
@@ -77,7 +77,7 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
             re.match(r"^\d{4}.\d{2}.\d{2}.\d{2}.\d{2}.\d{2}.\d{6}$", stored) is not None
         )
 
-    def test_complexdatetime_usage(self):
+    async def test_complexdatetime_usage(self):
         """Tests for complex datetime fields - which can handle
         microseconds without rounding.
         """
@@ -85,22 +85,22 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
         class LogEntry(Document):
             date = ComplexDateTimeField()
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
         d1 = datetime.datetime(1950, 1, 1, 0, 0, 1, 999)
         log = LogEntry()
         log.date = d1
-        log.save()
+        await log.save()
 
-        log1 = LogEntry.objects.get(date=d1)
+        log1 = await LogEntry.objects.get(date=d1)
         assert log == log1
 
         # create extra 59 log entries for a total of 60
         for i in range(1951, 2010):
             d = datetime.datetime(i, 1, 1, 0, 0, 1, 999)
-            LogEntry(date=d).save()
+            await LogEntry(date=d).save()
 
-        assert LogEntry.objects.count() == 60
+        assert await LogEntry.objects.count() == 60
 
         # Test ordering
         logs = LogEntry.objects.order_by("date")
@@ -117,29 +117,29 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
 
         # Test searching
         logs = LogEntry.objects.filter(date__gte=datetime.datetime(1980, 1, 1))
-        assert logs.count() == 30
+        assert await logs.count() == 30
 
         logs = LogEntry.objects.filter(date__lte=datetime.datetime(1980, 1, 1))
-        assert logs.count() == 30
+        assert await logs.count() == 30
 
         logs = LogEntry.objects.filter(
             date__lte=datetime.datetime(2011, 1, 1),
             date__gte=datetime.datetime(2000, 1, 1),
         )
-        assert logs.count() == 10
+        assert await logs.count() == 10
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
         # Test microsecond-level ordering/filtering
         for microsecond in (99, 999, 9999, 10000):
-            LogEntry(date=datetime.datetime(2015, 1, 1, 0, 0, 0, microsecond)).save()
+            await LogEntry(date=datetime.datetime(2015, 1, 1, 0, 0, 0, microsecond)).save()
 
-        logs = list(LogEntry.objects.order_by("date"))
+        logs = [d async for d in LogEntry.objects.order_by("date")]
         for next_idx, log in enumerate(logs[:-1], start=1):
             next_log = logs[next_idx]
             assert log.date < next_log.date
 
-        logs = list(LogEntry.objects.order_by("-date"))
+        logs = [d async for d in LogEntry.objects.order_by("-date")]
         for next_idx, log in enumerate(logs[:-1], start=1):
             next_log = logs[next_idx]
             assert log.date > next_log.date
@@ -147,68 +147,68 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
         logs = LogEntry.objects.filter(
             date__lte=datetime.datetime(2015, 1, 1, 0, 0, 0, 10000)
         )
-        assert logs.count() == 4
+        assert await logs.count() == 4
 
-    def test_no_default_value(self):
+    async def test_no_default_value(self):
         class Log(Document):
             timestamp = ComplexDateTimeField()
 
-        Log.drop_collection()
+        await Log.drop_collection()
 
         log = Log()
         assert log.timestamp is None
-        log.save()
+        await log.save()
 
-        fetched_log = Log.objects.with_id(log.id)
+        fetched_log = await Log.objects.with_id(log.id)
         assert fetched_log.timestamp is None
 
-    def test_default_static_value(self):
+    async def test_default_static_value(self):
         NOW = datetime.datetime.utcnow()
 
         class Log(Document):
             timestamp = ComplexDateTimeField(default=NOW)
 
-        Log.drop_collection()
+        await Log.drop_collection()
 
         log = Log()
         assert log.timestamp == NOW
-        log.save()
+        await log.save()
 
-        fetched_log = Log.objects.with_id(log.id)
+        fetched_log = await Log.objects.with_id(log.id)
         assert fetched_log.timestamp == NOW
 
-    def test_default_callable(self):
+    async def test_default_callable(self):
         NOW = datetime.datetime.utcnow()
 
         class Log(Document):
             timestamp = ComplexDateTimeField(default=datetime.datetime.utcnow)
 
-        Log.drop_collection()
+        await Log.drop_collection()
 
         log = Log()
         assert log.timestamp >= NOW
-        log.save()
+        await log.save()
 
-        fetched_log = Log.objects.with_id(log.id)
+        fetched_log = await Log.objects.with_id(log.id)
         assert fetched_log.timestamp >= NOW
 
-    def test_setting_bad_value_does_not_raise_unless_validate_is_called(self):
+    async def test_setting_bad_value_does_not_raise_unless_validate_is_called(self):
         # test regression of #2253
 
         class Log(Document):
             timestamp = ComplexDateTimeField()
 
-        Log.drop_collection()
+        await Log.drop_collection()
 
         log = Log(timestamp="garbage")
         with pytest.raises(ValidationError):
             log.validate()
 
         with pytest.raises(ValidationError):
-            log.save()
+            await log.save()
 
-    def test_query_none_value_dont_raise(self):
+    async def test_query_none_value_dont_raise(self):
         class Log(Document):
             timestamp = ComplexDateTimeField()
 
-        _ = list(Log.objects(timestamp=None))
+        _ = [d async for d in Log.objects(timestamp=None)]

@@ -32,19 +32,19 @@ class TestIntField(MongoDBTestCase):
         with pytest.raises(ValidationError):
             person.validate()
 
-    def test_ne_operator(self):
+    async def test_ne_operator(self):
         class TestDocument(Document):
             int_fld = IntField()
 
-        TestDocument.drop_collection()
+        await TestDocument.drop_collection()
 
-        TestDocument(int_fld=None).save()
-        TestDocument(int_fld=1).save()
+        await TestDocument(int_fld=None).save()
+        await TestDocument(int_fld=1).save()
 
-        assert 1 == TestDocument.objects(int_fld__ne=None).count()
-        assert 1 == TestDocument.objects(int_fld__ne=1).count()
+        assert 1 == await TestDocument.objects(int_fld__ne=None).count()
+        assert 1 == await TestDocument.objects(int_fld__ne=1).count()
 
-    def test_int_field_long_field_migration(self):
+    async def test_int_field_long_field_migration(self):
         class DeprecatedLongField(IntField):
             """64-bit integer field. (Equivalent to IntField since the support to Python2 was dropped)"""
 
@@ -54,14 +54,14 @@ class TestIntField(MongoDBTestCase):
         class TestDocument(Document):
             long = DeprecatedLongField()
 
-        TestDocument.drop_collection()
-        TestDocument(long=10).save()
+        await TestDocument.drop_collection()
+        await TestDocument(long=10).save()
 
-        v = TestDocument.objects().first().long
+        v = (await TestDocument.objects().first()).long
 
         # simulate a migration to IntField
         class TestDocument(Document):
             long = IntField()
 
-        assert TestDocument.objects(long=10).count() == 1
-        assert TestDocument.objects().first().long == v
+        assert await TestDocument.objects(long=10).count() == 1
+        assert (await TestDocument.objects().first()).long == v

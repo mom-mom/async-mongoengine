@@ -13,7 +13,7 @@ except ImportError:
 
 
 class TestDateTimeField(MongoDBTestCase):
-    def test_datetime_from_empty_string(self):
+    async def test_datetime_from_empty_string(self):
         """
         Ensure an exception is raised when trying to
         cast an empty string to datetime.
@@ -24,9 +24,9 @@ class TestDateTimeField(MongoDBTestCase):
 
         md = MyDoc(dt="")
         with pytest.raises(ValidationError):
-            md.save()
+            await md.save()
 
-    def test_datetime_from_whitespace_string(self):
+    async def test_datetime_from_whitespace_string(self):
         """
         Ensure an exception is raised when trying to
         cast a whitespace-only string to datetime.
@@ -37,7 +37,7 @@ class TestDateTimeField(MongoDBTestCase):
 
         md = MyDoc(dt="   ")
         with pytest.raises(ValidationError):
-            md.save()
+            await md.save()
 
     def test_default_value_utcnow(self):
         """Ensure that default field values are used when creating
@@ -55,22 +55,22 @@ class TestDateTimeField(MongoDBTestCase):
         assert person_created_t0 == person.created  # make sure it does not change
         assert person._data["created"] == person.created
 
-    def test_set_using_callable(self):
+    async def test_set_using_callable(self):
         # Weird feature but it's there for a while so let's make sure we don't break it
         class Person(Document):
             created = DateTimeField()
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         person = Person()
         frozen_dt = dt.datetime(2020, 7, 25, 9, 56, 1)
         person.created = lambda: frozen_dt
-        person.save()
+        await person.save()
 
         assert callable(person.created)
-        assert get_as_pymongo(person) == {"_id": person.id, "created": frozen_dt}
+        assert await get_as_pymongo(person) == {"_id": person.id, "created": frozen_dt}
 
-    def test_handling_microseconds(self):
+    async def test_handling_microseconds(self):
         """Tests showing pymongo datetime fields handling of microseconds.
         Microseconds are rounded to the nearest millisecond and pre UTC
         handling is wonky.
@@ -81,13 +81,13 @@ class TestDateTimeField(MongoDBTestCase):
         class LogEntry(Document):
             date = DateTimeField()
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
         # Test can save dates
         log = LogEntry()
         log.date = dt.date.today()
-        log.save()
-        log.reload()
+        await log.save()
+        await log.reload()
         assert log.date.date() == dt.date.today()
 
         # Post UTC - microseconds are rounded (down) nearest millisecond and
@@ -96,8 +96,8 @@ class TestDateTimeField(MongoDBTestCase):
         d2 = dt.datetime(1970, 1, 1, 0, 0, 1)
         log = LogEntry()
         log.date = d1
-        log.save()
-        log.reload()
+        await log.save()
+        await log.reload()
         assert log.date != d1
         assert log.date == d2
 
@@ -105,39 +105,39 @@ class TestDateTimeField(MongoDBTestCase):
         d1 = dt.datetime(1970, 1, 1, 0, 0, 1, 9999)
         d2 = dt.datetime(1970, 1, 1, 0, 0, 1, 9000)
         log.date = d1
-        log.save()
-        log.reload()
+        await log.save()
+        await log.reload()
         assert log.date != d1
         assert log.date == d2
 
-    def test_regular_usage(self):
+    async def test_regular_usage(self):
         """Tests for regular datetime fields"""
 
         class LogEntry(Document):
             date = DateTimeField()
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
         d1 = dt.datetime(1970, 1, 1, 0, 0, 1)
         log = LogEntry()
         log.date = d1
         log.validate()
-        log.save()
+        await log.save()
 
         for query in (d1, d1.isoformat(" ")):
-            log1 = LogEntry.objects.get(date=query)
+            log1 = await LogEntry.objects.get(date=query)
             assert log == log1
 
         if dateutil:
-            log1 = LogEntry.objects.get(date=d1.isoformat("T"))
+            log1 = await LogEntry.objects.get(date=d1.isoformat("T"))
             assert log == log1
 
         # create additional 19 log entries for a total of 20
         for i in range(1971, 1990):
             d = dt.datetime(i, 1, 1, 0, 0, 1)
-            LogEntry(date=d).save()
+            await LogEntry(date=d).save()
 
-        assert LogEntry.objects.count() == 20
+        assert await LogEntry.objects.count() == 20
 
         # Test ordering
         logs = LogEntry.objects.order_by("date")
@@ -154,15 +154,15 @@ class TestDateTimeField(MongoDBTestCase):
 
         # Test searching
         logs = LogEntry.objects.filter(date__gte=dt.datetime(1980, 1, 1))
-        assert logs.count() == 10
+        assert await logs.count() == 10
 
         logs = LogEntry.objects.filter(date__lte=dt.datetime(1980, 1, 1))
-        assert logs.count() == 10
+        assert await logs.count() == 10
 
         logs = LogEntry.objects.filter(
             date__lte=dt.datetime(1980, 1, 1), date__gte=dt.datetime(1975, 1, 1)
         )
-        assert logs.count() == 5
+        assert await logs.count() == 5
 
     def test_datetime_validation(self):
         """Ensure that invalid values cannot be assigned to datetime
@@ -205,7 +205,7 @@ class TestDateTimeField(MongoDBTestCase):
         with pytest.raises(ValidationError):
             log.validate()
 
-    def test_parse_datetime_as_str(self):
+    async def test_parse_datetime_as_str(self):
         class DTDoc(Document):
             date = DateTimeField()
 
@@ -215,8 +215,8 @@ class TestDateTimeField(MongoDBTestCase):
         dtd = DTDoc()
         dtd.date = date_str
         assert isinstance(dtd.date, str)
-        dtd.save()
-        dtd.reload()
+        await dtd.save()
+        await dtd.reload()
 
         assert isinstance(dtd.date, dt.datetime)
         assert str(dtd.date) == date_str
@@ -227,7 +227,7 @@ class TestDateTimeField(MongoDBTestCase):
 
 
 class TestDateTimeTzAware(MongoDBTestCase):
-    def test_datetime_tz_aware_mark_as_changed(self):
+    async def test_datetime_tz_aware_mark_as_changed(self):
         # Reset the connections
         connection._connection_settings = {}
         connection._connections = {}
@@ -238,10 +238,10 @@ class TestDateTimeTzAware(MongoDBTestCase):
         class LogEntry(Document):
             time = DateTimeField()
 
-        LogEntry.drop_collection()
+        await LogEntry.drop_collection()
 
-        LogEntry(time=dt.datetime(2013, 1, 1, 0, 0, 0)).save()
+        await LogEntry(time=dt.datetime(2013, 1, 1, 0, 0, 0)).save()
 
-        log = LogEntry.objects.first()
+        log = await LogEntry.objects.first()
         log.time = dt.datetime(2013, 1, 1, 0, 0, 0)
         assert ["time"] == log._changed_fields
