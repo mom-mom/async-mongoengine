@@ -23,3 +23,5 @@ env/
 htmlcov/
 venv
 venv3
+.claude/
+.agents/

@@ -438,9 +438,9 @@ class StrictDict:
 class LazyReference(DBRef):
     __slots__ = ("_cached_doc", "passthrough", "document_type")
 
-    def fetch(self, force=False):
+    async def fetch(self, force=False):
         if not self._cached_doc or force:
-            self._cached_doc = self.document_type.objects.get(pk=self.pk)
+            self._cached_doc = await self.document_type.objects.get(pk=self.pk)
             if not self._cached_doc:
                 raise DoesNotExist("Trying to dereference unknown document %s" % (self))
         return self._cached_doc
@@ -458,17 +458,18 @@ class LazyReference(DBRef):
     def __getitem__(self, name):
         if not self.passthrough:
             raise KeyError()
-        document = self.fetch()
-        return document[name]
+        raise KeyError(
+            "LazyReference does not support synchronous passthrough. "
+            "Use `doc = await lazy_ref.fetch()` first, then access `doc[%r]`." % name
+        )
 
     def __getattr__(self, name):
         if not object.__getattribute__(self, "passthrough"):
             raise AttributeError()
-        document = self.fetch()
-        try:
-            return document[name]
-        except KeyError:
-            raise AttributeError()
+        raise AttributeError(
+            "LazyReference does not support synchronous passthrough. "
+            "Use `doc = await lazy_ref.fetch()` first, then access `doc.%s`." % name
+        )
 
     def __repr__(self):
         return f"<LazyReference({self.document_type}, {self.pk!r})>"

@@ -11,6 +11,7 @@ from io import BytesIO
 from operator import itemgetter
 
 import gridfs
+from gridfs import AsyncGridFS
 import pymongo
 from bson import SON, Binary, DBRef, ObjectId
 from bson.decimal128 import Decimal128, create_decimal128_context
@@ -1103,17 +1104,14 @@ class MapField(DictField):
 
 
 class ReferenceField(BaseField):
-    """A reference to a document that will be automatically dereferenced on
-    access (lazily).
+    """A reference to a document that returns the raw stored value
+    (a :class:`~pymongo.dbref.DBRef` or :class:`~bson.objectid.ObjectId`)
+    without auto-dereferencing.
 
-    Note this means you will get a database I/O access everytime you access
-    this field. This is necessary because the field returns a :class:`~mongoengine.Document`
-    which precise type can depend of the value of the `_cls` field present in the
-    document in database.
-    In short, using this type of field can lead to poor performances (especially
-    if you access this field only to retrieve it `pk` field which is already
-    known before dereference). To solve this you should consider using the
-    :class:`~mongoengine.fields.LazyReferenceField`.
+    In async mode, descriptor ``__get__`` cannot perform database I/O, so
+    auto-dereference is not supported. Use explicit queries or
+    :class:`~mongoengine.fields.LazyReferenceField` (with its async
+    ``fetch()`` method) to load the referenced document.
 
     Use the `reverse_delete_rule` to handle what should happen if the document
     the field is referencing is deleted.  EmbeddedDocuments, DictFields and
@@ -1182,32 +1180,13 @@ class ReferenceField(BaseField):
                 self.document_type_obj = _DocumentRegistry.get(self.document_type_obj)
         return self.document_type_obj
 
-    @staticmethod
-    def _lazy_load_ref(ref_cls, dbref):
-        dereferenced_son = ref_cls._get_db().dereference(dbref, session=_get_session())
-        if dereferenced_son is None:
-            raise DoesNotExist(f"Trying to dereference unknown document {dbref}")
-
-        return ref_cls._from_son(dereferenced_son)
-
     def __get__(self, instance, owner):
-        """Descriptor to allow lazy dereferencing."""
+        """Descriptor that returns the raw stored value (DBRef or ObjectId)
+        without auto-dereferencing.  In async mode, ``__get__`` cannot
+        perform database I/O."""
         if instance is None:
             # Document class being used rather than a document object
             return self
-
-        # Get value from document instance if available
-        ref_value = instance._data.get(self.name)
-        auto_dereference = instance._fields[self.name]._auto_dereference
-        # Dereference DBRefs
-        if auto_dereference and isinstance(ref_value, DBRef):
-            if hasattr(ref_value, "cls"):
-                # Dereference using the class type specified in the reference
-                cls = _DocumentRegistry.get(ref_value.cls)
-            else:
-                cls = self.document_type
-
-            instance._data[self.name] = self._lazy_load_ref(cls, ref_value)
 
         return super().__get__(instance, owner)
 
@@ -1302,33 +1281,16 @@ class CachedReferenceField(BaseField):
         super().__init__(**kwargs)
 
     def start_listener(self):
-        from mongoengine import signals
-
-        signals.post_save.connect(self.on_document_pre_save, sender=self.document_type)
-
-    def on_document_pre_save(self, sender, document, created, **kwargs):
-        if created:
-            return None
-
-        update_kwargs = {
-            f"set__{self.name}__{key}": val
-            for key, val in document._delta()[0].items()
-            if key in self.fields
-        }
-        if update_kwargs:
-            filter_kwargs = {}
-            filter_kwargs[self.name] = document
-
-            self.owner_document.objects(**filter_kwargs).update(**update_kwargs)
+        # Auto-sync via signal is not supported in async mode.
+        # Use explicit updates instead.
+        pass
 
     def to_python(self, value):
-        if isinstance(value, dict):
-            collection = self.document_type._get_collection_name()
-            value = DBRef(collection, self.document_type.id.to_python(value["_id"]))
-            return self.document_type._from_son(
-                self.document_type._get_db().dereference(value, session=_get_session())
-            )
+        """Convert a MongoDB-compatible type to a Python type.
 
+        In async mode, this does NOT dereference the value from the
+        database.  It returns the raw dict or value as-is.
+        """
         return value
 
     @property
@@ -1340,26 +1302,11 @@ class CachedReferenceField(BaseField):
                 self.document_type_obj = _DocumentRegistry.get(self.document_type_obj)
         return self.document_type_obj
 
-    @staticmethod
-    def _lazy_load_ref(ref_cls, dbref):
-        dereferenced_son = ref_cls._get_db().dereference(dbref, session=_get_session())
-        if dereferenced_son is None:
-            raise DoesNotExist(f"Trying to dereference unknown document {dbref}")
-
-        return ref_cls._from_son(dereferenced_son)
-
     def __get__(self, instance, owner):
+        """Return the raw stored value without auto-dereferencing."""
         if instance is None:
             # Document class being used rather than a document object
             return self
-
-        # Get value from document instance if available
-        value = instance._data.get(self.name)
-        auto_dereference = instance._fields[self.name]._auto_dereference
-
-        # Dereference DBRefs
-        if auto_dereference and isinstance(value, DBRef):
-            instance._data[self.name] = self._lazy_load_ref(self.document_type, value)
 
         return super().__get__(instance, owner)
 
@@ -1412,32 +1359,15 @@ class CachedReferenceField(BaseField):
     def lookup_member(self, member_name):
         return self.document_type._fields.get(member_name)
 
-    def sync_all(self):
-        """
-        Sync all cached fields on demand.
-        Caution: this operation may be slower.
-        """
-        update_key = "set__%s" % self.name
-
-        for doc in self.document_type.objects:
-            filter_kwargs = {}
-            filter_kwargs[self.name] = doc
-
-            update_kwargs = {}
-            update_kwargs[update_key] = doc
-
-            self.owner_document.objects(**filter_kwargs).update(**update_kwargs)
-
 
 class GenericReferenceField(BaseField):
     """A reference to *any* :class:`~mongoengine.document.Document` subclass
-    that will be automatically dereferenced on access (lazily).
+    that returns the raw stored value without auto-dereferencing.
 
-    Note this field works the same way as :class:`~mongoengine.document.ReferenceField`,
-    doing database I/O access the first time it is accessed (even if it's to access
-    it ``pk`` or ``id`` field).
-    To solve this you should consider using the
-    :class:`~mongoengine.fields.GenericLazyReferenceField`.
+    In async mode, descriptor ``__get__`` cannot perform database I/O, so
+    auto-dereference is not supported. Use explicit queries or
+    :class:`~mongoengine.fields.GenericLazyReferenceField` (with its async
+    ``fetch()`` method) to load the referenced document.
 
     .. note ::
         * Any documents used as a generic reference must be registered in the
@@ -1475,24 +1405,10 @@ class GenericReferenceField(BaseField):
             value = value._class_name
         super()._validate_choices(value)
 
-    @staticmethod
-    def _lazy_load_ref(ref_cls, dbref):
-        dereferenced_son = ref_cls._get_db().dereference(dbref, session=_get_session())
-        if dereferenced_son is None:
-            raise DoesNotExist(f"Trying to dereference unknown document {dbref}")
-
-        return ref_cls._from_son(dereferenced_son)
-
     def __get__(self, instance, owner):
+        """Return the raw stored value without auto-dereferencing."""
         if instance is None:
             return self
-
-        value = instance._data.get(self.name)
-
-        auto_dereference = instance._fields[self.name]._auto_dereference
-        if auto_dereference and isinstance(value, dict):
-            doc_cls = _DocumentRegistry.get(value["_cls"])
-            instance._data[self.name] = self._lazy_load_ref(doc_cls, value["_ref"])
 
         return super().__get__(instance, owner)
 
@@ -1688,9 +1604,11 @@ class GridFSProxy:
         )
         if name in attrs:
             return self.__getattribute__(name)
-        obj = self.get()
-        if hasattr(obj, name):
-            return getattr(obj, name)
+        # In async mode, we cannot call self.get() (which is async) from
+        # __getattr__.  If a gridout was already fetched, delegate to it;
+        # otherwise raise AttributeError.
+        if self.gridout is not None and hasattr(self.gridout, name):
+            return getattr(self.gridout, name)
         raise AttributeError
 
     def __get__(self, instance, value):
@@ -1716,8 +1634,7 @@ class GridFSProxy:
         return f"<{self.__class__.__name__}: {self.grid_id}>"
 
     def __str__(self):
-        gridout = self.get()
-        filename = gridout.filename if gridout else "<no file>"
+        filename = self.gridout.filename if self.gridout else "<no file>"
         return f"<{self.__class__.__name__}: {filename} ({self.grid_id})>"
 
     def __eq__(self, other):
@@ -1736,10 +1653,10 @@ class GridFSProxy:
     @property
     def fs(self):
         if not self._fs:
-            self._fs = gridfs.GridFS(get_db(self.db_alias), self.collection_name)
+            self._fs = AsyncGridFS(get_db(self.db_alias), self.collection_name)
         return self._fs
 
-    def get(self, grid_id=None):
+    async def get(self, grid_id=None):
         if grid_id:
             self.grid_id = grid_id
 
@@ -1748,27 +1665,27 @@ class GridFSProxy:
 
         try:
             if self.gridout is None:
-                self.gridout = self.fs.get(self.grid_id, session=_get_session())
+                self.gridout = await self.fs.get(self.grid_id, session=_get_session())
             return self.gridout
         except Exception:
             # File has been deleted
             return None
 
-    def new_file(self, **kwargs):
-        self.newfile = self.fs.new_file(**kwargs)
+    async def new_file(self, **kwargs):
+        self.newfile = await self.fs.new_file(**kwargs)
         self.grid_id = self.newfile._id
         self._mark_as_changed()
 
-    def put(self, file_obj, **kwargs):
+    async def put(self, file_obj, **kwargs):
         if self.grid_id:
             raise GridFSError(
                 "This document already has a file. Either delete "
                 "it or call replace to overwrite it"
             )
-        self.grid_id = self.fs.put(file_obj, **kwargs)
+        self.grid_id = await self.fs.put(file_obj, **kwargs)
         self._mark_as_changed()
 
-    def write(self, string):
+    async def write(self, string):
         if self.grid_id:
             if not self.newfile:
                 raise GridFSError(
@@ -1776,39 +1693,39 @@ class GridFSProxy:
                     "delete it or call replace to overwrite it"
                 )
         else:
-            self.new_file()
-        self.newfile.write(string)
+            await self.new_file()
+        await self.newfile.write(string)
 
-    def writelines(self, lines):
+    async def writelines(self, lines):
         if not self.newfile:
-            self.new_file()
+            await self.new_file()
             self.grid_id = self.newfile._id
-        self.newfile.writelines(lines)
+        await self.newfile.writelines(lines)
 
-    def read(self, size=-1):
-        gridout = self.get()
+    async def read(self, size=-1):
+        gridout = await self.get()
         if gridout is None:
             return None
         else:
             try:
-                return gridout.read(size)
+                return await gridout.read(size)
             except Exception:
                 return ""
 
-    def delete(self):
+    async def delete(self):
         # Delete file from GridFS, FileField still remains
-        self.fs.delete(self.grid_id, session=_get_session())
+        await self.fs.delete(self.grid_id, session=_get_session())
         self.grid_id = None
         self.gridout = None
         self._mark_as_changed()
 
-    def replace(self, file_obj, **kwargs):
-        self.delete()
-        self.put(file_obj, **kwargs)
+    async def replace(self, file_obj, **kwargs):
+        await self.delete()
+        await self.put(file_obj, **kwargs)
 
-    def close(self):
+    async def close(self):
         if self.newfile:
-            self.newfile.close()
+            await self.newfile.close()
 
     def _mark_as_changed(self):
         """Inform the instance that `self.key` has been changed"""
@@ -1848,18 +1765,11 @@ class FileField(BaseField):
         if (
             hasattr(value, "read") and not isinstance(value, GridFSProxy)
         ) or isinstance(value, (bytes, str)):
-            # using "FileField() = file/string" notation
-            grid_file = instance._data.get(self.name)
-            # If a file already exists, delete it
-            if grid_file:
-                try:
-                    grid_file.delete()
-                except Exception:
-                    pass
-
-            # Create a new proxy object as we don't already have one
-            instance._data[key] = self.get_proxy_obj(key=key, instance=instance)
-            instance._data[key].put(value)
+            # In async mode, cannot do DB I/O in __set__.
+            # Store the raw value; use `await file_field.put(value)` explicitly.
+            if not isinstance(instance._data.get(self.name), self.proxy_class):
+                instance._data[key] = self.get_proxy_obj(key=key, instance=instance)
+            instance._data[key]._pending_value = value
         else:
             instance._data[key] = value
 
@@ -1901,7 +1811,7 @@ class FileField(BaseField):
 class ImageGridFsProxy(GridFSProxy):
     """Proxy for ImageField"""
 
-    def put(self, file_obj, **kwargs):
+    async def put(self, file_obj, **kwargs):
         """
         Insert a image in database
         applying field properties (size, thumbnail_size)
@@ -1951,7 +1861,7 @@ class ImageGridFsProxy(GridFSProxy):
                 thumbnail.thumbnail((size["width"], size["height"]), LANCZOS)
 
         if thumbnail:
-            thumb_id = self._put_thumbnail(thumbnail, img_format, progressive)
+            thumb_id = await self._put_thumbnail(thumbnail, img_format, progressive)
         else:
             thumb_id = None
 
@@ -1961,55 +1871,52 @@ class ImageGridFsProxy(GridFSProxy):
         img.save(io, img_format, progressive=progressive)
         io.seek(0)
 
-        return super().put(
+        return await super().put(
             io, width=w, height=h, format=img_format, thumbnail_id=thumb_id, **kwargs
         )
 
-    def delete(self, *args, **kwargs):
+    async def delete(self, *args, **kwargs):
         # deletes thumbnail
-        out = self.get()
+        out = await self.get()
         if out and out.thumbnail_id:
-            self.fs.delete(out.thumbnail_id, session=_get_session())
+            await self.fs.delete(out.thumbnail_id, session=_get_session())
 
-        return super().delete()
+        return await super().delete()
 
-    def _put_thumbnail(self, thumbnail, format, progressive, **kwargs):
+    async def _put_thumbnail(self, thumbnail, format, progressive, **kwargs):
         w, h = thumbnail.size
 
         io = BytesIO()
         thumbnail.save(io, format, progressive=progressive)
         io.seek(0)
 
-        return self.fs.put(io, width=w, height=h, format=format, **kwargs)
+        return await self.fs.put(io, width=w, height=h, format=format, **kwargs)
 
-    @property
-    def size(self):
+    async def get_size(self):
         """
         return a width, height of image
         """
-        out = self.get()
+        out = await self.get()
         if out:
             return out.width, out.height
 
-    @property
-    def format(self):
+    async def get_format(self):
         """
         return format of image
         ex: PNG, JPEG, GIF, etc
         """
-        out = self.get()
+        out = await self.get()
         if out:
             return out.format
 
-    @property
-    def thumbnail(self):
+    async def get_thumbnail(self):
         """
         return a gridfs.grid_file.GridOut
         representing a thumbnail of Image
         """
-        out = self.get()
+        out = await self.get()
         if out and out.thumbnail_id:
-            return self.fs.get(out.thumbnail_id, session=_get_session())
+            return await self.fs.get(out.thumbnail_id, session=_get_session())
 
     def write(self, *args, **kwargs):
         raise RuntimeError('Please use "put" method instead')

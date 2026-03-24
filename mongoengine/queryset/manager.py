@@ -34,8 +34,9 @@ class QuerySetManager:
             return self
 
         # owner is the document that contains the QuerySetManager
+        # Use cached _collection (may be None; QuerySet will resolve lazily)
         queryset_class = owner._meta.get("queryset_class", self.default)
-        queryset = queryset_class(owner, owner._get_collection())
+        queryset = queryset_class(owner, owner._collection)
         if self.get_queryset:
             arg_count = self.get_queryset.__code__.co_argcount
             if arg_count == 1:

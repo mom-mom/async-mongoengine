@@ -2,7 +2,7 @@ import os
 
 from setuptools import find_packages, setup
 
-DESCRIPTION = "MongoEngine is a Python Object-Document Mapper for working with MongoDB."
+DESCRIPTION = "Async MongoEngine is a Python Object-Document Mapper for working with MongoDB with async support."
 
 try:
     with open("README.rst") as fin:
@@ -44,7 +44,7 @@ CLASSIFIERS = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-install_require = ["pymongo>=3.12,<5.0"]
+install_require = ["pymongo>=4.0"]
 tests_require = [
     "pytest",
     "pytest-cov",
@@ -54,7 +54,7 @@ tests_require = [
 ]
 
 setup(
-    name="mongoengine",
+    name="async-mongoengine",
     version=VERSION,
     author="Harry Marr",
     author_email="harry.marr@gmail.com",
@@ -68,7 +68,7 @@ setup(
     long_description=LONG_DESCRIPTION,
     platforms=["any"],
     classifiers=CLASSIFIERS,
-    python_requires=">=3.7",
+    python_requires=">=3.9",
     install_requires=install_require,
     extras_require={
         "test": tests_require,

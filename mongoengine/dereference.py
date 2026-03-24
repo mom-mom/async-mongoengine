@@ -20,7 +20,7 @@ from mongoengine.queryset import QuerySet
 
 
 class DeReference:
-    def __call__(self, items, max_depth=1, instance=None, name=None):
+    async def __call__(self, items, max_depth=1, instance=None, name=None):
         """
         Cheaply dereferences the items to a set depth.
         Also handles the conversion of complex data types.
@@ -39,7 +39,7 @@ class DeReference:
         # cheapest way to convert a queryset to a list
         # list(queryset) uses a count() query to determine length
         if isinstance(items, QuerySet):
-            items = [i for i in items]
+            items = [i async for i in items]
 
         self.max_depth = max_depth
         doc_type = None
@@ -99,7 +99,7 @@ class DeReference:
                         items = _get_items_from_dict(items)
 
         self.reference_map = self._find_references(items)
-        self.object_map = self._fetch_objects(doc_type=doc_type)
+        self.object_map = await self._fetch_objects(doc_type=doc_type)
         return self._attach_objects(items, 0, instance, name)
 
     def _find_references(self, items, depth=0):
@@ -161,7 +161,7 @@ class DeReference:
 
         return reference_map
 
-    def _fetch_objects(self, doc_type=None):
+    async def _fetch_objects(self, doc_type=None):
         """Fetch all references and convert to their document objects"""
         object_map = {}
         for collection, dbrefs in self.reference_map.items():
@@ -174,7 +174,7 @@ class DeReference:
                 refs = [
                     dbref for dbref in dbrefs if (col_name, dbref) not in object_map
                 ]
-                references = collection.objects.in_bulk(refs)
+                references = await collection.objects.in_bulk(refs)
                 for key, doc in references.items():
                     object_map[(col_name, key)] = doc
             else:  # Generic reference: use the refs data to convert to document
@@ -189,14 +189,14 @@ class DeReference:
                     references = doc_type._get_db()[collection].find(
                         {"_id": {"$in": refs}}, session=_get_session()
                     )
-                    for ref in references:
+                    async for ref in references:
                         doc = doc_type._from_son(ref)
                         object_map[(collection, doc.id)] = doc
                 else:
                     references = get_db()[collection].find(
                         {"_id": {"$in": refs}}, session=_get_session()
                     )
-                    for ref in references:
+                    async for ref in references:
                         if "_cls" in ref:
                             doc = _DocumentRegistry.get(ref["_cls"])._from_son(ref)
                         elif doc_type is None:

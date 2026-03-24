@@ -1,7 +1,6 @@
 import contextlib
 import logging
-import threading
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 from pymongo.errors import ConnectionFailure, OperationFailure
 from pymongo.read_concern import ReadConcern
@@ -32,28 +31,22 @@ __all__ = (
 )
 
 
-class MyThreadLocals(threading.local):
-    def __init__(self):
-        # {DocCls: count} keeping track of classes with an active no_dereference context
-        self.no_dereferencing_class = {}
-
-
-thread_locals = MyThreadLocals()
+_no_dereferencing_class = {}
 
 
 def no_dereferencing_active_for_class(cls):
-    return cls in thread_locals.no_dereferencing_class
+    return cls in _no_dereferencing_class
 
 
 def _register_no_dereferencing_for_class(cls):
-    thread_locals.no_dereferencing_class.setdefault(cls, 0)
-    thread_locals.no_dereferencing_class[cls] += 1
+    _no_dereferencing_class.setdefault(cls, 0)
+    _no_dereferencing_class[cls] += 1
 
 
 def _unregister_no_dereferencing_for_class(cls):
-    thread_locals.no_dereferencing_class[cls] -= 1
-    if thread_locals.no_dereferencing_class[cls] == 0:
-        thread_locals.no_dereferencing_class.pop(cls)
+    _no_dereferencing_class[cls] -= 1
+    if _no_dereferencing_class[cls] == 0:
+        _no_dereferencing_class.pop(cls)
 
 
 class switch_db:
@@ -81,17 +74,17 @@ class switch_db:
         :param db_alias: the name of the specific database to use
         """
         self.cls = cls
-        self.collection = cls._get_collection()
+        self.collection = cls._collection
         self.db_alias = db_alias
         self.ori_db_alias = cls._meta.get("db_alias", DEFAULT_CONNECTION_NAME)
 
-    def __enter__(self):
+    async def __aenter__(self):
         """Change the db_alias and clear the cached collection."""
         self.cls._meta["db_alias"] = self.db_alias
         self.cls._collection = None
         return self.cls
 
-    def __exit__(self, t, value, traceback):
+    async def __aexit__(self, t, value, traceback):
         """Reset the db_alias and collection."""
         self.cls._meta["db_alias"] = self.ori_db_alias
         self.cls._collection = self.collection
@@ -118,11 +111,11 @@ class switch_collection:
         :param collection_name: the name of the collection to use
         """
         self.cls = cls
-        self.ori_collection = cls._get_collection()
+        self.ori_collection = cls._collection
         self.ori_get_collection_name = cls._get_collection_name
         self.collection_name = collection_name
 
-    def __enter__(self):
+    async def __aenter__(self):
         """Change the _get_collection_name and clear the cached collection."""
 
         @classmethod
@@ -133,7 +126,7 @@ class switch_collection:
         self.cls._collection = None
         return self.cls
 
-    def __exit__(self, t, value, traceback):
+    async def __aexit__(self, t, value, traceback):
         """Reset the collection."""
         self.cls._collection = self.ori_collection
         self.cls._get_collection_name = self.ori_get_collection_name
@@ -240,56 +233,40 @@ class query_counter:
             "command.killCursors": {"$exists": False},  # MONGODB >= 3.2
         }
 
-    def _turn_on_profiling(self):
-        profile_update_res = self.db.command({"profile": 0}, session=_get_session())
+    async def _turn_on_profiling(self):
+        profile_update_res = await self.db.command({"profile": 0}, session=_get_session())
         self.initial_profiling_level = profile_update_res["was"]
 
-        self.db.system.profile.drop()
-        self.db.command({"profile": 2}, session=_get_session())
+        await self.db.system.profile.drop()
+        await self.db.command({"profile": 2}, session=_get_session())
 
-    def _resets_profiling(self):
-        self.db.command({"profile": self.initial_profiling_level})
+    async def _resets_profiling(self):
+        await self.db.command({"profile": self.initial_profiling_level})
 
-    def __enter__(self):
-        self._turn_on_profiling()
+    async def __aenter__(self):
+        await self._turn_on_profiling()
         return self
 
-    def __exit__(self, t, value, traceback):
-        self._resets_profiling()
-
-    def __eq__(self, value):
-        counter = self._get_count()
-        return value == counter
-
-    def __ne__(self, value):
-        return not self.__eq__(value)
-
-    def __lt__(self, value):
-        return self._get_count() < value
-
-    def __le__(self, value):
-        return self._get_count() <= value
-
-    def __gt__(self, value):
-        return self._get_count() > value
-
-    def __ge__(self, value):
-        return self._get_count() >= value
-
-    def __int__(self):
-        return self._get_count()
+    async def __aexit__(self, t, value, traceback):
+        await self._resets_profiling()
 
     def __repr__(self):
-        """repr query_counter as the number of queries."""
-        return "%s" % self._get_count()
+        return "query_counter()"
 
-    def _get_count(self):
-        """Get the number of queries by counting the current number of entries in db.system.profile
-        and substracting the queries issued by this context. In fact everytime this is called, 1 query is
-        issued so we need to balance that
+    async def get_count(self):
+        """Get the number of queries issued since the context was entered.
+
+        Usage::
+
+            async with query_counter() as q:
+                await user.save()
+                assert await q.get_count() == 1
+
+        Each call to ``get_count()`` itself issues one query to
+        ``db.system.profile``, which is accounted for automatically.
         """
         count = (
-            count_documents(self.db.system.profile, self._ignored_query)
+            await count_documents(self.db.system.profile, self._ignored_query)
             - self._ctx_query_counter
         )
         self._ctx_query_counter += (
@@ -323,11 +300,11 @@ def set_read_write_concern(collection, write_concerns, read_concerns):
     )
 
 
-def _commit_with_retry(session):
+async def _commit_with_retry(session):
     while True:
         try:
             # Commit uses write concern set at transaction start.
-            session.commit_transaction()
+            await session.commit_transaction()
             break
         except (ConnectionFailure, OperationFailure) as exc:
             # Can retry commit
@@ -341,8 +318,8 @@ def _commit_with_retry(session):
                 raise
 
 
-@contextmanager
-def run_in_transaction(
+@asynccontextmanager
+async def run_in_transaction(
     alias=DEFAULT_CONNECTION_NAME, session_kwargs=None, transaction_kwargs=None
 ):
     """run_in_transaction context manager
@@ -355,9 +332,9 @@ def run_in_transaction(
         class A(Document):
             name = StringField()
 
-        with run_in_transaction():
-            a_doc = A.objects.create(name="a")
-            a_doc.update(name="b")
+        async with run_in_transaction():
+            a_doc = await A.objects.create(name="a")
+            await a_doc.update(name="b")
 
     Be aware that:
     - Mongo transactions run inside a session which is bound to a connection. If you attempt to
@@ -369,12 +346,12 @@ def run_in_transaction(
     """
     conn = get_connection(alias)
     session_kwargs = session_kwargs or {}
-    with conn.start_session(**session_kwargs) as session:
+    async with await conn.start_session(**session_kwargs) as session:
         transaction_kwargs = transaction_kwargs or {}
-        with session.start_transaction(**transaction_kwargs):
+        async with session.start_transaction(**transaction_kwargs):
             try:
                 _set_session(session)
                 yield
-                _commit_with_retry(session)
+                await _commit_with_retry(session)
             finally:
                 _clear_session()
