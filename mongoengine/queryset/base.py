@@ -362,29 +362,34 @@ class BaseQuerySet:
                 raise OperationError(msg)
 
         signal_kwargs = signal_kwargs or {}
+
+        # Pre-generate async fields (SequenceField, FileField) before to_mongo()
+        from mongoengine.document import _generate_async_fields
+
+        for doc in docs:
+            await _generate_async_fields(doc)
+
         signals.pre_bulk_insert.send(self._document, documents=docs, **signal_kwargs)
 
         raw = [doc.to_mongo() for doc in docs]
 
-        with set_write_concern(self._collection, write_concern) as collection:
-            insert_func = collection.insert_many
-            if return_one:
-                raw = raw[0]
-                insert_func = collection.insert_one
-
         try:
-            inserted_result = await insert_func(raw, session=_get_session())
-            ids = (
-                [inserted_result.inserted_id]
-                if return_one
-                else inserted_result.inserted_ids
-            )
+            with set_write_concern(self._collection, write_concern) as collection:
+                insert_func = collection.insert_many
+                if return_one:
+                    raw = raw[0]
+                    insert_func = collection.insert_one
+
+                inserted_result = await insert_func(raw, session=_get_session())
+                ids = (
+                    [inserted_result.inserted_id]
+                    if return_one
+                    else inserted_result.inserted_ids
+                )
         except pymongo.errors.DuplicateKeyError as err:
             message = "Could not save document (%s)"
             raise NotUniqueError(message % err)
         except pymongo.errors.BulkWriteError as err:
-            # inserting documents that already have an _id field will
-            # give huge performance debt or raise
             message = "Bulk write error: (%s)"
             raise BulkWriteError(message % err.details)
         except pymongo.errors.OperationFailure as err:
@@ -1581,8 +1586,10 @@ class BaseQuerySet:
                 docs.append(doc)
 
         if inline and queryset._ordering:
-            # For inline results with ordering, we need to sort in-memory
-            pass
+            # For inline results with ordering, sort in-memory
+            from operator import itemgetter
+            for sort_key, direction in reversed(queryset._ordering):
+                docs.sort(key=itemgetter(sort_key), reverse=(direction == -1))
 
         results = []
         for doc in docs:

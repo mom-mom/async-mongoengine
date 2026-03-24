@@ -10,7 +10,6 @@ from inspect import isclass
 from io import BytesIO
 from operator import itemgetter
 
-import gridfs
 from gridfs import AsyncGridFS
 import pymongo
 from bson import SON, Binary, DBRef, ObjectId
@@ -1673,7 +1672,7 @@ class GridFSProxy:
             return None
 
     async def new_file(self, **kwargs):
-        self.newfile = await self.fs.new_file(**kwargs)
+        self.newfile = self.fs.new_file(**kwargs)
         self.grid_id = self.newfile._id
         self._mark_as_changed()
 

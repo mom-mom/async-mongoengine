@@ -1,6 +1,6 @@
 import contextlib
+import contextvars
 import operator
-import threading
 import weakref
 
 import pymongo
@@ -39,7 +39,7 @@ class BaseField:
     name = None  # set in TopLevelDocumentMetaclass
     _geo_index = False
     _auto_gen = False  # Call `generate` to generate a value
-    _thread_local_storage = threading.local()
+    _no_deref_ctx = contextvars.ContextVar("_no_deref_ctx", default=0)
 
     # These track each time a Field instance is created. Used to retain order.
     # The auto_creation_counter is used for fields that MongoEngine implicitly
@@ -141,24 +141,14 @@ class BaseField:
         self.__auto_dereference = value
 
     @property
-    def _no_dereference_context_local(self):
-        if not hasattr(self._thread_local_storage, "no_dereference_context"):
-            self._thread_local_storage.no_dereference_context = 0
-        return self._thread_local_storage.no_dereference_context
-
-    @property
     def _no_dereference_context_is_set(self):
-        return self._no_dereference_context_local > 0
+        return self._no_deref_ctx.get() > 0
 
     def _incr_no_dereference_context(self):
-        self._thread_local_storage.no_dereference_context = (
-            self._no_dereference_context_local + 1
-        )
+        self._no_deref_ctx.set(self._no_deref_ctx.get() + 1)
 
     def _decr_no_dereference_context(self):
-        self._thread_local_storage.no_dereference_context = (
-            self._no_dereference_context_local - 1
-        )
+        self._no_deref_ctx.set(self._no_deref_ctx.get() - 1)
 
     @property
     def _auto_dereference(self):

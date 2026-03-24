@@ -32,21 +32,35 @@ __all__ = (
 )
 
 
+# {cls: refcount} dict stored in a ContextVar for async task isolation.
+# Supports nested no_dereference() calls for the same class.
 _no_dereferencing_class: contextvars.ContextVar = contextvars.ContextVar(
-    "_no_dereferencing_class", default=frozenset()
+    "_no_dereferencing_class", default=None
 )
 
 
+def _get_no_deref_map():
+    m = _no_dereferencing_class.get()
+    if m is None:
+        m = {}
+        _no_dereferencing_class.set(m)
+    return m
+
+
 def no_dereferencing_active_for_class(cls):
-    return cls in _no_dereferencing_class.get()
+    return _get_no_deref_map().get(cls, 0) > 0
 
 
 def _register_no_dereferencing_for_class(cls):
-    _no_dereferencing_class.set(_no_dereferencing_class.get() | {cls})
+    m = _get_no_deref_map()
+    m[cls] = m.get(cls, 0) + 1
 
 
 def _unregister_no_dereferencing_for_class(cls):
-    _no_dereferencing_class.set(_no_dereferencing_class.get() - {cls})
+    m = _get_no_deref_map()
+    m[cls] = m.get(cls, 0) - 1
+    if m[cls] <= 0:
+        m.pop(cls, None)
 
 
 class switch_db:
@@ -208,13 +222,13 @@ class query_counter:
         class User(Document):
             name = StringField()
 
-        with query_counter() as q:
+        async with query_counter() as q:
             user = User(name='Bob')
-            assert q == 0       # no query fired yet
-            user.save()
-            assert q == 1       # 1 query was fired, an 'insert'
-            user_bis = User.objects().first()
-            assert q == 2       # a 2nd query was fired, a 'find_one'
+            assert await q.get_count() == 0  # no query fired yet
+            await user.save()
+            assert await q.get_count() == 1  # 1 query was fired, an 'insert'
+            user_bis = await User.objects.first()
+            assert await q.get_count() == 2  # a 2nd query was fired
 
     Be aware that:
 
