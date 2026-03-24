@@ -1455,7 +1455,7 @@ class BaseQuerySet:
         if self._comment:
             kwargs.setdefault("comment", self._comment)
 
-        return collection.aggregate(
+        return await collection.aggregate(
             final_pipeline,
             cursor={},
             session=_get_session(),
@@ -1678,7 +1678,7 @@ class BaseQuerySet:
             pipeline.insert(1, {"$unwind": "$" + field})
 
         result = []
-        async for doc in self._collection.aggregate(pipeline, session=_get_session()):
+        async for doc in await self._collection.aggregate(pipeline, session=_get_session()):
             result.append(doc)
 
         if result:
@@ -1708,7 +1708,7 @@ class BaseQuerySet:
             pipeline.insert(1, {"$unwind": "$" + field})
 
         result = []
-        async for doc in self._collection.aggregate(pipeline, session=_get_session()):
+        async for doc in await self._collection.aggregate(pipeline, session=_get_session()):
             result.append(doc)
         if result:
             return result[0]["total"]
