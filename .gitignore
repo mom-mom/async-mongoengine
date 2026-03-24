@@ -25,3 +25,4 @@ venv
 venv3
 .claude/
 .agents/
+async_mongoengine.egg-info/
