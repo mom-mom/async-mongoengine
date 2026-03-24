@@ -333,34 +333,17 @@ class ComplexBaseField(BaseField):
         return super().__set__(instance, value)
 
     def __get__(self, instance, owner):
-        """Descriptor to automatically dereference references."""
+        """Descriptor for ComplexBaseField access.
+
+        Auto-dereference is removed in async-mongoengine because DB I/O
+        cannot happen inside a sync ``__get__`` descriptor.  Use explicit
+        ``select_related()`` or manual fetching instead.
+        """
         if instance is None:
             # Document class being used rather than a document object
             return self
 
-        ReferenceField = _import_class("ReferenceField")
-        GenericReferenceField = _import_class("GenericReferenceField")
         EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
-
-        auto_dereference = instance._fields[self.name]._auto_dereference
-
-        dereference = auto_dereference and (
-            self.field is None
-            or isinstance(self.field, (GenericReferenceField, ReferenceField))
-        )
-
-        if (
-            instance._initialised
-            and dereference
-            and instance._data.get(self.name)
-            and not getattr(instance._data[self.name], "_dereferenced", False)
-        ):
-            ref_values = instance._data.get(self.name)
-            instance._data[self.name] = self._lazy_load_refs(
-                ref_values=ref_values, instance=instance, name=self.name, max_depth=1
-            )
-            if hasattr(instance._data[self.name], "_dereferenced"):
-                instance._data[self.name]._dereferenced = True
 
         value = super().__get__(instance, owner)
 
@@ -375,18 +358,6 @@ class ComplexBaseField(BaseField):
             instance._data[self.name] = value
         elif isinstance(value, dict) and not isinstance(value, BaseDict):
             value = BaseDict(value, instance, self.name)
-            instance._data[self.name] = value
-
-        if (
-            auto_dereference
-            and instance._initialised
-            and isinstance(value, (BaseList, BaseDict))
-            and not value._dereferenced
-        ):
-            value = self._lazy_load_refs(
-                ref_values=value, instance=instance, name=self.name, max_depth=1
-            )
-            value._dereferenced = True
             instance._data[self.name] = value
 
         return value
