@@ -59,7 +59,7 @@ class ConnectionTest:
         _dbs.clear()
         _connection_settings.clear()
 
-    async def teardown_method(self, method=None):
+    def teardown_method(self, method=None):
         mongoengine.connection._connection_settings = {}
         mongoengine.connection._connections = {}
         mongoengine.connection._dbs = {}

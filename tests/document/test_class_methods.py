@@ -8,9 +8,7 @@ from mongoengine.queryset import NULLIFY, PULL
 
 
 class TestClassMethods(MongoDBTestCase):
-    async def setup_method(self, method=None):
-        connect(db="mongoenginetest")
-        self.db = get_db()
+    def setup_method(self, method=None):
 
         class Person(Document):
             name = StringField()
@@ -21,10 +19,6 @@ class TestClassMethods(MongoDBTestCase):
             meta = {"allow_inheritance": True}
 
         self.Person = Person
-
-    async def teardown_method(self, method=None):
-        for collection in await list_collection_names(self.db):
-            await self.db.drop_collection(collection)
 
     async def test_definition(self):
         """Ensure that document may be defined using fields."""
@@ -227,8 +221,8 @@ class TestClassMethods(MongoDBTestCase):
         await BlogPostWithTags.ensure_indexes()
         await BlogPostWithTagsAndExtraText.ensure_indexes()
 
-        assert await BlogPost.list_indexes() == BlogPostWithTags.list_indexes()
-        assert await BlogPost.list_indexes() == BlogPostWithTagsAndExtraText.list_indexes()
+        assert await BlogPost.list_indexes() == await BlogPostWithTags.list_indexes()
+        assert await BlogPost.list_indexes() == await BlogPostWithTagsAndExtraText.list_indexes()
         assert await BlogPost.list_indexes() == [
             [("_cls", 1), ("author", 1), ("tags", 1)],
             [("_cls", 1), ("author", 1), ("tags", 1), ("extra_text", 1)],

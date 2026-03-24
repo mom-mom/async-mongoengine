@@ -7,18 +7,13 @@ from mongoengine import (
     Document,
     FloatField,
     StringField,
-    connect,
-    get_db,
 )
 from mongoengine.connection import disconnect
 from tests.utils import MongoDBTestCase, requires_mongodb_gte_50
 
 
 class TestTimeSeriesCollections(MongoDBTestCase):
-    async def setup_method(self, method=None):
-        connect(db="mongoenginetest")
-        self.db = get_db()
-
+    def setup_method(self, method=None):
         class SensorData(Document):
             timestamp = DateTimeField(required=True)
             temperature = FloatField()
@@ -40,11 +35,8 @@ class TestTimeSeriesCollections(MongoDBTestCase):
         db = self.SensorData._get_db()
         assert self.db == db
 
-    async def teardown_method(self, method=None):
-        for collection_name in await self.db.list_collection_names():
-            if not collection_name.startswith("system."):
-                await self.db.drop_collection(collection_name)
-        await disconnect()
+    def teardown_method(self, method=None):
+        disconnect()
 
     async def test_definition(self):
         """Ensure that document may be defined using fields."""

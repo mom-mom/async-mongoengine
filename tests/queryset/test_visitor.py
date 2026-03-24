@@ -11,13 +11,12 @@ from tests.utils import MongoDBTestCase
 
 
 class TestQ(MongoDBTestCase):
-    async def setup_method(self):
+    def setup_method(self):
         class Person(Document):
             name = StringField()
             age = IntField()
             meta = {"allow_inheritance": True}
 
-        await Person.drop_collection()
         self.Person = Person
 
     def test_empty_q(self):

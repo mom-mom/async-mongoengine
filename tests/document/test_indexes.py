@@ -6,7 +6,6 @@ from pymongo.collation import Collation
 from pymongo.errors import OperationFailure
 
 from mongoengine import *
-from mongoengine.connection import get_db
 from mongoengine.mongodb_support import (
     MONGODB_42,
     MONGODB_80,
@@ -16,10 +15,7 @@ from mongoengine.pymongo_support import PYMONGO_VERSION
 
 
 class TestIndexes(MongoDBTestCase):
-    async def setup_method(self, method=None):
-        self.connection = connect(db="mongoenginetest")
-        self.db = get_db()
-
+    def setup_method(self, method=None):
         class Person(Document):
             name = StringField()
             age = IntField()
@@ -29,9 +25,6 @@ class TestIndexes(MongoDBTestCase):
             meta = {"allow_inheritance": True}
 
         self.Person = Person
-
-    async def teardown_method(self, method=None):
-        await self.connection.drop_database(self.db)
 
     async def test_indexes_document(self):
         """Ensure that indexes are used when meta[indexes] is specified for

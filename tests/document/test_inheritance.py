@@ -12,16 +12,11 @@ from mongoengine import (
     ReferenceField,
     StringField,
 )
-from mongoengine.pymongo_support import list_collection_names
 from tests.fixtures import Base
 from tests.utils import MongoDBTestCase
 
 
 class TestInheritance(MongoDBTestCase):
-    async def teardown_method(self, method=None):
-        for collection in await list_collection_names(self.db):
-            await self.db.drop_collection(collection)
-
     async def test_constructor_cls(self):
         # Ensures _cls is properly set during construction
         # and when object gets reloaded (prevent regression of #1950)

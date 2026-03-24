@@ -24,9 +24,7 @@ class TestSignal(MongoDBTestCase):
         await fn(*args, **kwargs)
         return signal_output
 
-    async def setup_method(self, method=None):
-        await super().setup_method(method)
-
+    def setup_method(self, method=None):
         class Author(Document):
             # Make the id deterministic for easier testing
             id = SequenceField(primary_key=True)
@@ -99,7 +97,6 @@ class TestSignal(MongoDBTestCase):
                 signal_output.append(kwargs)
 
         self.Author = Author
-        await Author.drop_collection()
         Author.id.set_next_value(0)
 
         class Another(Document):
@@ -119,7 +116,6 @@ class TestSignal(MongoDBTestCase):
                 signal_output.append(kwargs)
 
         self.Another = Another
-        await Another.drop_collection()
 
         class ExplicitId(Document):
             id = IntField(primary_key=True)
@@ -133,7 +129,6 @@ class TestSignal(MongoDBTestCase):
                         signal_output.append("Is updated")
 
         self.ExplicitId = ExplicitId
-        await ExplicitId.drop_collection()
 
         class Post(Document):
             title = StringField()
@@ -176,7 +171,6 @@ class TestSignal(MongoDBTestCase):
                 signal_output.append(kwargs)
 
         self.Post = Post
-        await Post.drop_collection()
 
         # Save up the number of connected signals so that we can check at the
         # end that all the signals we register get properly unregistered
@@ -212,7 +206,7 @@ class TestSignal(MongoDBTestCase):
         signals.pre_bulk_insert.connect(Post.pre_bulk_insert, sender=Post)
         signals.post_bulk_insert.connect(Post.post_bulk_insert, sender=Post)
 
-    async def teardown_method(self, method=None):
+    def teardown_method(self, method=None):
         signals.pre_init.disconnect(self.Author.pre_init)
         signals.post_init.disconnect(self.Author.post_init)
         signals.post_delete.disconnect(self.Author.post_delete)
@@ -246,14 +240,10 @@ class TestSignal(MongoDBTestCase):
             len(signals.post_bulk_insert.receivers),
         )
 
-        await self.ExplicitId.objects.delete()
-
         # Note that there is a chance that the following assert fails in case
         # some receivers (eventually created in other tests)
         # gets garbage collected (https://pythonhosted.org/blinker/#blinker.base.Signal.connect)
         assert self.pre_signals == post_signals
-
-        await super().teardown_method(method)
 
     async def test_model_signals(self):
         """Model saves should throw some signals."""

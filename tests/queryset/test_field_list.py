@@ -66,13 +66,12 @@ class TestQueryFieldList:
 
 
 class TestOnlyExcludeAll(MongoDBTestCase):
-    async def setup_method(self):
+    def setup_method(self):
         class Person(Document):
             name = StringField()
             age = IntField()
             meta = {"allow_inheritance": True}
 
-        await Person.drop_collection()
         self.Person = Person
 
     async def test_mixing_only_exclude(self):

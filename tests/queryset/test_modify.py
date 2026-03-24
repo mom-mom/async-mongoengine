@@ -13,8 +13,8 @@ class Doc(Document):
 
 
 class TestFindAndModify(MongoDBTestCase):
-    async def setup_method(self):
-        await Doc.drop_collection()
+    def setup_method(self):
+        pass
 
     async def _assert_db_equal(self, docs):
         cursor = Doc._collection.find().sort("id")

@@ -28,10 +28,7 @@ from mongoengine.mongodb_support import (
     MONGODB_36,
     get_mongodb_version,
 )
-from mongoengine.pymongo_support import (
-    PYMONGO_VERSION,
-    list_collection_names,
-)
+from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import NULLIFY, Q
 from tests import fixtures
 from tests.fixtures import (
@@ -52,7 +49,7 @@ TEST_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "../fields/mongoengine
 
 
 class TestDocumentInstance(MongoDBTestCase):
-    async def setup_method(self, method=None):
+    def setup_method(self, method=None):
         class Job(EmbeddedDocument):
             name = StringField()
             years = IntField()
@@ -68,10 +65,6 @@ class TestDocumentInstance(MongoDBTestCase):
 
         self.Person = Person
         self.Job = Job
-
-    async def teardown_method(self, method=None):
-        for collection in await list_collection_names(self.db):
-            await self.db.drop_collection(collection)
 
     async def _assert_db_equal(self, docs):
         assert await (await self.Person._get_collection()).find().sort("id").to_list(None) == sorted(
@@ -2471,7 +2464,7 @@ class TestDocumentInstance(MongoDBTestCase):
             editor = ReferenceField(Editor)
 
             @classmethod
-            def pre_delete(cls, sender, document, **kwargs):
+            async def pre_delete(cls, sender, document, **kwargs):
                 # decrement the docs-to-review count
                 await document.editor.update(dec__review_queue=1)
 
@@ -3969,7 +3962,7 @@ class ObjectKeyTestCase(MongoDBTestCase):
 
 
 class DBFieldMappingTest(MongoDBTestCase):
-    async def setup_method(self, method=None):
+    def setup_method(self, method=None):
         class Fields:
             w1 = BooleanField(db_field="w2")
 
@@ -3990,10 +3983,6 @@ class DBFieldMappingTest(MongoDBTestCase):
 
         self.Doc = Doc
         self.DynDoc = DynDoc
-
-    async def teardown_method(self, method=None):
-        for collection in await list_collection_names(self.db):
-            await self.db.drop_collection(collection)
 
     async def test_setting_fields_in_constructor_of_strict_doc_uses_model_names(self):
         doc = self.Doc(z1=True, z2=False)

@@ -44,10 +44,7 @@ def get_key_compat(mongo_ver):
 
 
 class TestQueryset1(MongoDBTestCase):
-    async def setup_method(self, method=None):
-        connect(db="mongoenginetest")
-        connect(db="mongoenginetest2", alias="test2")
-
+    def setup_method(self, method=None):
         class PersonMeta(EmbeddedDocument):
             weight = IntField()
 
@@ -57,7 +54,6 @@ class TestQueryset1(MongoDBTestCase):
             person_meta = EmbeddedDocumentField(PersonMeta)
             meta = {"allow_inheritance": True}
 
-        await Person.drop_collection()
         self.PersonMeta = PersonMeta
         self.Person = Person
 
@@ -71,9 +67,6 @@ class TestQueryset1(MongoDBTestCase):
         for i in range(len(qs)):
             assert qs[i] == expected[i]
 
-
-    async def teardown_method(self, method=None):
-        await self.Person.drop_collection()
 
 
     async def test_initialisation(self):

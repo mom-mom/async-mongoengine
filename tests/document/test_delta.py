@@ -3,12 +3,11 @@ import pytest
 from bson import SON
 
 from mongoengine import *
-from mongoengine.pymongo_support import list_collection_names
 from tests.utils import MongoDBTestCase, get_as_pymongo
 
 
 class TestDelta(MongoDBTestCase):
-    async def setup_method(self, method=None):
+    def setup_method(self, method=None):
 
         class Person(Document):
             name = StringField()
@@ -19,10 +18,6 @@ class TestDelta(MongoDBTestCase):
             meta = {"allow_inheritance": True}
 
         self.Person = Person
-
-    async def teardown_method(self, method=None):
-        for collection in await list_collection_names(self.db):
-            await self.db.drop_collection(collection)
 
     async def test_delta(self):
         await self.delta(Document)

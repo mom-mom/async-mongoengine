@@ -4,8 +4,7 @@ import operator
 import pymongo
 import pytest
 
-from mongoengine import connect
-from mongoengine.connection import disconnect_all, get_db
+from mongoengine.connection import get_db
 from mongoengine.context_managers import query_counter
 from mongoengine.mongodb_support import get_mongodb_version
 
@@ -16,40 +15,13 @@ MONGO_TEST_DB = "mongoenginetest"  # standard name for the test database
 
 class MongoDBTestCase:
     """Base class for tests that need a mongodb connection.
-    It ensures that the db is clean at the beginning and dropped at the end automatically.
 
-    Uses pytest-asyncio for async setup/teardown.
+    Connection setup, teardown, and per-test DB cleanup are handled
+    by the ``_mongo_connection`` and ``_clean_db`` async fixtures
+    defined in conftest.py.
     """
 
-    @classmethod
-    def setup_class(cls):
-        """Sync setup: establish connection (connect() is sync)."""
-        # disconnect_all is async, but at class setup time we just clear state
-        from mongoengine.connection import _connections, _dbs, _connection_settings
-
-        _connections.clear()
-        _dbs.clear()
-        _connection_settings.clear()
-
-        cls._connection = connect(db=MONGO_TEST_DB)
-        cls.db = get_db()
-
-    @classmethod
-    def teardown_class(cls):
-        """Sync teardown: clear connection state."""
-        from mongoengine.connection import _connections, _dbs, _connection_settings
-
-        _connections.clear()
-        _dbs.clear()
-        _connection_settings.clear()
-
-    async def setup_method(self, method=None):
-        """Drop the test database before each test method."""
-        await self.db.client.drop_database(MONGO_TEST_DB)
-
-    async def teardown_method(self, method=None):
-        """Drop the test database after each test method."""
-        await self.db.client.drop_database(MONGO_TEST_DB)
+    pass
 
 
 async def get_as_pymongo(doc):

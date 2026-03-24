@@ -282,7 +282,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             # Ensure indexes on the collection unless auto_create_index was
             # set to False. Plus, there is no need to ensure indexes on slave.
             db = cls._get_db()
-            if cls._meta.get("auto_create_index", True) and db.client.is_primary:
+            if cls._meta.get("auto_create_index", True) and await db.client.is_primary:
                 await cls.ensure_indexes()
 
         return cls._collection
@@ -560,7 +560,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         # Use instance-level _collection if set (e.g. via switch_db/switch_collection),
         # otherwise fall back to the class-level async _get_collection()
-        collection = self._collection or await self.__class__._get_collection()
+        collection = self._collection if self._collection is not None else await self.__class__._get_collection()
         with set_write_concern(collection, write_concern) as wc_collection:
             if force_insert:
                 return (await wc_collection.insert_one(doc, session=_get_session())).inserted_id
@@ -618,7 +618,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
 
         Helper method, should only be used inside save().
         """
-        collection = self._collection or await self.__class__._get_collection()
+        collection = self._collection if self._collection is not None else await self.__class__._get_collection()
         object_id = doc["_id"]
         created = False
 

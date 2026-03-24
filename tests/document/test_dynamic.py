@@ -8,13 +8,11 @@ __all__ = ("TestDynamicDocument",)
 
 
 class TestDynamicDocument(MongoDBTestCase):
-    async def setup_method(self, method=None):
+    def setup_method(self, method=None):
 
         class Person(DynamicDocument):
             name = StringField()
             meta = {"allow_inheritance": True}
-
-        await Person.drop_collection()
 
         self.Person = Person
 
