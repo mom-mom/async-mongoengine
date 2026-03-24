@@ -3521,9 +3521,9 @@ class TestDocumentInstance(MongoDBTestCase):
         assert isinstance(dbref3, DBRef)
         assert isinstance(ref3, DBRef)
         assert ref3.id == dbref3.id
-        assert dbref3 == obj3
+        assert dbref3 == ref3
 
-        assert obj2.id == obj3.id
+        assert ref2.id == ref3.id
         assert dbref2.id == dbref3.id
         assert dbref2 != dbref3
         assert dbref3 != dbref2
