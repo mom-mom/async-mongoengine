@@ -862,7 +862,11 @@ class TestQueryset3(MongoDBTestCase):
         await Author(author=person_b).save()
         await Author(author=person_c).save()
 
-        names = [a.author.name async for a in Author.objects.order_by("-author__age")]
+        authors = [a async for a in Author.objects.order_by("-author__age")]
+        names = []
+        for a in authors:
+            person = await self.Person.objects.get(id=a.author.id)
+            names.append(person.name)
         assert names == ["User A", "User B", "User C"]
 
 
@@ -876,11 +880,11 @@ class TestQueryset3(MongoDBTestCase):
         class User(Document):
             age = IntField()
 
-        with db_ops_tracker() as q:
+        async with db_ops_tracker() as q:
             await User.objects.filter(age__gte=18).comment("looking for an adult").first()
             await User.objects.comment("looking for an adult").filter(age__gte=18).first()
 
-            ops = q.get_ops()
+            ops = await q.get_ops()
             assert len(ops) == 2
             for op in ops:
                 assert op[CMD_QUERY_KEY][QUERY_KEY] == {"age": {"$gte": 18}}
@@ -920,7 +924,6 @@ class TestQueryset3(MongoDBTestCase):
 
         # run a map/reduce operation spanning all posts
         results = await BlogPost.objects.map_reduce(map_f, reduce_f, "myresults")
-        results = [d async for d in results]
         assert len(results) == 4
 
         music = list(filter(lambda r: r.key == "music", results))[0]
@@ -974,12 +977,12 @@ class TestQueryset3(MongoDBTestCase):
         results = await BlogPost.objects.order_by("_id").map_reduce(
             map_f, reduce_f, "myresults2"
         )
-        results = [d async for d in results]
+        results = list(results)
 
         assert len(results) == 3
-        assert results[0].object.id == post1.id
-        assert results[1].object.id == post2.id
-        assert results[2].object.id == post3.id
+        assert (await results[0].get_object()).id == post1.id
+        assert (await results[1].get_object()).id == post2.id
+        assert (await results[2].get_object()).id == post3.id
 
         await BlogPost.drop_collection()
 
@@ -1073,8 +1076,8 @@ class TestQueryset3(MongoDBTestCase):
             output={"replace": "family_map", "db_alias": "test2"},
         )
 
-        # start a map/reduce
-        await cursor.__anext__()
+        # map/reduce already returned results as a list
+        assert len(cursor) > 0
 
         results = await Person.objects.map_reduce(
             map_f=map_person,
@@ -1082,7 +1085,7 @@ class TestQueryset3(MongoDBTestCase):
             output={"reduce": "family_map", "db_alias": "test2"},
         )
 
-        results = [d async for d in results]
+        results = list(results)
         collection = get_db("test2").family_map
 
         assert await collection.find_one({"_id": 1}) == {
@@ -1237,13 +1240,13 @@ class TestQueryset3(MongoDBTestCase):
         results = await results.map_reduce(
             map_f, reduce_f, "myresults", finalize_f=finalize_f, scope=scope
         )
-        results = [d async for d in results]
+        results = list(results)
 
         # assert troublesome Buzz article is ranked 1st
-        assert results[0].object.title.startswith("Google Buzz")
+        assert (await results[0].get_object()).title.startswith("Google Buzz")
 
         # assert laser vision is ranked last
-        assert results[-1].object.title.startswith("How to see")
+        assert (await results[-1].get_object()).title.startswith("How to see")
 
         await Link.drop_collection()
 
