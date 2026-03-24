@@ -42,6 +42,7 @@ class QuerySet(BaseQuerySet):
         If ``self._has_more`` the cursor hasn't been exhausted so cache then
         batch. Otherwise iterate the result_cache.
         """
+        await self._ensure_collection()
         self._iter = True
 
         if self._has_more:

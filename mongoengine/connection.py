@@ -275,13 +275,22 @@ async def disconnect_all():
 
 
 def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
-    """Return a connection with a given alias."""
+    """Return a connection with a given alias.
 
-    # Connect to the database if not already connected
+    .. note:: In async mode, ``reconnect=True`` only drops the cached reference
+       without closing the connection. Call ``await disconnect(alias)`` first
+       to properly close the connection before reconnecting.
+    """
     if reconnect:
-        # Note: reconnect with async disconnect requires care;
-        # callers needing reconnect should handle disconnect separately.
+        import warnings
+        warnings.warn(
+            "reconnect=True does not close the existing async connection. "
+            "Use 'await disconnect(alias)' before calling get_connection().",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         _connections.pop(alias, None)
+        _dbs.pop(alias, None)
 
     # If the requested alias already exists in the _connections list, return
     # it immediately.
@@ -378,6 +387,13 @@ def _find_existing_connection(connection_settings):
 
 def get_db(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
     if reconnect:
+        import warnings
+        warnings.warn(
+            "reconnect=True does not close the existing async connection. "
+            "Use 'await disconnect(alias)' before calling get_db().",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         _connections.pop(alias, None)
         _dbs.pop(alias, None)
 
@@ -426,19 +442,24 @@ _get_connection = get_connection
 _get_db = get_db
 
 
-# Session management using contextvars for async compatibility
-_current_session: contextvars.ContextVar = contextvars.ContextVar(
-    "_current_session", default=None
+# Session management using contextvars for async compatibility.
+# Uses a tuple-based stack to support nested session contexts.
+_session_stack: contextvars.ContextVar = contextvars.ContextVar(
+    "_session_stack", default=()
 )
 
 
 def _set_session(session):
-    _current_session.set(session)
+    stack = _session_stack.get()
+    _session_stack.set(stack + (session,))
 
 
 def _get_session():
-    return _current_session.get()
+    stack = _session_stack.get()
+    return stack[-1] if stack else None
 
 
 def _clear_session():
-    _current_session.set(None)
+    stack = _session_stack.get()
+    if stack:
+        _session_stack.set(stack[:-1])

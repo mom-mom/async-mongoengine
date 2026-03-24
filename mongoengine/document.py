@@ -438,6 +438,21 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
         doc = self.to_mongo()
 
+        # Flush any pending FileField values that were deferred from __set__
+        FileField = _import_class("FileField")
+        for name, field in self._fields.items():
+            if isinstance(field, FileField):
+                proxy = self._data.get(name)
+                if proxy and hasattr(proxy, "_pending_value"):
+                    pending = proxy._pending_value
+                    del proxy._pending_value
+                    if proxy.grid_id:
+                        try:
+                            await proxy.delete()
+                        except Exception:
+                            pass
+                    await proxy.put(pending)
+
         # Initialize the Document's underlying pymongo.Collection (+create indexes) if not already initialized
         # Important to do this here to avoid that the index creation gets wrapped in the try/except block below
         # and turned into mongoengine.OperationError
@@ -722,9 +737,6 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         async with switch_db(self.__class__, db_alias) as cls:
             collection = await cls._get_collection()
-            db = cls._get_db()
-        self._get_collection = lambda: collection
-        self._get_db = lambda: db
         self._collection = collection
         self._created = True if not keep_created else self._created
         self.__objects = self._qs
@@ -753,7 +765,6 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         async with switch_collection(self.__class__, collection_name) as cls:
             collection = await cls._get_collection()
-        self._get_collection = lambda: collection
         self._collection = collection
         self._created = True if not keep_created else self._created
         self.__objects = self._qs
@@ -1138,25 +1149,6 @@ class MapReduceDocument:
         self._collection = collection
         self.key = key
         self.value = value
-
-    @property
-    def object(self):
-        """Lazy-load the object referenced by ``self.key``. ``self.key``
-        should be the ``primary_key``.
-        """
-        id_field = self._document()._meta["id_field"]
-        id_field_type = type(id_field)
-
-        if not isinstance(self.key, id_field_type):
-            try:
-                self.key = id_field_type(self.key)
-            except Exception:
-                raise Exception("Could not cast key as %s" % id_field_type.__name__)
-
-        if not hasattr(self, "_key_object"):
-            self._key_object = self._document.objects.with_id(self.key)
-            return self._key_object
-        return self._key_object
 
     async def get_object(self):
         """Async version of object property. Lazy-load the object referenced

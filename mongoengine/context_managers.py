@@ -1,4 +1,5 @@
 import contextlib
+import contextvars
 import logging
 from contextlib import asynccontextmanager, contextmanager
 
@@ -31,22 +32,21 @@ __all__ = (
 )
 
 
-_no_dereferencing_class = {}
+_no_dereferencing_class: contextvars.ContextVar = contextvars.ContextVar(
+    "_no_dereferencing_class", default=frozenset()
+)
 
 
 def no_dereferencing_active_for_class(cls):
-    return cls in _no_dereferencing_class
+    return cls in _no_dereferencing_class.get()
 
 
 def _register_no_dereferencing_for_class(cls):
-    _no_dereferencing_class.setdefault(cls, 0)
-    _no_dereferencing_class[cls] += 1
+    _no_dereferencing_class.set(_no_dereferencing_class.get() | {cls})
 
 
 def _unregister_no_dereferencing_for_class(cls):
-    _no_dereferencing_class[cls] -= 1
-    if _no_dereferencing_class[cls] == 0:
-        _no_dereferencing_class.pop(cls)
+    _no_dereferencing_class.set(_no_dereferencing_class.get() - {cls})
 
 
 class switch_db:

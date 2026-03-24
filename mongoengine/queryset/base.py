@@ -1732,6 +1732,7 @@ class BaseQuerySet:
         if self._none or self._empty:
             raise StopAsyncIteration
 
+        await self._ensure_collection()
         raw_doc = await self._cursor.__anext__()
 
         if self._as_pymongo:
@@ -1747,10 +1748,11 @@ class BaseQuerySet:
 
         return doc
 
-    async def rewind(self):
+    def rewind(self):
         """Rewind the cursor to its unevaluated state."""
         self._iter = False
-        self._cursor.rewind()
+        if self._cursor_obj is not None:
+            self._cursor.rewind()
 
     # Properties
 
