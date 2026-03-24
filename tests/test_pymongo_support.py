@@ -11,6 +11,6 @@ class TestPymongoSupport(MongoDBTestCase):
         await Test.drop_collection()
         await Test().save()
         await Test().save()
-        assert count_documents(await Test._get_collection(), filter={}) == 2
-        assert count_documents(await Test._get_collection(), filter={}, skip=1) == 1
-        assert count_documents(await Test._get_collection(), filter={}, limit=0) == 0
+        assert await count_documents(await Test._get_collection(), filter={}) == 2
+        assert await count_documents(await Test._get_collection(), filter={}, skip=1) == 1
+        assert await count_documents(await Test._get_collection(), filter={}, limit=0) == 0

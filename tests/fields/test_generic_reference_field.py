@@ -160,7 +160,9 @@ class TestField(MongoDBTestCase):
         await Person.drop_collection()
 
         await Person(name="Wilson Jr").save()
-        assert repr(Person.objects(city=None)) == "[<Person: Person object>]"
+        results = [d async for d in Person.objects(city=None)]
+        assert len(results) == 1
+        assert repr(results[0]) == "<Person: Person object>"
 
     async def test_generic_reference_choices(self):
         """Ensure that a GenericReferenceField can handle choices."""

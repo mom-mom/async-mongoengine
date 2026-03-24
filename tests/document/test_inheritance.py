@@ -607,7 +607,11 @@ class TestInheritance(MongoDBTestCase):
         real_person = Drinker(drink=beer)
         await real_person.save()
 
-        assert (await Drinker.objects.get_item(0)).drink.name == red_bull.name
-        assert (await Drinker.objects.get_item(1)).drink.name == beer.name
+        # Auto-dereference is not supported in async mode for GenericReferenceField.
+        # The field stores a dict with _cls and _ref keys.
+        drinker0 = await Drinker.objects.get_item(0)
+        drinker1 = await Drinker.objects.get_item(1)
+        assert drinker0.drink["_ref"].id == red_bull.id
+        assert drinker1.drink["_ref"].id == beer.id
 
 

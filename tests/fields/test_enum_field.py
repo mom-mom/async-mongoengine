@@ -78,7 +78,7 @@ class TestStringEnumField(MongoDBTestCase):
         await ModelWithEnum.drop_collection()
         m = await ModelWithEnum().save()
         assert m.status is None
-        assert (ModelWithEnum.objects()[0]).status is None
+        assert (await ModelWithEnum.objects.first()).status is None
         assert await ModelWithEnum.objects(status=None).count() == 1
 
     async def test_set_none_explicitly(self):

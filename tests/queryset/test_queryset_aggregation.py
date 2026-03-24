@@ -91,7 +91,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
     async def test_aggregation_propagates_hint_collation_and_comment(self):
         """Make sure adding a hint/comment/collation to the query gets added to the query"""
-        mongo_ver = get_mongodb_version()
+        mongo_ver = await get_mongodb_version()
 
         base = {"locale": "en", "strength": 2}
         index_name = "name_1"

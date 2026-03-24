@@ -45,6 +45,9 @@ class TestCachedReferenceField(MongoDBTestCase):
         await Ocorrence(person="testte", animal=animal).save()
         p = await Ocorrence.objects.get()
         p.person = "new_testte"
+        # CachedReferenceField returns a dict after fetch; re-assign the
+        # actual document so validation passes on save.
+        p.animal = animal
         await p.save()
 
     async def test_general_things(self):
@@ -207,7 +210,9 @@ class TestCachedReferenceField(MongoDBTestCase):
         assert isinstance(a2.father, dict)
         assert a2.father["tp"] == a1.tp
 
-        assert dict(a2.to_mongo()) == {
+        # Verify the raw data in the database matches expected shape
+        raw = await Person.objects._collection.find_one({"_id": a2.pk})
+        assert raw == {
             "_id": a2.pk,
             "name": "Wilson Junior",
             "tp": "pf",

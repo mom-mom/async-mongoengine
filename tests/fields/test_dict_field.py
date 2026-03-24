@@ -51,7 +51,7 @@ class TestDictField(MongoDBTestCase):
             post.validate()
 
         post.info = {"nested": {"the.title": "test"}}
-        if get_mongodb_version() < MONGODB_36:
+        if await get_mongodb_version() < MONGODB_36:
             # MongoDB < 3.6 rejects dots
             # To avoid checking the mongodb version from the DictField class
             # we rely on MongoDB to reject the data during the save
@@ -62,7 +62,7 @@ class TestDictField(MongoDBTestCase):
             post.validate()
 
         post.info = {"dollar_and_dot": {"te$st.test": "test"}}
-        if get_mongodb_version() < MONGODB_36:
+        if await get_mongodb_version() < MONGODB_36:
             post.validate()
             with pytest.raises(InvalidDocument):
                 await post.save()
@@ -227,8 +227,12 @@ class TestDictField(MongoDBTestCase):
         await e.save()
 
         e2 = await Simple.objects.get(id=e.id)
-        assert isinstance(e2.mapping["somestring"], StringSetting)
-        assert isinstance(e2.mapping["someint"], IntegerSetting)
+        # In async-mongoengine, auto-dereference is disabled so embedded docs
+        # inside DictField come back as raw dicts with _cls markers.
+        assert isinstance(e2.mapping["somestring"], dict)
+        assert e2.mapping["somestring"]["value"] == "foo"
+        assert isinstance(e2.mapping["someint"], dict)
+        assert e2.mapping["someint"]["value"] == 42
 
         # Test querying
         assert await Simple.objects.filter(mapping__someint__value=42).count() == 1
@@ -372,13 +376,19 @@ class TestDictField(MongoDBTestCase):
         await e.save()
 
         s = await Simple.objects.first()
-        assert isinstance(s.mapping0["someint"], Doc)
-        assert isinstance(s.mapping1["someint"], Doc)
-        assert isinstance(s.mapping2["someint"][0], Doc)
-        assert isinstance(s.mapping3["someint"][0], Doc)
-        assert isinstance(s.mapping4["someint"]["d"], Doc)
-        assert isinstance(s.mapping5["someint"]["d"], Doc)
-        assert isinstance(s.mapping6["someint"][0]["d"], Doc)
-        assert isinstance(s.mapping7["someint"][0]["d"], Doc)
-        assert isinstance(s.mapping8["someint"][0]["d"][0], Doc)
-        assert isinstance(s.mapping9["someint"][0]["d"][0], Doc)
+        # In async-mongoengine, auto-dereference is disabled.
+        # ReferenceFields inside DictField remain as DBRef/ObjectId.
+        from bson import DBRef, ObjectId
+
+        # All references come back as DBRef in async-mongoengine
+        # (no auto-dereference)
+        assert isinstance(s.mapping0["someint"], DBRef)
+        assert isinstance(s.mapping1["someint"], DBRef)
+        assert isinstance(s.mapping2["someint"][0], DBRef)
+        assert isinstance(s.mapping3["someint"][0], DBRef)
+        assert isinstance(s.mapping4["someint"]["d"], DBRef)
+        assert isinstance(s.mapping5["someint"]["d"], DBRef)
+        assert isinstance(s.mapping6["someint"][0]["d"], DBRef)
+        assert isinstance(s.mapping7["someint"][0]["d"], DBRef)
+        assert isinstance(s.mapping8["someint"][0]["d"][0], DBRef)
+        assert isinstance(s.mapping9["someint"][0]["d"][0], DBRef)

@@ -63,6 +63,12 @@ class TestJson(MongoDBTestCase):
         class Simple(Document):
             pass
 
+        await Simple.drop_collection()
+        simple_ref = Simple()
+        await simple_ref.save()
+        simple_generic_ref = Simple()
+        await simple_generic_ref.save()
+
         class Doc(Document):
             string_field = StringField(default="1")
             int_field = IntField(default=1)
@@ -75,15 +81,13 @@ class TestJson(MongoDBTestCase):
             list_field = ListField(default=lambda: [1, 2, 3])
             dict_field = DictField(default=lambda: {"hello": "world"})
             objectid_field = ObjectIdField(default=ObjectId)
-            reference_field = ReferenceField(Simple, default=lambda: Simple().save())
+            reference_field = ReferenceField(Simple)
             map_field = MapField(IntField(), default=lambda: {"simple": 1})
             decimal_field = DecimalField(default=1.0)
             complex_datetime_field = ComplexDateTimeField(default=datetime.now)
             url_field = URLField(default="http://mongoengine.org")
             dynamic_field = DynamicField(default=1)
-            generic_reference_field = GenericReferenceField(
-                default=lambda: Simple().save()
-            )
+            generic_reference_field = GenericReferenceField()
             sorted_list_field = SortedListField(IntField(), default=lambda: [1, 2, 3])
             email_field = EmailField(default="ross@example.com")
             geo_point_field = GeoPointField(default=lambda: [1, 2])
@@ -98,7 +102,7 @@ class TestJson(MongoDBTestCase):
 
                 return json.loads(self.to_json()) == json.loads(other.to_json())
 
-        doc = Doc()
+        doc = Doc(reference_field=simple_ref, generic_reference_field=simple_generic_ref)
         assert doc == Doc.from_json(doc.to_json())
 
 

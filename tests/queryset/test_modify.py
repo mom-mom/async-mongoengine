@@ -25,7 +25,7 @@ class TestFindAndModify(MongoDBTestCase):
         doc = await Doc(id=1, value=1).save()
 
         old_doc = await Doc.objects(id=1).modify(set__value=-1)
-        assert await old_doc.to_json() == await doc.to_json()
+        assert old_doc.to_json() == doc.to_json()
         await self._assert_db_equal([{"_id": 0, "value": 0}, {"_id": 1, "value": -1}])
 
     async def test_modify_with_new(self):
@@ -34,7 +34,7 @@ class TestFindAndModify(MongoDBTestCase):
 
         new_doc = await Doc.objects(id=1).modify(set__value=-1, new=True)
         doc.value = -1
-        assert await new_doc.to_json() == await doc.to_json()
+        assert new_doc.to_json() == doc.to_json()
         await self._assert_db_equal([{"_id": 0, "value": 0}, {"_id": 1, "value": -1}])
 
     async def test_modify_not_existing(self):
@@ -53,7 +53,7 @@ class TestFindAndModify(MongoDBTestCase):
         doc = await Doc(id=1, value=1).save()
 
         old_doc = await Doc.objects(id=1).modify(set__value=-1, upsert=True)
-        assert await old_doc.to_json() == await doc.to_json()
+        assert old_doc.to_json() == doc.to_json()
         await self._assert_db_equal([{"_id": 0, "value": 0}, {"_id": 1, "value": -1}])
 
     async def test_modify_with_upsert_with_new(self):
@@ -67,7 +67,7 @@ class TestFindAndModify(MongoDBTestCase):
         doc = await Doc(id=1, value=1).save()
 
         old_doc = await Doc.objects(id=1).modify(remove=True)
-        assert await old_doc.to_json() == await doc.to_json()
+        assert old_doc.to_json() == doc.to_json()
         await self._assert_db_equal([{"_id": 0, "value": 0}])
 
     async def test_find_and_modify_with_remove_not_existing(self):
@@ -82,7 +82,7 @@ class TestFindAndModify(MongoDBTestCase):
         doc = await Doc(id=3, value=0).save()
 
         old_doc = await Doc.objects().order_by("-id").modify(set__value=-1)
-        assert await old_doc.to_json() == await doc.to_json()
+        assert old_doc.to_json() == doc.to_json()
         await self._assert_db_equal(
             [
                 {"_id": 0, "value": 3},

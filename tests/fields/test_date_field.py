@@ -117,13 +117,13 @@ class TestDateField(MongoDBTestCase):
         assert await LogEntry.objects.count() == 20
 
         # Test ordering
-        logs = LogEntry.objects.order_by("date")
+        logs = [d async for d in LogEntry.objects.order_by("date")]
         i = 0
         while i < 19:
             assert logs[i].date <= logs[i + 1].date
             i += 1
 
-        logs = LogEntry.objects.order_by("-date")
+        logs = [d async for d in LogEntry.objects.order_by("-date")]
         i = 0
         while i < 19:
             assert logs[i].date >= logs[i + 1].date

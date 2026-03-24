@@ -95,7 +95,8 @@ class TestReferenceField(MongoDBTestCase):
         p1 = await Person(name="John").save()
         await Person(name="Ross", parent=p1).save()
 
-        raw = await Person._get_collection().find_one({"name": "Ross"})
+        col = await Person._get_collection()
+        raw = await col.find_one({"name": "Ross"})
         assert raw["parent"] == DBRef("person", p1.pk)
 
         p = await Person.objects.get(name="Ross")
@@ -126,13 +127,14 @@ class TestReferenceField(MongoDBTestCase):
         p1 = await Person(name="John").save()
         await Person(name="Ross", parent=p1).save()
 
-        col = Person._get_collection()
+        col = await Person._get_collection()
         data = await col.find_one({"name": "Ross"})
         assert data["parent"] == p1.pk
 
         p = await Person.objects.get(name="Ross")
-        # No auto-dereference: p.parent is an ObjectId
-        assert p.parent == p1.pk
+        # No auto-dereference: p.parent is a DBRef
+        assert isinstance(p.parent, DBRef)
+        assert p.parent.id == p1.pk
 
     async def test_undefined_reference(self):
         """Ensure that ReferenceFields may reference undefined Documents."""
@@ -157,8 +159,9 @@ class TestReferenceField(MongoDBTestCase):
 
         obj = await Product.objects(company=ten_gen).first()
         assert obj == mongodb
-        # No auto-dereference: obj.company is an ObjectId
-        assert obj.company == ten_gen.pk
+        # No auto-dereference: obj.company is a DBRef
+        assert isinstance(obj.company, DBRef)
+        assert obj.company.id == ten_gen.pk
 
         obj = await Product.objects(company=None).first()
         assert obj == me

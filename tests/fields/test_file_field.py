@@ -63,6 +63,7 @@ class TestFileField(MongoDBTestCase):
 
         result = await PutFile.objects.first()
         assert putfile == result
+        await result.the_file.get()  # populate gridout so __str__ has filename
         assert (
             "%s" % result.the_file
             == "<GridFSProxy: hello (%s)>" % result.the_file.grid_id
@@ -111,7 +112,7 @@ class TestFileField(MongoDBTestCase):
         assert streamfile == result
         assert await result.the_file.read() == text + more_text
         assert result.the_file.content_type == content_type
-        result.the_file.seek(0)
+        await result.the_file.seek(0)
         assert result.the_file.tell() == 0
         assert await result.the_file.read(len(text)) == text
         assert result.the_file.tell() == len(text)
@@ -146,7 +147,7 @@ class TestFileField(MongoDBTestCase):
         result = await StreamFile.objects.first()
         assert streamfile == result
         assert await result.the_file.read() == text + more_text
-        result.the_file.seek(0)
+        await result.the_file.seek(0)
         assert result.the_file.tell() == 0
         assert await result.the_file.read(len(text)) == text
         assert result.the_file.tell() == len(text)
@@ -220,8 +221,8 @@ class TestFileField(MongoDBTestCase):
             assert doc_e.the_file.grid_id == doc_f.the_file.grid_id
 
         db = GridDocument._get_db()
-        grid_fs = gridfs.GridFS(db)
-        assert ["doc_b", "doc_e"] == grid_fs.list()
+        grid_fs = gridfs.AsyncGridFS(db)
+        assert ["doc_b", "doc_e"] == await grid_fs.list()
 
     async def test_file_uniqueness(self):
         """Ensure that each instance of a FileField is unique"""

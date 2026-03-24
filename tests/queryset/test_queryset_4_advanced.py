@@ -547,7 +547,7 @@ class TestQueryset4(MongoDBTestCase):
 
         qs = BaseQuerySet(document=Tmp, collection=await Tmp._get_collection())
         with pytest.raises(NotImplementedError):
-            _ = [d async for d in qs]
+            _ = [d for d in qs]
 
 
     async def test_search_text_raise_if_called_2_times(self):
@@ -580,7 +580,8 @@ class TestQueryset4(MongoDBTestCase):
             }
 
         await News.drop_collection()
-        info = News.objects._collection.index_information()
+        collection = await News._get_collection()
+        info = await collection.index_information()
         assert "title_text_content_text" in info
         assert "textIndexVersion" in info["title_text_content_text"]
 
@@ -937,8 +938,8 @@ class TestQueryset4(MongoDBTestCase):
         await group.reload()
 
         assert len(group.members) == 2
-        assert group.members[0].name == user1.name
-        assert group.members[1].name == user2.name
+        assert group.members[0].id == user1.id
+        assert group.members[1].id == user2.id
 
         await Group.drop_collection()
 

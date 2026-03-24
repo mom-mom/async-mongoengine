@@ -1,6 +1,7 @@
 import datetime
 
 import pytest
+import pytest_asyncio
 from bson import SON, DBRef, ObjectId
 
 from mongoengine import (
@@ -376,7 +377,7 @@ class TestField(MongoDBTestCase):
         await doc.save()
 
         # Unset all the fields
-        await HandleNoneFields._get_collection().update_one(
+        await (await HandleNoneFields._get_collection()).update_one(
             {"_id": doc.id},
             {"$unset": {"str_fld": 1, "int_fld": 1, "flt_fld": 1, "comp_dt_fld": 1}},
         )
@@ -1152,8 +1153,14 @@ class TestField(MongoDBTestCase):
         await e.save()
 
         e2 = await Simple.objects.get(id=e.id)
-        assert isinstance(e2.mapping[0], StringSetting)
-        assert isinstance(e2.mapping[1], IntegerSetting)
+        # With auto-dereference removed, untyped ListField items come back
+        # as raw dicts (not reconstructed EmbeddedDocument instances).
+        assert isinstance(e2.mapping[0], dict)
+        assert e2.mapping[0]["_cls"] == "StringSetting"
+        assert e2.mapping[0]["value"] == "foo"
+        assert isinstance(e2.mapping[1], dict)
+        assert e2.mapping[1]["_cls"] == "IntegerSetting"
+        assert e2.mapping[1]["value"] == 42
 
         # Test querying
         assert await Simple.objects.filter(mapping__1__value=42).count() == 1
@@ -1375,9 +1382,11 @@ class TestField(MongoDBTestCase):
 
         group_obj = await Group.objects.first()
 
-        # No auto-dereference: members are ObjectIds
-        assert group_obj.members[0] == user1.pk
-        assert group_obj.members[1] == user2.pk
+        # No auto-dereference: members are DBRefs
+        assert isinstance(group_obj.members[0], DBRef)
+        assert group_obj.members[0].id == user1.pk
+        assert isinstance(group_obj.members[1], DBRef)
+        assert group_obj.members[1].id == user2.pk
 
     async def test_recursive_reference(self):
         """Ensure that ReferenceFields can reference their own documents."""
@@ -1403,10 +1412,12 @@ class TestField(MongoDBTestCase):
         await peter.save()
 
         peter = await Employee.objects.with_id(peter.id)
-        # No auto-dereference: boss is an ObjectId
-        assert peter.boss == bill.pk
-        # friends are ObjectIds
-        assert peter.friends == [michael.pk, samir.pk]
+        # No auto-dereference: boss is a DBRef
+        assert isinstance(peter.boss, DBRef)
+        assert peter.boss.id == bill.pk
+        # friends are DBRefs
+        assert all(isinstance(f, DBRef) for f in peter.friends)
+        assert [f.id for f in peter.friends] == [michael.pk, samir.pk]
 
     async def test_recursive_embedding(self):
         """Ensure that EmbeddedDocumentFields can contain their own documents."""
@@ -1505,9 +1516,10 @@ class TestField(MongoDBTestCase):
         brother = Brother(name="Bob", sibling=sister)
         await brother.save()
 
-        # No auto-dereference
+        # No auto-dereference: sibling is a DBRef
         b = await Brother.objects.first()
-        assert b.sibling == sister.pk
+        assert isinstance(b.sibling, DBRef)
+        assert b.sibling.id == sister.pk
 
     async def test_reference_abstract_class(self):
         """Ensure that an abstract class instance cannot be used in the
@@ -1815,7 +1827,12 @@ class TestField(MongoDBTestCase):
         await doc.save()
 
         doc = await Doc.objects.get()
-        assert doc.embed_me.field_1 == "hello"
+        # No auto-dereference: DynamicField storing a Document returns a
+        # GenericReference dict with _ref and _cls keys.
+        assert isinstance(doc.embed_me, dict)
+        assert doc.embed_me["_cls"] == "Doc2"
+        assert isinstance(doc.embed_me["_ref"], DBRef)
+        assert doc.embed_me["_ref"].id == doc2.pk
 
     async def test_dynamic_fields_embedded_class(self):
         class Embed(EmbeddedDocument):
@@ -1933,7 +1950,8 @@ class TestField(MongoDBTestCase):
 
 
 class TestEmbeddedDocumentListField(MongoDBTestCase):
-    async def setUp(self):
+    @pytest_asyncio.fixture(autouse=True, loop_scope="session")
+    async def _setup_embedded_list(self):
         """
         Create two BlogPost entries in the database, each with
         several EmbeddedDocuments.
@@ -2175,7 +2193,7 @@ class TestEmbeddedDocumentListField(MongoDBTestCase):
         comments = self.post1.comments
         new_comment = self.Comments(author="user4")
         comments.append(new_comment)
-        comments.save()
+        await comments.save()
 
         loaded = await self.BlogPost.objects(id=self.post1.id).first()
         assert new_comment in loaded.comments
@@ -2197,6 +2215,7 @@ class TestEmbeddedDocumentListField(MongoDBTestCase):
         class A(Document):
             my_list = ListField(EmbeddedDocumentField(EmbeddedWithUnique))
 
+        await A.drop_collection()
         await A(my_list=[]).save()
         with pytest.raises(NotUniqueError):
             await A(my_list=[]).save()

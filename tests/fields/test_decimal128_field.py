@@ -144,6 +144,6 @@ class TestDecimal128Field(MongoDBTestCase):
         await Decimal128Document.drop_collection()
         f = str(random.random())
         await Decimal128Document(dec128_fld=f).save()
-        json_str = Decimal128Document.objects.to_json()
+        json_str = await Decimal128Document.objects.to_json()
         array = json.loads(json_str)
         assert array[0]["dec128_fld"] == {"$numberDecimal": str(f)}

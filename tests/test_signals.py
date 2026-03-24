@@ -97,7 +97,8 @@ class TestSignal(MongoDBTestCase):
                 signal_output.append(kwargs)
 
         self.Author = Author
-        Author.id.set_next_value(0)
+        # set_next_value is async; must be awaited in the test method instead.
+        # (see test_model_signals)
 
         class Another(Document):
             name = StringField()
@@ -247,6 +248,7 @@ class TestSignal(MongoDBTestCase):
 
     async def test_model_signals(self):
         """Model saves should throw some signals."""
+        await self.Author.id.set_next_value(0)
 
         def create_author():
             self.Author(name="Bill Shakespeare")
@@ -403,14 +405,14 @@ class TestSignal(MongoDBTestCase):
 
     async def test_signals_with_switch_collection(self):
         ei = self.ExplicitId(id=123)
-        ei.switch_collection("explicit__1")
+        await ei.switch_collection("explicit__1")
         assert await self.get_signal_output_async(ei.save) == ["Is created"]
-        ei.switch_collection("explicit__1")
+        await ei.switch_collection("explicit__1")
         assert await self.get_signal_output_async(ei.save) == ["Is updated"]
 
-        ei.switch_collection("explicit__1", keep_created=False)
+        await ei.switch_collection("explicit__1", keep_created=False)
         assert await self.get_signal_output_async(ei.save) == ["Is created"]
-        ei.switch_collection("explicit__1", keep_created=False)
+        await ei.switch_collection("explicit__1", keep_created=False)
         assert await self.get_signal_output_async(ei.save) == ["Is created"]
 
     async def test_signals_with_switch_db(self):
@@ -418,14 +420,14 @@ class TestSignal(MongoDBTestCase):
         register_connection("testdb-1", "mongoenginetest2")
 
         ei = self.ExplicitId(id=123)
-        ei.switch_db("testdb-1")
+        await ei.switch_db("testdb-1")
         assert await self.get_signal_output_async(ei.save) == ["Is created"]
-        ei.switch_db("testdb-1")
+        await ei.switch_db("testdb-1")
         assert await self.get_signal_output_async(ei.save) == ["Is updated"]
 
-        ei.switch_db("testdb-1", keep_created=False)
+        await ei.switch_db("testdb-1", keep_created=False)
         assert await self.get_signal_output_async(ei.save) == ["Is created"]
-        ei.switch_db("testdb-1", keep_created=False)
+        await ei.switch_db("testdb-1", keep_created=False)
         assert await self.get_signal_output_async(ei.save) == ["Is created"]
 
     async def test_signals_bulk_insert(self):

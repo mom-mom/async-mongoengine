@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 import pytest_asyncio
 
@@ -5,6 +7,7 @@ from mongoengine import connect
 from mongoengine.connection import get_db
 
 MONGO_TEST_DB = "mongoenginetest"
+_CACHED = {}
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -27,7 +30,8 @@ async def _mongo_connection():
     # Cache MongoDB version for the session (used by tests via cls.mongodb_version)
     from mongoengine.mongodb_support import get_mongodb_version
 
-    _mongo_connection.mongodb_version = await get_mongodb_version()
+    _CACHED["mongodb_version"] = await get_mongodb_version()
+    _CACHED["conn"] = conn
     yield conn
 
     _connections.clear()
@@ -40,6 +44,19 @@ def _is_mongo_testcase(cls):
     if cls is None:
         return False
     return any(c.__name__ == "MongoDBTestCase" for c in cls.__mro__)
+
+
+async def _drop_and_wait(db):
+    """Drop all collections in the test database individually.
+
+    Using drop_database can cause race conditions with subsequent writes
+    because MongoDB may still be processing the drop asynchronously.
+    Dropping individual collections is more predictable.
+    """
+    names = await db.list_collection_names()
+    for name in names:
+        if not name.startswith("system."):
+            await db.drop_collection(name)
 
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
@@ -61,13 +78,13 @@ async def _clean_db(_mongo_connection, request):
         connect(db=MONGO_TEST_DB)
 
     db = get_db()
-    request.cls._connection = _mongo_connection
+    request.cls._connection = _CACHED["conn"]
     request.cls.db = db
-    request.cls.mongodb_version = _mongo_connection.mongodb_version
+    request.cls.mongodb_version = _CACHED["mongodb_version"]
 
-    await db.client.drop_database(MONGO_TEST_DB)
+    await _drop_and_wait(db)
     yield
-    await db.client.drop_database(MONGO_TEST_DB)
+    await _drop_and_wait(db)
 
 
 def pytest_collection_modifyitems(items):
@@ -77,12 +94,8 @@ def pytest_collection_modifyitems(items):
         if item.get_closest_marker("asyncio") is None:
             is_async = False
             if hasattr(item, "function") and hasattr(item.function, "__wrapped__"):
-                import asyncio
-
                 is_async = asyncio.iscoroutinefunction(item.function.__wrapped__)
             elif hasattr(item, "function"):
-                import asyncio
-
                 is_async = asyncio.iscoroutinefunction(item.function)
             if is_async:
                 item.add_marker(_session_marker)

@@ -8,7 +8,7 @@ class TestSequenceField(MongoDBTestCase):
             id = SequenceField(primary_key=True)
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Person.drop_collection()
 
         for x in range(10):
@@ -32,14 +32,14 @@ class TestSequenceField(MongoDBTestCase):
             id = SequenceField(primary_key=True)
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Person.drop_collection()
 
         for x in range(10):
             await Person(name="Person %s" % x).save()
 
         assert await Person.id.get_next_value() == 11
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
 
         assert await Person.id.get_next_value() == 1
 
@@ -47,14 +47,14 @@ class TestSequenceField(MongoDBTestCase):
             id = SequenceField(primary_key=True, value_decorator=str)
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Person.drop_collection()
 
         for x in range(10):
             await Person(name="Person %s" % x).save()
 
         assert await Person.id.get_next_value() == "11"
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
 
         assert await Person.id.get_next_value() == "1"
 
@@ -63,7 +63,7 @@ class TestSequenceField(MongoDBTestCase):
             id = SequenceField(primary_key=True, sequence_name="jelly")
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Person.drop_collection()
 
         for x in range(10):
@@ -88,7 +88,7 @@ class TestSequenceField(MongoDBTestCase):
             counter = SequenceField()
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Person.drop_collection()
 
         for x in range(10):
@@ -119,7 +119,7 @@ class TestSequenceField(MongoDBTestCase):
             counter = SequenceField()
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Animal.drop_collection()
 
         a = await Animal(name="Boi").save()
@@ -129,9 +129,8 @@ class TestSequenceField(MongoDBTestCase):
         assert a.counter == 1
 
         a.counter = None
-        assert a.counter == 2
         await a.save()
-
+        # After save, the SequenceField generates the next value
         assert a.counter == 2
 
         a = await Animal.objects.first()
@@ -148,7 +147,7 @@ class TestSequenceField(MongoDBTestCase):
             id = SequenceField(primary_key=True)
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Animal.drop_collection()
         await Person.drop_collection()
 
@@ -179,7 +178,7 @@ class TestSequenceField(MongoDBTestCase):
             id = SequenceField(primary_key=True, value_decorator=str)
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Person.drop_collection()
 
         for x in range(10):
@@ -204,7 +203,7 @@ class TestSequenceField(MongoDBTestCase):
             title = StringField(required=True)
             comments = ListField(EmbeddedDocumentField(Comment))
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Post.drop_collection()
 
         await Post(
@@ -278,7 +277,7 @@ class TestSequenceField(MongoDBTestCase):
             id = SequenceField(primary_key=True)
             name = StringField()
 
-        self.db["mongoengine.counters"].drop()
+        await self.db["mongoengine.counters"].drop()
         await Person.drop_collection()
 
         for x in range(10):

@@ -15,10 +15,11 @@ class TestQuerysetPickable(MongoDBTestCase):
     See issue https://github.com/MongoEngine/mongoengine/issues/442
     """
 
-    async def setup_method(self):
+    async def _setup(self):
         self.john = await Person.objects.create(name="John", age=21)
 
     async def test_picke_simple_qs(self):
+        await self._setup()
         qs = Person.objects.all()
         pickle.dumps(qs)
 
@@ -27,6 +28,7 @@ class TestQuerysetPickable(MongoDBTestCase):
         return pickle.loads(s)
 
     async def test_unpickle(self):
+        await self._setup()
         qs = Person.objects.all()
 
         loadedQs = self._get_loaded(qs)
@@ -40,6 +42,7 @@ class TestQuerysetPickable(MongoDBTestCase):
         assert (await Person.objects.first()).age == 23
 
     async def test_pickle_support_filtration(self):
+        await self._setup()
         await Person.objects.create(name="Alice", age=22)
 
         await Person.objects.create(name="Bob", age=23)

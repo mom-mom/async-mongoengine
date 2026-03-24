@@ -358,9 +358,12 @@ class TestGeoField(MongoDBTestCase):
         await Parent.drop_collection()
 
         await Parent(name="Berlin").save()
-        info = await Parent._get_collection().index_information()
+        # Ensure Location indexes are created (in async, saving Parent
+        # does not automatically trigger ensure_indexes on referenced docs)
+        await Location.ensure_indexes()
+        info = await (await Parent._get_collection()).index_information()
         assert "location_2d" not in info
-        info = await Location._get_collection().index_information()
+        info = await (await Location._get_collection()).index_information()
         assert "location_2d" in info
 
         assert len(Parent._geo_indices()) == 0
@@ -379,7 +382,7 @@ class TestGeoField(MongoDBTestCase):
         await Log.drop_collection()
         await Log.ensure_indexes()
 
-        info = await Log._get_collection().index_information()
+        info = await (await Log._get_collection()).index_information()
         assert info["location_2dsphere_datetime_1"]["key"] == [
             ("location", "2dsphere"),
             ("datetime", 1),
@@ -399,7 +402,7 @@ class TestGeoField(MongoDBTestCase):
         await Log.drop_collection()
         await Log.ensure_indexes()
 
-        info = await Log._get_collection().index_information()
+        info = await (await Log._get_collection()).index_information()
         assert info["location_2dsphere_datetime_1"]["key"] == [
             ("location", "2dsphere"),
             ("datetime", 1),

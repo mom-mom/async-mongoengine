@@ -2124,17 +2124,12 @@ class BaseQuerySet:
         return code
 
     def _chainable_method(self, method_name, val):
-        """Call a particular method on the PyMongo cursor call a particular chainable method
-        with the provided value.
+        """Set a chainable cursor option on a cloned queryset.
+
+        The value is cached as queryset._{method_name} and will be applied
+        lazily when the cursor is actually created (in the _cursor property).
         """
         queryset = self.clone()
-
-        # Get an existing cursor object or create a new one
-        cursor = queryset._cursor
-
-        # Find the requested method on the cursor and call it with the
-        # provided value
-        getattr(cursor, method_name)(val)
 
         # Cache the value on the queryset._{method_name}
         setattr(queryset, "_" + method_name, val)

@@ -158,7 +158,7 @@ class TestDynamicDocument(MongoDBTestCase):
 
         assert 1 == await self.Person.objects(age=22).count()
         p = self.Person.objects(age=22)
-        p = p.get()
+        p = await p.get()
         assert 22 == p.age
 
     async def test_complex_dynamic_document_queries(self):
