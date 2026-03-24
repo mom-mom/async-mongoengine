@@ -1,5 +1,3 @@
-import warnings
-
 from mongoengine.errors import NotRegistered
 
 __all__ = ("UPDATE_OPERATORS", "_DocumentRegistry")
@@ -24,7 +22,15 @@ UPDATE_OPERATORS = {
 }
 
 
+# Primary index: module-qualified key -> DocCls (no collisions)
 _document_registry = {}
+# Secondary index: _class_name -> DocCls (last-write-wins, for DB _cls compat)
+_class_name_registry = {}
+
+
+def _registry_key(DocCls):
+    """Build a module-qualified registry key, e.g. 'myapp.models.User'."""
+    return f"{DocCls.__module__}.{DocCls._class_name}"
 
 
 class _DocumentRegistry:
@@ -34,19 +40,28 @@ class _DocumentRegistry:
 
     @staticmethod
     def get(name):
+        # 1. Exact match on primary (module-qualified) registry
         doc = _document_registry.get(name, None)
-        if not doc:
-            # Possible old style name
-            single_end = name.split(".")[-1]
-            compound_end = ".%s" % single_end
-            possible_match = [
-                k
-                for k in _document_registry
-                if k.endswith(compound_end) or k == single_end
-            ]
-            if len(possible_match) == 1:
-                doc = _document_registry.get(possible_match.pop(), None)
-        if not doc:
+        if doc:
+            return doc
+
+        # 2. Exact match on secondary (_class_name) registry
+        doc = _class_name_registry.get(name, None)
+        if doc:
+            return doc
+
+        # 3. Suffix fallback for old-style names (e.g. "Area" -> "Location.Area")
+        single_end = name.split(".")[-1]
+        compound_end = ".%s" % single_end
+        possible_match = [
+            k
+            for k in _class_name_registry
+            if k.endswith(compound_end) or k == single_end
+        ]
+        if len(possible_match) == 1:
+            return _class_name_registry[possible_match[0]]
+
+        if not possible_match:
             raise NotRegistered(
                 """
                 `%s` has not been registered in the document registry.
@@ -55,29 +70,32 @@ class _DocumentRegistry:
             """.strip()
                 % name
             )
-        return doc
+
+        # Multiple matches: return the last registered one (preserves
+        # the old overwrite-on-collision behaviour).
+        return _class_name_registry[possible_match[-1]]
 
     @staticmethod
     def register(DocCls):
-        ExistingDocCls = _document_registry.get(DocCls._class_name)
-        if (
-            ExistingDocCls is not None
-            and ExistingDocCls.__module__ != DocCls.__module__
-        ):
-            # A sign that a codebase may have named two different classes with the same name accidentally,
-            # this could cause issues with dereferencing because MongoEngine makes the assumption that a Document
-            # class name is unique.
-            warnings.warn(
-                f"Multiple Document classes named `{DocCls._class_name}` were registered, "
-                f"first from: `{ExistingDocCls.__module__}`, then from: `{DocCls.__module__}`. "
-                "this may lead to unexpected behavior during dereferencing.",
-                stacklevel=4,
-            )
-        _document_registry[DocCls._class_name] = DocCls
+        _document_registry[_registry_key(DocCls)] = DocCls
+        _class_name_registry[DocCls._class_name] = DocCls
 
     @staticmethod
     def unregister(doc_cls_name):
-        _document_registry.pop(doc_cls_name)
+        """Unregister by _class_name or module-qualified key."""
+        # Remove from secondary index
+        _class_name_registry.pop(doc_cls_name, None)
+        # Remove from primary index
+        if doc_cls_name in _document_registry:
+            _document_registry.pop(doc_cls_name)
+        else:
+            # Find by _class_name suffix in primary registry
+            to_remove = [
+                k for k in _document_registry
+                if k.endswith(".%s" % doc_cls_name)
+            ]
+            for key in to_remove:
+                _document_registry.pop(key)
 
 
 def _get_documents_by_db(connection_alias, default_connection_alias):
