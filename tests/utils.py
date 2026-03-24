@@ -62,7 +62,7 @@ def _decorated_with_ver_requirement(func, mongo_version_req, oper):
 
     @functools.wraps(func)
     async def _inner(*args, **kwargs):
-        mongodb_v = get_mongodb_version()
+        mongodb_v = await get_mongodb_version()
         if oper(mongodb_v, mongo_version_req):
             return await func(*args, **kwargs)
         else:

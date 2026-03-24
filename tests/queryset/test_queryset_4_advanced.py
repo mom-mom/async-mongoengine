@@ -12,10 +12,7 @@ from mongoengine import *
 from mongoengine.connection import get_db
 from mongoengine.context_managers import query_counter, switch_db
 from mongoengine.errors import InvalidQueryError
-from mongoengine.mongodb_support import (
-    MONGODB_36,
-    get_mongodb_version,
-)
+from mongoengine.mongodb_support import MONGODB_36
 from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
     DoesNotExist,
@@ -57,7 +54,6 @@ class TestQueryset4(MongoDBTestCase):
         self.PersonMeta = PersonMeta
         self.Person = Person
 
-        self.mongodb_version = get_mongodb_version()
 
 
     async def assertSequence(self, qs, expected):

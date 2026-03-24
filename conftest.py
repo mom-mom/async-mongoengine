@@ -23,6 +23,11 @@ async def _mongo_connection():
 
     conn = connect(db=MONGO_TEST_DB)
     connect(db="mongoenginetest2", alias="test2")
+
+    # Cache MongoDB version for the session (used by tests via cls.mongodb_version)
+    from mongoengine.mongodb_support import get_mongodb_version
+
+    _mongo_connection.mongodb_version = await get_mongodb_version()
     yield conn
 
     _connections.clear()
@@ -58,6 +63,7 @@ async def _clean_db(_mongo_connection, request):
     db = get_db()
     request.cls._connection = _mongo_connection
     request.cls.db = db
+    request.cls.mongodb_version = _mongo_connection.mongodb_version
 
     await db.client.drop_database(MONGO_TEST_DB)
     yield
