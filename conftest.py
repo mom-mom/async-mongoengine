@@ -47,10 +47,22 @@ async def _clean_db(_mongo_connection, request):
         yield
         return
 
-    from mongoengine.connection import _connection_settings
+    from mongoengine.connection import _connection_settings, _connections, _dbs
+
+    # Reset connection state: keep only "default" and "test2" from session fixture.
+    # Tests may register extra aliases (testdb-1, testdb-2, etc.) that leak into
+    # subsequent tests if not cleaned up.
+    preserved_aliases = {"default", "test2"}
+    for alias in list(_connection_settings.keys()):
+        if alias not in preserved_aliases:
+            _connection_settings.pop(alias, None)
+            _connections.pop(alias, None)
+            _dbs.pop(alias, None)
 
     if "default" not in _connection_settings:
         connect(db=MONGO_TEST_DB, uuidRepresentation="standard")
+    if "test2" not in _connection_settings:
+        connect(db="mongoenginetest2", alias="test2", uuidRepresentation="standard")
 
     db = get_db()
     request.cls._connection = _CACHED["conn"]

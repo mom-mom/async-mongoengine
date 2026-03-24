@@ -3530,15 +3530,15 @@ class TestDocumentInstance(MongoDBTestCase):
         assert dbref2 != dbref3
         assert dbref3 != dbref2
 
-        assert obj2 != dbref3
-        assert dbref3 != obj2
-        assert obj2 != dbref3
-        assert dbref3 != obj2
+        assert ref2 != dbref3
+        assert dbref3 != ref2
+        assert ref2 != dbref3
+        assert dbref3 != ref2
 
-        assert obj3 != dbref2
-        assert dbref2 != obj3
-        assert obj3 != dbref2
-        assert dbref2 != obj3
+        assert ref3 != dbref2
+        assert dbref2 != ref3
+        assert ref3 != dbref2
+        assert dbref2 != ref3
 
     async def test_default_values_dont_get_override_upon_save_when_only_is_used(self):
         class Person(Document):
