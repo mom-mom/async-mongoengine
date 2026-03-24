@@ -1986,10 +1986,10 @@ class SequenceField(BaseField):
         be the class name of the abstract document.
     """
 
-    # _auto_gen is False because generate() is async and cannot be called
-    # from the sync to_mongo() path. Sequence values are generated in
-    # Document.save() before serialization instead.
-    _auto_gen = False
+    # _auto_gen stays True so that validation skips required-field checks
+    # for unset sequence values (they will be generated before to_mongo).
+    # The sync _auto_gen path in to_mongo() is guarded to skip async generate().
+    _auto_gen = True
     COLLECTION_NAME = "mongoengine.counters"
     VALUE_DECORATOR = int
 

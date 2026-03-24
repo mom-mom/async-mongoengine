@@ -66,6 +66,42 @@ class InvalidCollectionError(Exception):
     pass
 
 
+async def _generate_async_fields(doc):
+    """Pre-generate SequenceField values and flush FileField pending uploads
+    for *doc* and any embedded sub-documents recursively.
+
+    Must be called before ``validate()`` and ``to_mongo()``.
+    """
+    SequenceField = _import_class("SequenceField")
+    FileField = _import_class("FileField")
+    EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
+    EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
+
+    for name, field in doc._fields.items():
+        if isinstance(field, SequenceField) and doc._data.get(name) is None:
+            doc._data[name] = await field.generate()
+        elif isinstance(field, FileField):
+            proxy = doc._data.get(name)
+            if proxy and hasattr(proxy, "_pending_value"):
+                pending = proxy._pending_value
+                del proxy._pending_value
+                if proxy.grid_id:
+                    try:
+                        await proxy.delete()
+                    except Exception:
+                        pass
+                await proxy.put(pending)
+        elif isinstance(field, EmbeddedDocumentListField):
+            items = doc._data.get(name) or []
+            for item in items:
+                if item is not None and hasattr(item, "_fields"):
+                    await _generate_async_fields(item)
+        elif isinstance(field, EmbeddedDocumentField):
+            item = doc._data.get(name)
+            if item is not None and hasattr(item, "_fields"):
+                await _generate_async_fields(item)
+
+
 class EmbeddedDocument(BaseDocument, metaclass=DocumentMetaclass):
     r"""A :class:`~mongoengine.Document` that isn't stored in its own
     collection.  :class:`~mongoengine.EmbeddedDocument`\ s should be used as
@@ -423,30 +459,18 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
 
         signals.pre_save.send(self.__class__, document=self, **signal_kwargs)
 
-        if validate:
-            self.validate(clean=clean)
-
         if write_concern is None:
             write_concern = {}
 
-        # Pre-generate async field values BEFORE any to_mongo() call.
-        # to_mongo() is sync and cannot call async generate()/put().
-        SequenceField = _import_class("SequenceField")
-        FileField = _import_class("FileField")
-        for name, field in self._fields.items():
-            if isinstance(field, SequenceField) and self._data.get(name) is None:
-                self._data[name] = await field.generate()
-            elif isinstance(field, FileField):
-                proxy = self._data.get(name)
-                if proxy and hasattr(proxy, "_pending_value"):
-                    pending = proxy._pending_value
-                    del proxy._pending_value
-                    if proxy.grid_id:
-                        try:
-                            await proxy.delete()
-                        except Exception:
-                            pass
-                    await proxy.put(pending)
+        # Pre-generate async field values BEFORE validation and to_mongo().
+        # Must run before validate() because SequenceField._auto_gen=True
+        # exempts it from required-field checks only when value is already set.
+        # Must run before to_mongo() because to_mongo() is sync.
+        # Recurses into embedded documents.
+        await _generate_async_fields(self)
+
+        if validate:
+            self.validate(clean=clean)
 
         doc_id = self.to_mongo(fields=[self._meta["id_field"]])
         created = "_id" not in doc_id or self._created or force_insert

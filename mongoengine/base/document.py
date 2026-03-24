@@ -368,10 +368,15 @@ class BaseDocument:
 
                 value = field.to_mongo(value, **ex_vars)
 
-            # Handle self generating fields
+            # Handle self generating fields.
+            # Skip if generate() is a coroutine function (async) — those
+            # must be pre-generated before to_mongo() is called (e.g. in
+            # Document.save()).
             if value is None and field._auto_gen:
-                value = field.generate()
-                self._data[field_name] = value
+                import inspect
+                if not inspect.iscoroutinefunction(field.generate):
+                    value = field.generate()
+                    self._data[field_name] = value
 
             if value is not None or field.null:
                 if use_db_field:

@@ -103,11 +103,14 @@ await doc._save_update(doc, save_condition, write_concern)
 
 ```
 Before: pre_save → validate → to_mongo(id) → to_mongo() → init_collection → DB write
-After:  pre_save → validate → SequenceField generate → FileField flush → to_mongo(id) → to_mongo() → init_collection → DB write
+After:  pre_save → _generate_async_fields (재귀) → validate → to_mongo(id) → to_mongo() → init_collection → DB write
 ```
 
-- **SequenceField**: `_auto_gen = False`로 변경. `to_mongo()`의 sync `_auto_gen` 경로를 타지 않음. 대신 `save()` 최상단에서 `await field.generate()`로 자동 생성. 이는 `to_mongo(fields=[id_field])` 호출(created 판정)보다 **앞에** 위치하여 PK용 SequenceField도 올바르게 처리.
-- **FileField**: `__set__`에서 deferred된 `_pending_value`를 `to_mongo()` 전에 flush
+- **`_generate_async_fields(doc)`**: 모듈 레벨 async 함수. document와 모든 embedded sub-document를 재귀 순회하며 SequenceField 값 생성 + FileField pending flush 처리.
+- **SequenceField**: `_auto_gen = True` 유지 (validation required-field 면제). `to_mongo()`의 sync `_auto_gen` 경로는 `inspect.iscoroutinefunction(field.generate)` 가드로 건너뜀. 실제 생성은 `_generate_async_fields()`에서 수행.
+- **FileField**: `__set__`에서 deferred된 `_pending_value`를 `_generate_async_fields()`에서 flush.
+- 이 단계가 `validate()` 보다 **앞**에 위치하여 SequenceField(primary_key=True) 필드도 validation 전에 값이 채워짐.
+- embedded document 안의 SequenceField도 재귀적으로 처리.
 
 #### `_save_create()` / `_save_update()` 컬렉션 해석
 
@@ -366,7 +369,7 @@ doc.name                # 명시적 fetch 후 접근
 
 | 항목 | Before | After |
 |---|---|---|
-| `_auto_gen` | `True` | `False` — `to_mongo()`의 sync `_auto_gen` 경로 비활성화 |
+| `_auto_gen` | `True` | `True` 유지 — validation 면제용. `to_mongo()`의 sync 경로는 `iscoroutinefunction` 가드로 건너뜀 |
 | `generate()` | `def` (sync DB 호출) | `async def` |
 | `set_next_value(value)` | `def` (sync DB 호출) | `async def` |
 | `get_next_value()` | `def` (sync DB 호출) | `async def` |
