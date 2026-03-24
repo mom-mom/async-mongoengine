@@ -429,24 +429,14 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         if write_concern is None:
             write_concern = {}
 
-        doc_id = self.to_mongo(fields=[self._meta["id_field"]])
-        created = "_id" not in doc_id or self._created or force_insert
-
-        signals.pre_save_post_validation.send(
-            self.__class__, document=self, created=created, **signal_kwargs
-        )
-
-        # Auto-generate SequenceField values that are still None
+        # Pre-generate async field values BEFORE any to_mongo() call.
+        # to_mongo() is sync and cannot call async generate()/put().
         SequenceField = _import_class("SequenceField")
+        FileField = _import_class("FileField")
         for name, field in self._fields.items():
             if isinstance(field, SequenceField) and self._data.get(name) is None:
                 self._data[name] = await field.generate()
-
-        # Flush any pending FileField values that were deferred from __set__
-        # Must happen BEFORE to_mongo() so the serialized doc contains the new grid_id
-        FileField = _import_class("FileField")
-        for name, field in self._fields.items():
-            if isinstance(field, FileField):
+            elif isinstance(field, FileField):
                 proxy = self._data.get(name)
                 if proxy and hasattr(proxy, "_pending_value"):
                     pending = proxy._pending_value
@@ -458,6 +448,12 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
                             pass
                     await proxy.put(pending)
 
+        doc_id = self.to_mongo(fields=[self._meta["id_field"]])
+        created = "_id" not in doc_id or self._created or force_insert
+
+        signals.pre_save_post_validation.send(
+            self.__class__, document=self, created=created, **signal_kwargs
+        )
         # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
         doc = self.to_mongo()
 

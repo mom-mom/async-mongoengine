@@ -102,11 +102,11 @@ await doc._save_update(doc, save_condition, write_concern)
 #### `save()` 내부 순서 변경
 
 ```
-Before: pre_save → validate → to_mongo() → init_collection → DB write
-After:  pre_save → validate → SequenceField generate → FileField flush → to_mongo() → init_collection → DB write
+Before: pre_save → validate → to_mongo(id) → to_mongo() → init_collection → DB write
+After:  pre_save → validate → SequenceField generate → FileField flush → to_mongo(id) → to_mongo() → init_collection → DB write
 ```
 
-- **SequenceField**: `save()` 시 None인 SequenceField 값을 `await field.generate()`로 자동 생성
+- **SequenceField**: `_auto_gen = False`로 변경. `to_mongo()`의 sync `_auto_gen` 경로를 타지 않음. 대신 `save()` 최상단에서 `await field.generate()`로 자동 생성. 이는 `to_mongo(fields=[id_field])` 호출(created 판정)보다 **앞에** 위치하여 PK용 SequenceField도 올바르게 처리.
 - **FileField**: `__set__`에서 deferred된 `_pending_value`를 `to_mongo()` 전에 flush
 
 #### `_save_create()` / `_save_update()` 컬렉션 해석
@@ -366,6 +366,7 @@ doc.name                # 명시적 fetch 후 접근
 
 | 항목 | Before | After |
 |---|---|---|
+| `_auto_gen` | `True` | `False` — `to_mongo()`의 sync `_auto_gen` 경로 비활성화 |
 | `generate()` | `def` (sync DB 호출) | `async def` |
 | `set_next_value(value)` | `def` (sync DB 호출) | `async def` |
 | `get_next_value()` | `def` (sync DB 호출) | `async def` |
