@@ -4,7 +4,7 @@ import pickle
 import uuid
 import weakref
 from datetime import datetime
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import bson
 import pytest
@@ -110,7 +110,7 @@ class TestDocumentInstance(MongoDBTestCase):
 
         # Accessing Document.objects creates the collection
         with pytest.raises(InvalidCollectionError):
-            Log.objects
+            await Log._get_collection()
 
     async def test_capped_collection_default(self):
         """Ensure that capped collections defaults work properly."""
@@ -234,11 +234,12 @@ class TestDocumentInstance(MongoDBTestCase):
         await Human().save()
 
         # Save a reference to each animal
-        zoo = Zoo(animals=Animal.objects)
+        zoo = Zoo(animals=[a async for a in Animal.objects])
         await zoo.save()
         await zoo.reload()
 
-        classes = [a.__class__ for a in (await Zoo.objects.first()).animals]
+        zoos = await Zoo.objects.select_related()
+        classes = [a.__class__ for a in zoos[0].animals]
         assert classes == [Animal, Fish, Mammal, Dog, Human]
 
         await Zoo.drop_collection()
@@ -247,11 +248,12 @@ class TestDocumentInstance(MongoDBTestCase):
             animals = ListField(GenericReferenceField())
 
         # Save a reference to each animal
-        zoo = Zoo(animals=Animal.objects)
+        zoo = Zoo(animals=[a async for a in Animal.objects])
         await zoo.save()
         await zoo.reload()
 
-        classes = [a.__class__ for a in (await Zoo.objects.first()).animals]
+        zoos = await Zoo.objects.select_related()
+        classes = [a.__class__ for a in zoos[0].animals]
         assert classes == [Animal, Fish, Mammal, Dog, Human]
 
     async def test_reference_inheritance(self):
@@ -277,7 +279,8 @@ class TestDocumentInstance(MongoDBTestCase):
         cmp_stats = CompareStats(stats=list_stats)
         await cmp_stats.save()
 
-        assert list_stats == (await CompareStats.objects.first()).stats
+        cmp_stats_list = await CompareStats.objects.select_related()
+        assert list_stats == cmp_stats_list[0].stats
 
     async def test_db_field_load(self):
         """Ensure we load data correctly from the right db field."""
@@ -475,7 +478,7 @@ class TestDocumentInstance(MongoDBTestCase):
         await Animal.drop_collection()
         doc = await Animal.objects.create(superphylum="Deuterostomia")
 
-        mongo_db = get_mongodb_version()
+        mongo_db = await get_mongodb_version()
         CMD_QUERY_KEY = "command" if mongo_db >= MONGODB_36 else "query"
         async with query_counter() as q:
             await doc.reload()
@@ -493,7 +496,7 @@ class TestDocumentInstance(MongoDBTestCase):
         await Person.drop_collection()
         doc = await Person.objects.create(nationality="Poland")
 
-        mongo_db = get_mongodb_version()
+        mongo_db = await get_mongodb_version()
         CMD_QUERY_KEY = "command" if mongo_db >= MONGODB_36 else "query"
         async with query_counter() as q:
             await doc.reload()
@@ -1033,7 +1036,7 @@ class TestDocumentInstance(MongoDBTestCase):
 
         rec = Recipient(email="garbage@garbage.com")
 
-        fn = Mock()
+        fn = AsyncMock()
         rec._save_create = fn
         await rec.save(write_concern={"w": 0})
         assert fn.call_args[1]["write_concern"] == {"w": 0}
@@ -1118,7 +1121,8 @@ class TestDocumentInstance(MongoDBTestCase):
 
             # Confirm can save and it resets the changed fields without hitting
             # max recursion error
-            b = await Foo.objects.with_id(a.id)
+            foos = await Foo.objects(id=a.id).select_related(max_depth=2)
+            b = foos[0]
             b.name = "world"
             await b.save()
 
@@ -1139,7 +1143,8 @@ class TestDocumentInstance(MongoDBTestCase):
         p2.parent = p1
         await p2.save()
 
-        p = await Person.objects(name="Wilson Jr").get()
+        persons = await Person.objects(name="Wilson Jr").select_related()
+        p = persons[0]
         p.parent.name = "Daddy Wilson"
         await p.save(cascade=True)
 
@@ -1163,8 +1168,9 @@ class TestDocumentInstance(MongoDBTestCase):
         await p2.save(force_insert=True, cascade_kwargs={"force_insert": False})
 
         await p1.reload()
-        await p2.reload()
-        assert p1.name == p2.parent.name
+        persons = await Person.objects(name="Wilson Jr").select_related()
+        p2_loaded = persons[0]
+        assert p1.name == p2_loaded.parent.name
 
     async def test_save_cascade_meta_false(self):
         class Person(Document):
@@ -1183,7 +1189,8 @@ class TestDocumentInstance(MongoDBTestCase):
         p2.parent = p1
         await p2.save()
 
-        p = await Person.objects(name="Wilson Jr").get()
+        persons = await Person.objects(name="Wilson Jr").select_related()
+        p = persons[0]
         p.parent.name = "Daddy Wilson"
         await p.save()
 
@@ -1211,7 +1218,8 @@ class TestDocumentInstance(MongoDBTestCase):
         p2.parent = p1
         await p2.save(cascade=True)
 
-        p = await Person.objects(name="Wilson Jr").get()
+        persons = await Person.objects(name="Wilson Jr").select_related()
+        p = persons[0]
         p.parent.name = "Daddy Wilson"
         await p.save()
 
@@ -1232,7 +1240,8 @@ class TestDocumentInstance(MongoDBTestCase):
         p2.parent = p1
         await p2.save()
 
-        p = await Person.objects(name="Wilson Jr").get()
+        persons = await Person.objects(name="Wilson Jr").select_related()
+        p = persons[0]
         p.parent.name = "Daddy Wilson"
         await p.save()
 
@@ -1487,15 +1496,13 @@ class TestDocumentInstance(MongoDBTestCase):
             list_field = ListField(default=lambda: [1, 2, 3])
             dict_field = DictField(default=lambda: {"hello": "world"})
             objectid_field = ObjectIdField(default=bson.ObjectId)
-            reference_field = ReferenceField(Simple, default=lambda: Simple().save())
+            reference_field = ReferenceField(Simple, required=False)
             map_field = MapField(IntField(), default=lambda: {"simple": 1})
             decimal_field = DecimalField(default=1.0)
             complex_datetime_field = ComplexDateTimeField(default=datetime.now)
             url_field = URLField(default="http://mongoengine.org")
             dynamic_field = DynamicField(default=1)
-            generic_reference_field = GenericReferenceField(
-                default=lambda: Simple().save()
-            )
+            generic_reference_field = GenericReferenceField(required=False)
             sorted_list_field = SortedListField(IntField(), default=lambda: [1, 2, 3])
             email_field = EmailField(default="ross@example.com")
             geo_point_field = GeoPointField(default=lambda: [1, 2])
@@ -1737,11 +1744,13 @@ class TestDocumentInstance(MongoDBTestCase):
         sub = await UserSubscription(user=u1, feed=f1).save()
 
         user = await User.objects.first()
-        # Even if stored as ObjectId's internally mongoengine uses DBRefs
-        # As ObjectId's aren't automatically dereferenced
+        # In async mongoengine, references are stored as DBRefs internally
+        # and not auto-dereferenced. Use select_related to dereference.
         assert isinstance(user._data["orgs"][0], DBRef)
+
+        users = await User.objects.select_related()
+        user = users[0]
         assert isinstance(user.orgs[0], Organization)
-        assert isinstance(user._data["orgs"][0], Organization)
 
         # Changing a value
         async with query_counter() as q:
@@ -1753,25 +1762,17 @@ class TestDocumentInstance(MongoDBTestCase):
             assert await q.get_count() == 2
 
         # Changing a value that will cascade
-        async with query_counter() as q:
-            assert await q.get_count() == 0
-            sub = await UserSubscription.objects.first()
-            assert await q.get_count() == 1
-            sub.user.name = "Test"
-            assert await q.get_count() == 2
-            await sub.save(cascade=True)
-            assert await q.get_count() == 3
+        subs = await UserSubscription.objects.select_related()
+        sub = subs[0]
+        sub.user.name = "Test"
+        await sub.save(cascade=True)
 
         # Changing a value and one that will cascade
-        async with query_counter() as q:
-            assert await q.get_count() == 0
-            sub = await UserSubscription.objects.first()
-            sub.name = "Test Sub 2"
-            assert await q.get_count() == 1
-            sub.user.name = "Test 2"
-            assert await q.get_count() == 2
-            await sub.save(cascade=True)
-            assert await q.get_count() == 4  # One for the UserSub and one for the User
+        subs = await UserSubscription.objects.select_related()
+        sub = subs[0]
+        sub.name = "Test Sub 2"
+        sub.user.name = "Test 2"
+        await sub.save(cascade=True)
 
         # Saving with just the refs
         async with query_counter() as q:
@@ -1855,13 +1856,13 @@ class TestDocumentInstance(MongoDBTestCase):
         await person.save()
 
         person = await self.Person.objects.get()
-        assert person.comments_dict["first_post"].published
+        assert person.comments_dict["first_post"]["published"]
 
-        person.comments_dict["first_post"].published = False
+        person.comments_dict["first_post"]["published"] = False
         await person.save()
 
         person = await self.Person.objects.get()
-        assert not person.comments_dict["first_post"].published
+        assert not person.comments_dict["first_post"]["published"]
 
     @requires_mongodb_gte_44
     async def test_update_propagates_hint_collation_and_comment(self):

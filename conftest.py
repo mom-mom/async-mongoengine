@@ -40,9 +40,21 @@ def _is_mongo_testcase(cls):
     return any(c.__name__ == "MongoDBTestCase" for c in cls.__mro__)
 
 
+async def _clean_all_collections(db):
+    """Delete all documents from all non-system collections.
+
+    Uses delete_many instead of drop to avoid race conditions with
+    MongoDB's async background drop processing.
+    """
+    names = await db.list_collection_names()
+    for name in names:
+        if not name.startswith("system."):
+            await db[name].delete_many({})
+
+
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean_db(_mongo_connection, request):
-    """Drop the test database before each test."""
+    """Clean all collections before each test."""
     if not _is_mongo_testcase(request.cls):
         yield
         return
@@ -50,20 +62,16 @@ async def _clean_db(_mongo_connection, request):
     from mongoengine.connection import _connection_settings
 
     if "default" not in _connection_settings:
-        connect(db=MONGO_TEST_DB)
+        connect(db=MONGO_TEST_DB, uuidRepresentation="standard")
 
     db = get_db()
     request.cls._connection = _CACHED["conn"]
     request.cls.db = db
     request.cls.mongodb_version = _CACHED["mongodb_version"]
 
-    await db.client.drop_database(MONGO_TEST_DB)
-    # Synchronization barrier: perform a write and read to ensure
-    # the drop has fully completed before proceeding.
-    await db.command("ping")
+    await _clean_all_collections(db)
     yield
-    await db.client.drop_database(MONGO_TEST_DB)
-    await db.command("ping")
+    await _clean_all_collections(db)
 
 
 def pytest_collection_modifyitems(items):

@@ -1,5 +1,6 @@
 from tests.utils import MongoDBTestCase
 from datetime import datetime
+import asyncio
 
 import pytest
 from pymongo.collation import Collation
@@ -12,6 +13,30 @@ from mongoengine.mongodb_support import (
     get_mongodb_version,
 )
 from mongoengine.pymongo_support import PYMONGO_VERSION
+
+
+async def _safe_drop_collection(doc_cls):
+    """Drop a collection and retry _get_collection until the drop completes.
+
+    MongoDB's drop_collection is asynchronous on the server side.
+    Subsequent create_index calls (triggered by _get_collection /
+    ensure_indexes) can fail with IndexBuildAborted (code 276) if the
+    drop hasn't fully completed.  We retry with backoff until it succeeds.
+    """
+    from pymongo.errors import OperationFailure
+
+    await doc_cls.drop_collection()
+    for attempt in range(15):
+        try:
+            doc_cls._collection = None
+            await doc_cls._get_collection()
+            return
+        except OperationFailure as e:
+            if e.code == 276:  # IndexBuildAborted
+                doc_cls._collection = None
+                await asyncio.sleep(0.05 * (attempt + 1))
+            else:
+                raise
 
 
 class TestIndexes(MongoDBTestCase):
@@ -53,7 +78,7 @@ class TestIndexes(MongoDBTestCase):
         assert expected_specs == BlogPost._meta["index_specs"]
 
         await BlogPost.ensure_indexes()
-        info = await BlogPost.objects._collection.index_information()
+        info = await (await BlogPost._get_collection()).index_information()
         # _id, '-date', 'tags', ('cat', 'date')
         assert len(info) == 4
         info = [value["key"] for key, value in info.items()]
@@ -80,7 +105,7 @@ class TestIndexes(MongoDBTestCase):
         assert expected_specs == BlogPost._meta["index_specs"]
 
         await BlogPost.ensure_indexes()
-        info = await BlogPost.objects._collection.index_information()
+        info = await (await BlogPost._get_collection()).index_information()
         # _id, '-date', 'tags', ('cat', 'date')
         # NB: there is no index on _cls by itself, since
         # the indices on -date and tags will both contain
@@ -97,10 +122,10 @@ class TestIndexes(MongoDBTestCase):
         expected_specs.append({"fields": [("_cls", 1), ("title", 1)]})
         assert expected_specs == ExtendedBlogPost._meta["index_specs"]
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         await ExtendedBlogPost.ensure_indexes()
-        info = await ExtendedBlogPost.objects._collection.index_information()
+        info = await (await ExtendedBlogPost._get_collection()).index_information()
         info = [value["key"] for key, value in info.items()]
         for expected in expected_specs:
             assert expected["fields"] in info
@@ -185,11 +210,11 @@ class TestIndexes(MongoDBTestCase):
 
         assert [{"fields": [("rank.title", 1)]}] == Person._meta["index_specs"]
 
-        await Person.drop_collection()
+        await _safe_drop_collection(Person)
 
         # Indexes are lazy so use list() to perform query
         [doc async for doc in Person.objects]
-        info = await Person.objects._collection.index_information()
+        info = await (await Person._get_collection()).index_information()
         info = [value["key"] for key, value in info.items()]
         assert [("rank.title", 1)] in info
 
@@ -307,22 +332,22 @@ class TestIndexes(MongoDBTestCase):
             {"fields": [("addDate", -1)], "unique": True, "sparse": True}
         ] == BlogPost._meta["index_specs"]
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
-        info = await BlogPost.objects._collection.index_information()
+        info = await (await BlogPost._get_collection()).index_information()
         # _id, '-date'
         assert len(info) == 2
 
         # Indexes are lazy so use list() to perform query
         [doc async for doc in BlogPost.objects]
-        info = await BlogPost.objects._collection.index_information()
+        info = await (await BlogPost._get_collection()).index_information()
         info = [
             (value["key"], value.get("unique", False), value.get("sparse", False))
             for key, value in info.items()
         ]
         assert ([("addDate", -1)], True, True) in info
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
     async def test_abstract_index_inheritance(self):
         class UserBase(Document):
@@ -338,12 +363,12 @@ class TestIndexes(MongoDBTestCase):
 
             meta = {"indexes": ["name"]}
 
-        await Person.drop_collection()
+        await _safe_drop_collection(Person)
 
         await Person(name="test", user_guid="123").save()
 
         assert 1 == await Person.objects.count()
-        info = await Person.objects._collection.index_information()
+        info = await (await Person._get_collection()).index_information()
         assert sorted(info.keys()) == ["_cls_1_name_1", "_cls_1_user_guid_1", "_id_"]
 
     async def test_disable_index_creation(self):
@@ -362,17 +387,17 @@ class TestIndexes(MongoDBTestCase):
         class MongoUser(User):
             pass
 
-        await User.drop_collection()
+        await _safe_drop_collection(User)
 
         await User(user_guid="123").save()
         await MongoUser(user_guid="123").save()
 
         assert 2 == await User.objects.count()
-        info = await User.objects._collection.index_information()
+        info = await (await User._get_collection()).index_information()
         assert list(info.keys()) == ["_id_"]
 
         await User.ensure_indexes()
-        info = await User.objects._collection.index_information()
+        info = await (await User._get_collection()).index_information()
         assert sorted(info.keys()) == ["_cls_1_user_guid_1", "_id_"]
 
     async def test_embedded_document_index(self):
@@ -387,9 +412,9 @@ class TestIndexes(MongoDBTestCase):
 
             meta = {"indexes": ["-date.year"]}
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
-        info = await BlogPost.objects._collection.index_information()
+        info = await (await BlogPost._get_collection()).index_information()
         assert sorted(info.keys()) == ["_id_", "date.yr_-1"]
 
     async def test_list_embedded_document_index(self):
@@ -404,9 +429,10 @@ class TestIndexes(MongoDBTestCase):
 
             meta = {"indexes": ["tags.name"]}
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
-        info = await BlogPost.objects._collection.index_information()
+        await BlogPost.ensure_indexes()
+        info = await (await BlogPost._get_collection()).index_information()
         # we don't use _cls in with list fields by default
         assert sorted(info.keys()) == ["_id_", "tags.tag_1"]
 
@@ -437,14 +463,14 @@ class TestIndexes(MongoDBTestCase):
 
             meta = {"indexes": ["a"], "allow_inheritance": False}
 
-        await Test.drop_collection()
+        await _safe_drop_collection(Test)
 
         obj = Test(a=1)
         await obj.save()
 
         # Need to be explicit about covered indexes as mongoDB doesn't know if
         # the documents returned might have more keys in that here.
-        mongo_db = get_mongodb_version()
+        mongo_db = await get_mongodb_version()
         if mongo_db >= MONGODB_80:
             query_plan = await Test.objects(id=obj.id).exclude("a").explain()
             assert (
@@ -519,9 +545,9 @@ class TestIndexes(MongoDBTestCase):
             description = StringField(required=True)
             categories = ListField()
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
-        indexes = await BlogPost.objects._collection.index_information()
+        indexes = await (await BlogPost._get_collection()).index_information()
         assert indexes["categories_1__id_1"]["key"] == [("categories", 1), ("_id", 1)]
 
     async def test_hint(self):
@@ -531,7 +557,7 @@ class TestIndexes(MongoDBTestCase):
             tags = ListField(StringField())
             meta = {"indexes": [{"fields": ["tags"], "name": TAGS_INDEX_NAME}]}
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         for i in range(10):
             tags = [("tag %i" % n) for n in range(i % 2)]
@@ -574,19 +600,19 @@ class TestIndexes(MongoDBTestCase):
                 ]
             }
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         names = ["tag1", "Tag2", "tag3", "Tag4", "tag5"]
         for name in names:
             await BlogPost(name=name).save()
 
         query_result = BlogPost.objects.collation(base).order_by("name")
-        assert [x.name for x in query_result] == sorted(names, key=lambda x: x.lower())
-        assert 5 == query_result.count()
+        assert [x.name async for x in query_result] == sorted(names, key=lambda x: x.lower())
+        assert 5 == await query_result.count()
 
         query_result = BlogPost.objects.collation(Collation(**base)).order_by("name")
-        assert [x.name for x in query_result] == sorted(names, key=lambda x: x.lower())
-        assert 5 == query_result.count()
+        assert [x.name async for x in query_result] == sorted(names, key=lambda x: x.lower())
+        assert 5 == await query_result.count()
 
         incorrect_collation = {"arndom": "wrdo"}
         with pytest.raises(OperationFailure) as exc_info:
@@ -596,7 +622,7 @@ class TestIndexes(MongoDBTestCase):
         ) or "unknown field" in str(exc_info.value)
 
         query_result = BlogPost.objects.collation({}).order_by("name")
-        assert [x.name for x in query_result] == sorted(names)
+        assert [x.name async for x in query_result] == sorted(names)
 
     async def test_unique(self):
         """Ensure that uniqueness constraints are applied to fields."""
@@ -605,7 +631,7 @@ class TestIndexes(MongoDBTestCase):
             title = StringField()
             slug = StringField(unique=True)
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         post1 = BlogPost(title="test1", slug="test")
         await post1.save()
@@ -627,7 +653,7 @@ class TestIndexes(MongoDBTestCase):
         class Blog(Document):
             id = StringField(primary_key=True, unique=True)
 
-        await Blog.drop_collection()
+        await _safe_drop_collection(Blog)
 
         with pytest.raises(OperationFailure) as exc_info:
             await Blog(id="garbage").save()
@@ -657,7 +683,7 @@ class TestIndexes(MongoDBTestCase):
             date = EmbeddedDocumentField(Date)
             slug = StringField(unique_with="date.year")
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         post1 = BlogPost(title="test1", date=Date(year=2009), slug="test")
         await post1.save()
@@ -682,7 +708,7 @@ class TestIndexes(MongoDBTestCase):
             title = StringField()
             sub = EmbeddedDocumentField(SubDocument)
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         post1 = BlogPost(title="test1", sub=SubDocument(year=2009, slug="test"))
         await post1.save()
@@ -711,7 +737,7 @@ class TestIndexes(MongoDBTestCase):
             title = StringField()
             subs = ListField(EmbeddedDocumentField(SubDocument))
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         post1 = BlogPost(
             title="test1",
@@ -742,7 +768,7 @@ class TestIndexes(MongoDBTestCase):
             title = StringField()
             subs = SortedListField(EmbeddedDocumentField(SubDocument), ordering="year")
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         post1 = BlogPost(
             title="test1",
@@ -778,7 +804,7 @@ class TestIndexes(MongoDBTestCase):
             title = StringField()
             subs = EmbeddedDocumentListField(SubDocument)
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         post1 = BlogPost(
             title="test1",
@@ -812,7 +838,7 @@ class TestIndexes(MongoDBTestCase):
             title = StringField(unique_with="sub.year")
             sub = EmbeddedDocumentField(SubDocument)
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
 
         post1 = BlogPost(title="test1", sub=SubDocument(year=2009, slug="test"))
         await post1.save()
@@ -836,11 +862,11 @@ class TestIndexes(MongoDBTestCase):
             created = DateTimeField(default=datetime.now)
             meta = {"indexes": [{"fields": ["created"], "expireAfterSeconds": 3600}]}
 
-        await Log.drop_collection()
+        await _safe_drop_collection(Log)
 
         # Indexes are lazy so use list() to perform query
         [doc async for doc in Log.objects]
-        info = await Log.objects._collection.index_information()
+        info = await (await Log._get_collection()).index_information()
         assert 3600 == info["created_1"]["expireAfterSeconds"]
 
     async def test_unique_and_indexes(self):
@@ -852,7 +878,7 @@ class TestIndexes(MongoDBTestCase):
             cust_id = IntField(unique=True, required=True)
             meta = {"indexes": ["cust_id"], "allow_inheritance": False}
 
-        await Customer.drop_collection()
+        await _safe_drop_collection(Customer)
         cust = Customer(cust_id=1)
         await cust.save()
 
@@ -877,7 +903,7 @@ class TestIndexes(MongoDBTestCase):
             name = StringField(primary_key=True)
             password = StringField()
 
-        await User.drop_collection()
+        await _safe_drop_collection(User)
 
         user = User(name="huangz", password="secret")
         await user.save()
@@ -897,7 +923,7 @@ class TestIndexes(MongoDBTestCase):
             name = StringField(primary_key=True)
             password = StringField()
 
-        await User.drop_collection()
+        await _safe_drop_collection(User)
 
         await User.objects.create(name="huangz", password="secret")
         with pytest.raises(NotUniqueError):
@@ -925,7 +951,7 @@ class TestIndexes(MongoDBTestCase):
         except UnboundLocalError:
             pytest.fail("Unbound local error at index + pk definition")
 
-        info = await BlogPost.objects._collection.index_information()
+        info = await (await BlogPost._get_collection()).index_information()
         info = [value["key"] for key, value in info.items()]
         index_item = [("_id", 1), ("comments.comment_id", 1)]
         assert index_item in info
@@ -966,7 +992,7 @@ class TestIndexes(MongoDBTestCase):
             provider_ids = DictField()
             meta = {"indexes": ["provider_ids.foo", "provider_ids.bar"]}
 
-        info = await MyDoc.objects._collection.index_information()
+        info = await (await MyDoc._get_collection()).index_information()
         info = [value["key"] for key, value in info.items()]
         assert [("provider_ids.foo", 1)] in info
         assert [("provider_ids.bar", 1)] in info
@@ -980,7 +1006,7 @@ class TestIndexes(MongoDBTestCase):
                 ]
             }
 
-        info = await MyDoc.objects._collection.index_information()
+        info = await (await MyDoc._get_collection()).index_information()
         assert [("provider_ids.foo", 1), ("provider_ids.bar", 1)] == info[
             "provider_ids.foo_1_provider_ids.bar_1"
         ]["key"]
@@ -993,7 +1019,7 @@ class TestIndexes(MongoDBTestCase):
             title = DictField()
             meta = {"indexes": ["$title"]}
 
-        indexes = await Book.objects._collection.index_information()
+        indexes = await (await Book._get_collection()).index_information()
         assert "title_text" in indexes
         key = indexes["title_text"]["key"]
         assert ("_fts", "text") in key
@@ -1003,7 +1029,7 @@ class TestIndexes(MongoDBTestCase):
             ref_id = StringField()
             meta = {"indexes": ["#ref_id"]}
 
-        indexes = await Book.objects._collection.index_information()
+        indexes = await (await Book._get_collection()).index_information()
         assert "ref_id_hashed" in indexes
         assert ("ref_id", "hashed") in indexes["ref_id_hashed"]["key"]
 
@@ -1027,7 +1053,7 @@ class TestIndexes(MongoDBTestCase):
             slug = StringField(unique=True)
             meta = {"db_alias": tmp_alias}
 
-        await BlogPost.drop_collection()
+        await _safe_drop_collection(BlogPost)
         await BlogPost(slug="test").save()
         with pytest.raises(NotUniqueError):
             await BlogPost(slug="test").save()
@@ -1046,7 +1072,7 @@ class TestIndexes(MongoDBTestCase):
                 "auto_create_index_on_save": True,
             }
 
-        await BlogPost2.drop_collection()
+        await _safe_drop_collection(BlogPost2)
         await BlogPost2(slug="test").save()
         with pytest.raises(NotUniqueError):
             await BlogPost2(slug="test").save()
@@ -1082,7 +1108,7 @@ class TestIndexes(MongoDBTestCase):
 
             meta = {"indexes": [{"fields": ("txt2",), "cls": False}]}
 
-        await TestDoc.drop_collection()
+        await _safe_drop_collection(TestDoc)
         await TestDoc.ensure_indexes()
         await TestChildDoc.ensure_indexes()
 
@@ -1122,7 +1148,7 @@ class TestIndexes(MongoDBTestCase):
                 "indexes": [("shard_1", "_cls", "txt_1")],
             }
 
-        await TestDoc.drop_collection()
+        await _safe_drop_collection(TestDoc)
         await TestDoc.ensure_indexes()
 
         assert await TestDoc.compare_indexes() == {"missing": [], "extra": []}
@@ -1148,8 +1174,10 @@ class TestIndexes(MongoDBTestCase):
 
             meta = {"indexes": [{"fields": ["$b", "$a"]}]}
 
-        await Sample1.drop_collection()
-        await Sample2.drop_collection()
+        await _safe_drop_collection(Sample1)
+        await _safe_drop_collection(Sample2)
+        await Sample1.ensure_indexes()
+        await Sample2.ensure_indexes()
         assert await Sample1.compare_indexes() == {"missing": [], "extra": []}
         assert await Sample2.compare_indexes() == {"missing": [], "extra": []}
 

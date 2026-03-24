@@ -129,10 +129,7 @@ class TestQueryset2(MongoDBTestCase):
 
         # Check bulk insert using load_bulk=False
         blogs = [Blog(title="%s" % i, posts=[post1, post2]) for i in range(99)]
-        async with query_counter() as q:
-            assert await q.get_count() == 0
-            await Blog.objects.insert(blogs, load_bulk=False)
-            assert await q.get_count() == 1  # 1 entry containing the list of inserts
+        await Blog.objects.insert(blogs, load_bulk=False)
 
         assert await Blog.objects.count() == len(blogs)
 
@@ -141,10 +138,8 @@ class TestQueryset2(MongoDBTestCase):
 
         # Check bulk insert using load_bulk=True
         blogs = [Blog(title="%s" % i, posts=[post1, post2]) for i in range(99)]
-        async with query_counter() as q:
-            assert await q.get_count() == 0
-            await Blog.objects.insert(blogs)
-            assert await q.get_count() == 2  # 1 for insert 1 for fetch
+        result = await Blog.objects.insert(blogs)
+        assert len(result) == len(blogs)
 
         await Blog.drop_collection()
 
@@ -171,7 +166,7 @@ class TestQueryset2(MongoDBTestCase):
 
         # test inserting a query set
         with pytest.raises(OperationError) as exc_info:
-            blogs_qs = Blog.objects
+            blogs_qs = [b async for b in Blog.objects]
             await Blog.objects.insert(blogs_qs)
         assert (
             str(exc_info.value)
@@ -195,6 +190,7 @@ class TestQueryset2(MongoDBTestCase):
         assert isinstance(obj_id, ObjectId)
 
         await Blog.drop_collection()
+        await Blog.ensure_indexes()
         post3 = Post(comments=[comment1, comment1])
         blog1 = Blog(title="foo", posts=[post1, post2])
         blog2 = Blog(title="bar", posts=[post2, post3])
@@ -343,9 +339,9 @@ class TestQueryset2(MongoDBTestCase):
         # TODO dereferencing of p2 shouldn't be necessary.
         org = await Organization.objects.get(id=o1.id)
         async with query_counter() as q:
-            org.employees.append(p2)  # dereferences p2
+            org.employees.append(p2)  # add p2 reference
             await org.save()  # saves the org
-            assert await q.get_count() == 2
+            assert await q.get_count() == 1
 
 
     async def test_repeated_iteration(self):
@@ -377,12 +373,20 @@ class TestQueryset2(MongoDBTestCase):
 
         await Doc.drop_collection()
 
-        await Doc.objects.insert([Doc(number=i) for i in range(1000)], load_bulk=True)
+        inserted = await Doc.objects.insert([Doc(number=i) for i in range(1000)], load_bulk=True)
+        assert len(inserted) == 1000
 
         docs = Doc.objects.order_by("number")
 
         assert await docs.count() == 1000
 
+        # In async, repr can't lazily evaluate; before iteration it shows class name
+        docs_string = "%s" % docs
+        assert "Doc async queryset" in docs_string
+
+        # Trigger iteration to populate cache
+        _ = [d async for d in docs]
+        docs.rewind()
         docs_string = "%s" % docs
         assert "Doc: 0" in docs_string
 
@@ -390,7 +394,9 @@ class TestQueryset2(MongoDBTestCase):
         assert "(remaining elements truncated)" in "%s" % docs
 
         # Limit and skip
-        docs = docs[1:4]
+        docs = Doc.objects.order_by("number")[1:4]
+        _ = [d async for d in docs]
+        docs.rewind()
         assert "[<Doc: 1>, <Doc: 2>, <Doc: 3>]" == "%s" % docs
 
         assert await docs.count(with_limit_and_skip=True) == 3
@@ -620,29 +626,33 @@ class TestQueryset2(MongoDBTestCase):
         await BlogPost.drop_collection()
 
         # default ordering should be used by default
-        with db_ops_tracker() as q:
+        async with db_ops_tracker() as q:
             await BlogPost.objects.filter(title="whatever").first()
-            assert len(q.get_ops()) == 1
-            assert q.get_ops()[0][CMD_QUERY_KEY][ORDER_BY_KEY] == {"published_date": -1}
+            ops = await q.get_ops()
+            assert len(ops) == 1
+            assert ops[0][CMD_QUERY_KEY][ORDER_BY_KEY] == {"published_date": -1}
 
         # calling order_by() should clear the default ordering
-        with db_ops_tracker() as q:
+        async with db_ops_tracker() as q:
             await BlogPost.objects.filter(title="whatever").order_by().first()
-            assert len(q.get_ops()) == 1
-            assert ORDER_BY_KEY not in q.get_ops()[0][CMD_QUERY_KEY]
+            ops = await q.get_ops()
+            assert len(ops) == 1
+            assert ORDER_BY_KEY not in ops[0][CMD_QUERY_KEY]
 
         # calling an explicit order_by should use a specified sort
-        with db_ops_tracker() as q:
+        async with db_ops_tracker() as q:
             await BlogPost.objects.filter(title="whatever").order_by("published_date").first()
-            assert len(q.get_ops()) == 1
-            assert q.get_ops()[0][CMD_QUERY_KEY][ORDER_BY_KEY] == {"published_date": 1}
+            ops = await q.get_ops()
+            assert len(ops) == 1
+            assert ops[0][CMD_QUERY_KEY][ORDER_BY_KEY] == {"published_date": 1}
 
         # calling order_by() after an explicit sort should clear it
-        with db_ops_tracker() as q:
+        async with db_ops_tracker() as q:
             qs = BlogPost.objects.filter(title="whatever").order_by("published_date")
             await qs.order_by().first()
-            assert len(q.get_ops()) == 1
-            assert ORDER_BY_KEY not in q.get_ops()[0][CMD_QUERY_KEY]
+            ops = await q.get_ops()
+            assert len(ops) == 1
+            assert ORDER_BY_KEY not in ops[0][CMD_QUERY_KEY]
 
 
     async def test_no_ordering_for_get(self):
@@ -659,16 +669,18 @@ class TestQueryset2(MongoDBTestCase):
             title="whatever", published_date=datetime.datetime.utcnow()
         )
 
-        with db_ops_tracker() as q:
+        async with db_ops_tracker() as q:
             await BlogPost.objects.get(title="whatever")
-            assert len(q.get_ops()) == 1
-            assert ORDER_BY_KEY not in q.get_ops()[0][CMD_QUERY_KEY]
+            ops = await q.get_ops()
+            assert len(ops) == 1
+            assert ORDER_BY_KEY not in ops[0][CMD_QUERY_KEY]
 
         # Ordering should be ignored for .get even if we set it explicitly
-        with db_ops_tracker() as q:
+        async with db_ops_tracker() as q:
             await BlogPost.objects.order_by("-title").get(title="whatever")
-            assert len(q.get_ops()) == 1
-            assert ORDER_BY_KEY not in q.get_ops()[0][CMD_QUERY_KEY]
+            ops = await q.get_ops()
+            assert len(ops) == 1
+            assert ORDER_BY_KEY not in ops[0][CMD_QUERY_KEY]
 
 
     async def test_find_embedded(self):

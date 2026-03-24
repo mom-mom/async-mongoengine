@@ -263,6 +263,9 @@ class TestFileField(MongoDBTestCase):
         await marmot.save()
 
         marmot = await Animal.objects.get()
+        assert marmot.photo.grid_id is not None, "grid_id should be set after loading"
+        gridout = await marmot.photo.get()
+        assert gridout is not None, f"gridout should not be None for grid_id={marmot.photo.grid_id}"
         assert marmot.photo.content_type == "image/jpeg"
         assert marmot.photo.foo == "bar"
 

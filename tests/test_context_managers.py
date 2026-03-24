@@ -107,6 +107,10 @@ class TestContextManagers(MongoDBTestCase):
 
         await Group.drop_collection()
 
+        # Also drop collection in testdb-1 to ensure clean state
+        async with switch_db(Group, "testdb-1") as Group:
+            await Group.drop_collection()
+
         await Group(name="hello - default").save()
         assert 1 == await Group.objects.count()
 
