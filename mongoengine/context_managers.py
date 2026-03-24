@@ -346,7 +346,7 @@ async def run_in_transaction(
     """
     conn = get_connection(alias)
     session_kwargs = session_kwargs or {}
-    async with await conn.start_session(**session_kwargs) as session:
+    async with conn.start_session(**session_kwargs) as session:
         transaction_kwargs = transaction_kwargs or {}
         async with session.start_transaction(**transaction_kwargs):
             try:

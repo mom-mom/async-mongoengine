@@ -220,9 +220,14 @@ class BaseQuerySet:
         return False if await queryset.first() is None else True
 
     def __bool__(self):
-        """Always returns True. Use ``await qs.is_empty()`` to check
-        for emptiness in async code, since __bool__ cannot be async."""
-        return True
+        """Raises TypeError to prevent silent logic bugs.
+
+        In async mode, use ``await qs.is_empty()`` or ``await qs.count()``
+        instead of ``if qs:``."""
+        raise TypeError(
+            "QuerySet truth value is not available in async mode. "
+            "Use 'await qs.is_empty()' or 'await qs.count()' instead of 'if qs:'."
+        )
 
     async def is_empty(self):
         """Return True if the queryset has no results."""

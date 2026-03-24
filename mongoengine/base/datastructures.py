@@ -303,7 +303,7 @@ class EmbeddedDocumentList(BaseList):
 
         return self._instance[self._name][-1]
 
-    def save(self, *args, **kwargs):
+    async def save(self, *args, **kwargs):
         """
         Saves the ancestor document.
 
@@ -312,7 +312,7 @@ class EmbeddedDocumentList(BaseList):
         :param kwargs: Keyword arguments passed up to the ancestor Document's
          save method.
         """
-        self._instance.save(*args, **kwargs)
+        await self._instance.save(*args, **kwargs)
 
     def delete(self):
         """

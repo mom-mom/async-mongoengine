@@ -435,10 +435,15 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         signals.pre_save_post_validation.send(
             self.__class__, document=self, created=created, **signal_kwargs
         )
-        # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
-        doc = self.to_mongo()
+
+        # Auto-generate SequenceField values that are still None
+        SequenceField = _import_class("SequenceField")
+        for name, field in self._fields.items():
+            if isinstance(field, SequenceField) and self._data.get(name) is None:
+                self._data[name] = await field.generate()
 
         # Flush any pending FileField values that were deferred from __set__
+        # Must happen BEFORE to_mongo() so the serialized doc contains the new grid_id
         FileField = _import_class("FileField")
         for name, field in self._fields.items():
             if isinstance(field, FileField):
@@ -452,6 +457,9 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
                         except Exception:
                             pass
                     await proxy.put(pending)
+
+        # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
+        doc = self.to_mongo()
 
         # Initialize the Document's underlying pymongo.Collection (+create indexes) if not already initialized
         # Important to do this here to avoid that the index creation gets wrapped in the try/except block below
@@ -519,7 +527,9 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
 
         Helper method, should only be used inside save().
         """
-        collection = await self._get_collection()
+        # Use instance-level _collection if set (e.g. via switch_db/switch_collection),
+        # otherwise fall back to the class-level async _get_collection()
+        collection = self._collection or await self.__class__._get_collection()
         with set_write_concern(collection, write_concern) as wc_collection:
             if force_insert:
                 return (await wc_collection.insert_one(doc, session=_get_session())).inserted_id
@@ -577,7 +587,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
 
         Helper method, should only be used inside save().
         """
-        collection = await self._get_collection()
+        collection = self._collection or await self.__class__._get_collection()
         object_id = doc["_id"]
         created = False
 

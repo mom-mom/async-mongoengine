@@ -890,9 +890,9 @@ class DynamicField(BaseField):
         if isinstance(value, dict) and "_cls" in value:
             doc_cls = _DocumentRegistry.get(value["_cls"])
             if "_ref" in value:
-                value = doc_cls._get_db().dereference(
-                    value["_ref"], session=_get_session()
-                )
+                # In async mode, cannot dereference synchronously.
+                # Return the raw dict; use explicit async fetch if needed.
+                return value
             return doc_cls._from_son(value)
 
         return super().to_python(value)
@@ -2007,15 +2007,16 @@ class SequenceField(BaseField):
         )
         super().__init__(*args, **kwargs)
 
-    def generate(self):
-        """
-        Generate and Increment the counter
+    async def generate(self):
+        """Generate and Increment the counter.
+
+        Must be called with ``await`` since it performs a DB operation.
         """
         sequence_name = self.get_sequence_name()
         sequence_id = f"{sequence_name}.{self.name}"
         collection = get_db(alias=self.db_alias)[self.collection_name]
 
-        counter = collection.find_one_and_update(
+        counter = await collection.find_one_and_update(
             filter={"_id": sequence_id},
             update={"$inc": {"next": 1}},
             return_document=ReturnDocument.AFTER,
@@ -2024,12 +2025,12 @@ class SequenceField(BaseField):
         )
         return self.value_decorator(counter["next"])
 
-    def set_next_value(self, value):
-        """Helper method to set the next sequence value"""
+    async def set_next_value(self, value):
+        """Helper method to set the next sequence value."""
         sequence_name = self.get_sequence_name()
         sequence_id = f"{sequence_name}.{self.name}"
         collection = get_db(alias=self.db_alias)[self.collection_name]
-        counter = collection.find_one_and_update(
+        counter = await collection.find_one_and_update(
             filter={"_id": sequence_id},
             update={"$set": {"next": value}},
             return_document=ReturnDocument.AFTER,
@@ -2038,7 +2039,7 @@ class SequenceField(BaseField):
         )
         return self.value_decorator(counter["next"])
 
-    def get_next_value(self):
+    async def get_next_value(self):
         """Helper method to get the next value for previewing.
 
         .. warning:: There is no guarantee this will be the next value
@@ -2047,7 +2048,7 @@ class SequenceField(BaseField):
         sequence_name = self.get_sequence_name()
         sequence_id = f"{sequence_name}.{self.name}"
         collection = get_db(alias=self.db_alias)[self.collection_name]
-        data = collection.find_one({"_id": sequence_id}, session=_get_session())
+        data = await collection.find_one({"_id": sequence_id}, session=_get_session())
 
         if data:
             return self.value_decorator(data["next"] + 1)
@@ -2068,31 +2069,20 @@ class SequenceField(BaseField):
             )
 
     def __get__(self, instance, owner):
-        value = super().__get__(instance, owner)
-        if value is None and instance._initialised:
-            value = self.generate()
-            instance._data[self.name] = value
-            instance._mark_as_changed(self.name)
-
-        return value
+        # Cannot auto-generate in __get__ since generate() is async.
+        # Sequence values must be generated explicitly before save via
+        # ``value = await field.generate()`` or will be auto-generated
+        # during save() if still None.
+        return super().__get__(instance, owner)
 
     def __set__(self, instance, value):
-        if value is None and instance._initialised:
-            value = self.generate()
-
         return super().__set__(instance, value)
 
     def prepare_query_value(self, op, value):
-        """
-        This method is overridden in order to convert the query value into to required
-        type. We need to do this in order to be able to successfully compare query
-        values passed as string, the base implementation returns the value as is.
-        """
+        """Convert the query value into the required type."""
         return self.value_decorator(value)
 
     def to_python(self, value):
-        if value is None:
-            value = self.generate()
         return value
 
 
