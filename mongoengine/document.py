@@ -87,7 +87,7 @@ async def _generate_async_fields(doc):
             doc._data[name] = await field.generate()
         elif isinstance(field, FileField):
             proxy = doc._data.get(name)
-            if proxy and hasattr(proxy, "_pending_value"):
+            if proxy is not None and hasattr(proxy, "_pending_value"):
                 pending = proxy._pending_value
                 del proxy._pending_value
                 if proxy.grid_id:
