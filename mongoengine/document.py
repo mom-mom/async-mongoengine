@@ -70,12 +70,17 @@ async def _generate_async_fields(doc):
     """Pre-generate SequenceField values and flush FileField pending uploads
     for *doc* and any embedded sub-documents recursively.
 
+    Handles all nesting patterns:
+    - ``EmbeddedDocumentField(Comment)``
+    - ``EmbeddedDocumentListField(Comment)``
+    - ``ListField(EmbeddedDocumentField(Comment))``
+
     Must be called before ``validate()`` and ``to_mongo()``.
     """
     SequenceField = _import_class("SequenceField")
     FileField = _import_class("FileField")
     EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
-    EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
+    ComplexBaseField = _import_class("ComplexBaseField")
 
     for name, field in doc._fields.items():
         if isinstance(field, SequenceField) and doc._data.get(name) is None:
@@ -91,15 +96,21 @@ async def _generate_async_fields(doc):
                     except Exception:
                         pass
                 await proxy.put(pending)
-        elif isinstance(field, EmbeddedDocumentListField):
-            items = doc._data.get(name) or []
-            for item in items:
-                if item is not None and hasattr(item, "_fields"):
-                    await _generate_async_fields(item)
         elif isinstance(field, EmbeddedDocumentField):
             item = doc._data.get(name)
             if item is not None and hasattr(item, "_fields"):
                 await _generate_async_fields(item)
+        elif isinstance(field, ComplexBaseField):
+            # Covers ListField(EmbeddedDocumentField(...)),
+            # EmbeddedDocumentListField, and similar wrappers.
+            inner = getattr(field, "field", None)
+            if isinstance(inner, EmbeddedDocumentField):
+                items = doc._data.get(name) or []
+                if isinstance(items, dict):
+                    items = items.values()
+                for item in items:
+                    if item is not None and hasattr(item, "_fields"):
+                        await _generate_async_fields(item)
 
 
 class EmbeddedDocument(BaseDocument, metaclass=DocumentMetaclass):
