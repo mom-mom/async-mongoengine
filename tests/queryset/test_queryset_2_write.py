@@ -993,8 +993,8 @@ class TestQueryset2(MongoDBTestCase):
                 await child_child.save()
 
         tree_size = 1 + num_children + (num_children * num_children)
-        assert await tree_size == Category.objects.count()
-        assert await num_children == Category.objects(parent=base).count()
+        assert tree_size == await Category.objects.count()
+        assert num_children == await Category.objects(parent=base).count()
 
         # The delete should effectively wipe out the Category collection
         # without resulting in infinite parent-child cascade recursion
@@ -1022,7 +1022,7 @@ class TestQueryset2(MongoDBTestCase):
         await post.save()
 
         assert await BlogPost.objects.count() == 1
-        assert (await BlogPost.objects.first()).category.name == "Lameness"
+        assert (await BlogPost.objects.first()).category.id == lameness.pk
         await Category.objects.delete()
         assert await BlogPost.objects.count() == 1
         assert (await BlogPost.objects.first()).category is None

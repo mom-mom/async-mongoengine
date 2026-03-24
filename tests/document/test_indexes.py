@@ -16,27 +16,16 @@ from mongoengine.pymongo_support import PYMONGO_VERSION
 
 
 async def _safe_drop_collection(doc_cls):
-    """Drop a collection and retry _get_collection until the drop completes.
+    """Drop a collection and wait for MongoDB to fully process the drop.
 
     MongoDB's drop_collection is asynchronous on the server side.
-    Subsequent create_index calls (triggered by _get_collection /
-    ensure_indexes) can fail with IndexBuildAborted (code 276) if the
-    drop hasn't fully completed.  We retry with backoff until it succeeds.
+    Without waiting, subsequent create_index calls can fail with
+    IndexBuildAborted (code 276).  A short sleep is the most reliable
+    workaround since list_collection_names may return [] before the
+    drop is truly complete.
     """
-    from pymongo.errors import OperationFailure
-
     await doc_cls.drop_collection()
-    for attempt in range(15):
-        try:
-            doc_cls._collection = None
-            await doc_cls._get_collection()
-            return
-        except OperationFailure as e:
-            if e.code == 276:  # IndexBuildAborted
-                doc_cls._collection = None
-                await asyncio.sleep(0.05 * (attempt + 1))
-            else:
-                raise
+    await asyncio.sleep(0.2)
 
 
 class TestIndexes(MongoDBTestCase):

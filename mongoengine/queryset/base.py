@@ -502,6 +502,13 @@ class BaseQuerySet:
         delete_rules = doc._meta.get("delete_rules") or {}
         delete_rules = list(delete_rules.items())
 
+        # Pre-collect ids so we can pass a plain list (not a QuerySet)
+        # to __in queries.  QuerySet cannot be sync-iterated in async mode.
+        if delete_rules:
+            id_list = [d.id async for d in queryset]
+        else:
+            id_list = []
+
         # Check for DENY rules before actually deleting/nullifying any other
         # references
         for rule_entry, rule in delete_rules:
@@ -510,7 +517,7 @@ class BaseQuerySet:
                 continue
 
             if rule == DENY:
-                refs = document_cls.objects(**{field_name + "__in": self})
+                refs = document_cls.objects(**{field_name + "__in": id_list})
                 if await refs.limit(1).count() > 0:
                     raise OperationError(
                         "Could not delete document (%s.%s refers to it)"
@@ -527,20 +534,19 @@ class BaseQuerySet:
                 cascade_refs = set() if cascade_refs is None else cascade_refs
                 # Handle recursive reference
                 if doc._collection == document_cls._collection:
-                    async for ref in queryset:
-                        cascade_refs.add(ref.id)
+                    cascade_refs.update(id_list)
                 refs = document_cls.objects(
-                    **{field_name + "__in": self, "pk__nin": cascade_refs}
+                    **{field_name + "__in": id_list, "pk__nin": list(cascade_refs)}
                 )
                 if await refs.count() > 0:
                     await refs.delete(write_concern=write_concern, cascade_refs=cascade_refs)
             elif rule == NULLIFY:
-                await document_cls.objects(**{field_name + "__in": self}).update(
+                await document_cls.objects(**{field_name + "__in": id_list}).update(
                     write_concern=write_concern, **{"unset__%s" % field_name: 1}
                 )
             elif rule == PULL:
-                await document_cls.objects(**{field_name + "__in": self}).update(
-                    write_concern=write_concern, **{"pull_all__%s" % field_name: self}
+                await document_cls.objects(**{field_name + "__in": id_list}).update(
+                    write_concern=write_concern, **{"pull_all__%s" % field_name: id_list}
                 )
 
         kwargs = {}

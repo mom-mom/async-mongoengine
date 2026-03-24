@@ -362,10 +362,13 @@ async def run_in_transaction(
     session_kwargs = session_kwargs or {}
     async with conn.start_session(**session_kwargs) as session:
         transaction_kwargs = transaction_kwargs or {}
-        async with session.start_transaction(**transaction_kwargs):
-            try:
-                _set_session(session)
-                yield
-                await _commit_with_retry(session)
-            finally:
-                _clear_session()
+        await session.start_transaction(**transaction_kwargs)
+        try:
+            _set_session(session)
+            yield
+            await _commit_with_retry(session)
+        except Exception:
+            await session.abort_transaction()
+            raise
+        finally:
+            _clear_session()
