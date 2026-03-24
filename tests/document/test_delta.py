@@ -6,20 +6,6 @@ from mongoengine import *
 from tests.utils import MongoDBTestCase, get_as_pymongo
 
 
-async def _clear_docs(doc_cls):
-    """Delete all documents from this document's collection.
-
-    Uses delete_many instead of drop_collection to avoid race conditions
-    with MongoDB's async background drop processing.  Also resets the
-    cached _collection handle so _get_collection re-ensures indexes.
-    """
-    try:
-        coll = await doc_cls._get_collection()
-        await coll.delete_many({})
-    except Exception:
-        pass
-
-
 class TestDelta(MongoDBTestCase):
     def setup_method(self, method=None):
 
@@ -45,7 +31,7 @@ class TestDelta(MongoDBTestCase):
             dict_field = DictField()
             list_field = ListField()
 
-        await _clear_docs(Doc)
+        await Doc.drop_collection()
         doc = Doc()
         await doc.save()
 
@@ -106,7 +92,7 @@ class TestDelta(MongoDBTestCase):
             list_field = ListField()
             embedded_field = EmbeddedDocumentField(Embedded)
 
-        await _clear_docs(Doc)
+        await Doc.drop_collection()
         doc = Doc()
         await doc.save()
 
@@ -326,8 +312,8 @@ class TestDelta(MongoDBTestCase):
             name = StringField()
             owner = ReferenceField("Person")
 
-        await _clear_docs(Person)
-        await _clear_docs(Organization)
+        await Person.drop_collection()
+        await Organization.drop_collection()
 
         person = await Person(name="owner").save()
         organization = await Organization(name="company").save()
@@ -360,8 +346,8 @@ class TestDelta(MongoDBTestCase):
             owner = ReferenceField("Person", dbref=dbref)
             employees = ListField(ReferenceField("Person", dbref=dbref))
 
-        await _clear_docs(Person)
-        await _clear_docs(Organization)
+        await Person.drop_collection()
+        await Organization.drop_collection()
 
         person = await Person(name="owner").save()
         employee = await Person(name="employee").save()
@@ -398,7 +384,7 @@ class TestDelta(MongoDBTestCase):
             dict_field = DictField(db_field="db_dict_field")
             list_field = ListField(db_field="db_list_field")
 
-        await _clear_docs(Doc)
+        await Doc.drop_collection()
         doc = Doc()
         await doc.save()
 
@@ -483,7 +469,7 @@ class TestDelta(MongoDBTestCase):
                 Embedded, db_field="db_embedded_field"
             )
 
-        await _clear_docs(Doc)
+        await Doc.drop_collection()
         doc = Doc()
         await doc.save()
 
@@ -698,7 +684,7 @@ class TestDelta(MongoDBTestCase):
             name = StringField()
             meta = {"allow_inheritance": True}
 
-        await _clear_docs(Person)
+        await Person.drop_collection()
 
         p = Person(name="James", age=34)
         assert p._delta() == (
@@ -736,7 +722,7 @@ class TestDelta(MongoDBTestCase):
         class Doc(DynamicDocument):
             pass
 
-        await _clear_docs(Doc)
+        await Doc.drop_collection()
         doc = Doc()
         await doc.save()
 
@@ -818,7 +804,7 @@ class TestDelta(MongoDBTestCase):
             subs = MapField(MapField(EmbeddedDocumentField(EmbeddedDoc)))
             name = StringField()
 
-        await _clear_docs(MyDoc)
+        await MyDoc.drop_collection()
 
         await MyDoc(name="testcase1", subs={"a": {"b": EmbeddedDoc(name="foo")}}).save()
 
@@ -840,7 +826,7 @@ class TestDelta(MongoDBTestCase):
             embed = EmbeddedDocumentField(EmbeddedDoc, db_field="db_embed")
             name = StringField(db_field="db_name")
 
-        await _clear_docs(MyDoc)
+        await MyDoc.drop_collection()
 
         await MyDoc(name="testcase1", embed=EmbeddedDoc(name="foo")).save()
 
@@ -868,7 +854,7 @@ class TestDelta(MongoDBTestCase):
         class MyDoc(Document):
             subs = MapField(EmbeddedDocumentField(EmbeddedDoc))
 
-        await _clear_docs(MyDoc)
+        await MyDoc.drop_collection()
 
         await MyDoc().save()
 
@@ -893,7 +879,7 @@ class TestDelta(MongoDBTestCase):
         class MyDoc(Document):
             subs = MapField(EmbeddedDocumentField(EmbeddedDoc))
 
-        await _clear_docs(MyDoc)
+        await MyDoc.drop_collection()
 
         await MyDoc(subs={"a": EmbeddedDoc(name="foo")}).save()
 
@@ -921,8 +907,8 @@ class TestDelta(MongoDBTestCase):
             name = StringField()
             org = ReferenceField("Organization", required=True)
 
-        await _clear_docs(Organization)
-        await _clear_docs(User)
+        await Organization.drop_collection()
+        await User.drop_collection()
 
         org1 = Organization(name="Org 1")
         await org1.save()
@@ -970,7 +956,7 @@ class TestDelta(MongoDBTestCase):
             users = MapField(field=EmbeddedDocumentField(EmbeddedUser))
             num = IntField(default=-1)
 
-        await _clear_docs(Doc)
+        await Doc.drop_collection()
 
         doc = Doc(num=1)
         doc.users["007"] = EmbeddedUser(name="Agent007")
@@ -995,7 +981,7 @@ class TestDelta(MongoDBTestCase):
         class MyDoc(Document):
             dico = DictField()
 
-        await _clear_docs(MyDoc)
+        await MyDoc.drop_collection()
 
         await MyDoc(dico={"a": {"b": 0}}).save()
 
@@ -1022,7 +1008,7 @@ class TestDelta(MongoDBTestCase):
         class MyDoc(Document):
             dico = DictField()
 
-        await _clear_docs(MyDoc)
+        await MyDoc.drop_collection()
 
         await MyDoc(dico={"a": {"b": 0}}).save()
 

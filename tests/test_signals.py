@@ -416,7 +416,6 @@ class TestSignal(MongoDBTestCase):
         assert await self.get_signal_output_async(ei.save) == ["Is created"]
 
     async def test_signals_with_switch_db(self):
-        connect("mongoenginetest")
         register_connection("testdb-1", "mongoenginetest2")
 
         ei = self.ExplicitId(id=123)

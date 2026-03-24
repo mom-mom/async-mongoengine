@@ -40,29 +40,9 @@ def _is_mongo_testcase(cls):
     return any(c.__name__ == "MongoDBTestCase" for c in cls.__mro__)
 
 
-async def _clean_all_collections(db):
-    """Drop the test database and wait for completion.
-
-    Using drop_database is more thorough than dropping individual
-    collections. We also reset profiling to avoid stale system.profile
-    entries from query_counter.
-    """
-    try:
-        await db.command({"profile": 0})
-    except Exception:
-        pass
-    await db.client.drop_database(db.name)
-    # Wait for the drop to fully complete
-    for _ in range(50):
-        names = await db.list_collection_names()
-        if not names:
-            return
-        await asyncio.sleep(0.05)
-
-
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean_db(_mongo_connection, request):
-    """Clean all collections before each test."""
+    """Drop the test database before and after each test."""
     if not _is_mongo_testcase(request.cls):
         yield
         return
@@ -70,16 +50,16 @@ async def _clean_db(_mongo_connection, request):
     from mongoengine.connection import _connection_settings
 
     if "default" not in _connection_settings:
-        connect(db=MONGO_TEST_DB)
+        connect(db=MONGO_TEST_DB, uuidRepresentation="standard")
 
     db = get_db()
     request.cls._connection = _CACHED["conn"]
     request.cls.db = db
     request.cls.mongodb_version = _CACHED["mongodb_version"]
 
-    await _clean_all_collections(db)
+    await db.client.drop_database(MONGO_TEST_DB)
     yield
-    await _clean_all_collections(db)
+    await db.client.drop_database(MONGO_TEST_DB)
 
 
 def pytest_collection_modifyitems(items):

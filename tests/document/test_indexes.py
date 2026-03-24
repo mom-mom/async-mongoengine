@@ -1,7 +1,5 @@
 from tests.utils import MongoDBTestCase
 from datetime import datetime
-import asyncio
-
 import pytest
 from pymongo.collation import Collation
 from pymongo.errors import OperationFailure
@@ -16,16 +14,13 @@ from mongoengine.pymongo_support import PYMONGO_VERSION
 
 
 async def _safe_drop_collection(doc_cls):
-    """Drop a collection and wait for MongoDB to fully process the drop.
+    """Drop a collection with a brief pause for index tests.
 
-    MongoDB's drop_collection is asynchronous on the server side.
-    Without waiting, subsequent create_index calls can fail with
-    IndexBuildAborted (code 276).  A short sleep is the most reliable
-    workaround since list_collection_names may return [] before the
-    drop is truly complete.
+    Index tests need to drop and re-create collections with new indexes.
+    MongoDB may race between drop completion and subsequent ensure_indexes.
     """
     await doc_cls.drop_collection()
-    await asyncio.sleep(0.2)
+    doc_cls._collection = None
 
 
 class TestIndexes(MongoDBTestCase):
