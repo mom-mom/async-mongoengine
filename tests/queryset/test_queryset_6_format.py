@@ -12,7 +12,6 @@ from mongoengine import *
 from mongoengine.connection import get_db
 from mongoengine.context_managers import query_counter, switch_db
 from mongoengine.errors import InvalidQueryError
-from mongoengine.mongodb_support import MONGODB_36
 from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
     DoesNotExist,
@@ -25,19 +24,13 @@ from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
     db_ops_tracker,
     get_as_pymongo,
-    requires_mongodb_gte_42,
-    requires_mongodb_gte_44,
-    requires_mongodb_lt_42,
 )
 
 from tests.utils import MongoDBTestCase
 
 
-
-def get_key_compat(mongo_ver):
-    ORDER_BY_KEY = "sort"
-    CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
-    return ORDER_BY_KEY, CMD_QUERY_KEY
+def get_key_compat():
+    return ("sort", "command")
 
 
 class TestQueryset6(MongoDBTestCase):
@@ -785,7 +778,7 @@ class TestQueryset6(MongoDBTestCase):
 
 
     async def test_bool_with_ordering(self):
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat(self.mongodb_version)
+        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat()
 
         class Person(Document):
             name = StringField()
@@ -821,7 +814,7 @@ class TestQueryset6(MongoDBTestCase):
 
 
     async def test_bool_with_ordering_from_meta_dict(self):
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat(self.mongodb_version)
+        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat()
 
         class Person(Document):
             name = StringField()
@@ -1024,7 +1017,6 @@ class TestQueryset6(MongoDBTestCase):
         assert qs._cursor_args == {"no_cursor_timeout": True}
 
 
-    @requires_mongodb_gte_44
     async def test_allow_disk_use(self):
         qs = self.Person.objects()
         assert qs._cursor_args == {}

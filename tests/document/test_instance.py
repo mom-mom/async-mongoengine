@@ -24,10 +24,6 @@ from mongoengine.errors import (
     NotUniqueError,
     SaveConditionError,
 )
-from mongoengine.mongodb_support import (
-    MONGODB_36,
-    get_mongodb_version,
-)
 from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import NULLIFY, Q
 from tests import fixtures
@@ -42,7 +38,6 @@ from tests.utils import (
     MongoDBTestCase,
     db_ops_tracker,
     get_as_pymongo,
-    requires_mongodb_gte_44,
 )
 
 TEST_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "../fields/mongoengine.png")
@@ -478,12 +473,10 @@ class TestDocumentInstance(MongoDBTestCase):
         await Animal.drop_collection()
         doc = await Animal.objects.create(superphylum="Deuterostomia")
 
-        mongo_db = await get_mongodb_version()
-        CMD_QUERY_KEY = "command" if mongo_db >= MONGODB_36 else "query"
         async with query_counter() as q:
             await doc.reload()
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.animal"}).to_list(None))[0]
-            assert set(query_op[CMD_QUERY_KEY]["filter"].keys()) == {
+            assert set(query_op["command"]["filter"].keys()) == {
                 "_id",
                 "superphylum",
             }
@@ -496,12 +489,10 @@ class TestDocumentInstance(MongoDBTestCase):
         await Person.drop_collection()
         doc = await Person.objects.create(nationality="Poland")
 
-        mongo_db = await get_mongodb_version()
-        CMD_QUERY_KEY = "command" if mongo_db >= MONGODB_36 else "query"
         async with query_counter() as q:
             await doc.reload()
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.person"}).to_list(None))[0]
-            assert set(query_op[CMD_QUERY_KEY]["filter"].keys()) == {"_id", "country"}
+            assert set(query_op["command"]["filter"].keys()) == {"_id", "country"}
 
     async def test_reload_sharded_nested(self):
         class SuperPhylum(EmbeddedDocument):
@@ -1864,10 +1855,8 @@ class TestDocumentInstance(MongoDBTestCase):
         person = await self.Person.objects.get()
         assert not person.comments_dict["first_post"]["published"]
 
-    @requires_mongodb_gte_44
     async def test_update_propagates_hint_collation_and_comment(self):
         """Make sure adding a hint/comment/collation to the query gets added to the query"""
-        mongo_ver = await get_mongodb_version()
 
         base = {"locale": "en", "strength": 2}
         index_name = "name_1"
@@ -1889,7 +1878,7 @@ class TestDocumentInstance(MongoDBTestCase):
                 query_op = (await q.db.system.profile.find(
                     {"ns": "mongoenginetest.agg_person"}
                 ).to_list(None))[0]
-                CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
+                CMD_QUERY_KEY = "command"
                 assert "hint" not in query_op[CMD_QUERY_KEY]
                 assert query_op[CMD_QUERY_KEY]["comment"] == comment
                 assert "collation" not in query_op[CMD_QUERY_KEY]
@@ -1897,7 +1886,7 @@ class TestDocumentInstance(MongoDBTestCase):
         async with db_ops_tracker() as q:
             _ = await AggPerson.objects.hint(index_name).update_one(name="something")
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
-            CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
+            CMD_QUERY_KEY = "command"
 
             assert query_op[CMD_QUERY_KEY]["hint"] == {"$hint": index_name}
             assert "comment" not in query_op[CMD_QUERY_KEY]
@@ -1906,7 +1895,7 @@ class TestDocumentInstance(MongoDBTestCase):
         async with db_ops_tracker() as q:
             _ = await AggPerson.objects.collation(base).update_one(name="something")
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
-            CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
+            CMD_QUERY_KEY = "command"
             assert "hint" not in query_op[CMD_QUERY_KEY]
             assert "comment" not in query_op[CMD_QUERY_KEY]
             assert query_op[CMD_QUERY_KEY]["collation"] == base
@@ -1919,10 +1908,8 @@ class TestDocumentInstance(MongoDBTestCase):
         await person.delete()
         assert await self.Person.objects.count() == 0
 
-    @requires_mongodb_gte_44
     async def test_delete_propagates_hint_collation_and_comment(self):
         """Make sure adding a hint/comment/collation to the query gets added to the query"""
-        mongo_ver = await get_mongodb_version()
 
         base = {"locale": "en", "strength": 2}
         index_name = "name_1"
@@ -1944,7 +1931,7 @@ class TestDocumentInstance(MongoDBTestCase):
                 query_op = (await q.db.system.profile.find(
                     {"ns": "mongoenginetest.agg_person"}
                 ).to_list(None))[0]
-                CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
+                CMD_QUERY_KEY = "command"
                 assert "hint" not in query_op[CMD_QUERY_KEY]
                 assert query_op[CMD_QUERY_KEY]["comment"] == comment
                 assert "collation" not in query_op[CMD_QUERY_KEY]
@@ -1952,7 +1939,7 @@ class TestDocumentInstance(MongoDBTestCase):
         async with db_ops_tracker() as q:
             _ = await AggPerson.objects.hint(index_name).delete()
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
-            CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
+            CMD_QUERY_KEY = "command"
 
             assert query_op[CMD_QUERY_KEY]["hint"] == {"$hint": index_name}
             assert "comment" not in query_op[CMD_QUERY_KEY]
@@ -1961,7 +1948,7 @@ class TestDocumentInstance(MongoDBTestCase):
         async with db_ops_tracker() as q:
             _ = await AggPerson.objects.collation(base).delete()
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(None))[0]
-            CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
+            CMD_QUERY_KEY = "command"
             assert "hint" not in query_op[CMD_QUERY_KEY]
             assert "comment" not in query_op[CMD_QUERY_KEY]
             assert query_op[CMD_QUERY_KEY]["collation"] == base

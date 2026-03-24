@@ -12,7 +12,6 @@ from mongoengine import *
 from mongoengine.connection import get_db
 from mongoengine.context_managers import query_counter, switch_db
 from mongoengine.errors import InvalidQueryError
-from mongoengine.mongodb_support import MONGODB_36
 from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
     DoesNotExist,
@@ -25,19 +24,13 @@ from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
     db_ops_tracker,
     get_as_pymongo,
-    requires_mongodb_gte_42,
-    requires_mongodb_gte_44,
-    requires_mongodb_lt_42,
 )
 
 from tests.utils import MongoDBTestCase
 
 
-
-def get_key_compat(mongo_ver):
-    ORDER_BY_KEY = "sort"
-    CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
-    return ORDER_BY_KEY, CMD_QUERY_KEY
+def get_key_compat():
+    return ("sort", "command")
 
 
 class TestQueryset3(MongoDBTestCase):
@@ -302,7 +295,6 @@ class TestQueryset3(MongoDBTestCase):
         assert post.tags == ["code", "mongodb"]
 
 
-    @requires_mongodb_gte_42
     async def test_aggregation_update(self):
         """Ensure that the 'aggregation_update' update works correctly."""
 
@@ -872,8 +864,7 @@ class TestQueryset3(MongoDBTestCase):
 
     async def test_comment(self):
         """Make sure adding a comment to the query gets added to the query"""
-        MONGO_VER = self.mongodb_version
-        _, CMD_QUERY_KEY = get_key_compat(MONGO_VER)
+        _, CMD_QUERY_KEY = get_key_compat()
         QUERY_KEY = "filter"
         COMMENT_KEY = "comment"
 

@@ -6,7 +6,6 @@ from pymongo.errors import OperationFailure
 
 from mongoengine import *
 from mongoengine.mongodb_support import (
-    MONGODB_42,
     MONGODB_80,
     get_mongodb_version,
 )
@@ -505,10 +504,7 @@ class TestIndexes(MongoDBTestCase):
                 == "IXSCAN"
             )
 
-            PROJECTION_STR = (
-                "PROJECTION" if mongo_db < MONGODB_42 else "PROJECTION_COVERED"
-            )
-            assert query_plan["queryPlanner"]["winningPlan"]["stage"] == PROJECTION_STR
+            assert query_plan["queryPlanner"]["winningPlan"]["stage"] == "PROJECTION_COVERED"
 
             query_plan = await Test.objects(a=1).explain()
             assert (

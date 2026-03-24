@@ -51,13 +51,8 @@ from mongoengine.queryset.transform import STRING_OPERATORS
 
 try:
     from PIL import Image, ImageOps
-
-    if hasattr(Image, "Resampling"):
-        LANCZOS = Image.Resampling.LANCZOS
-    else:
-        LANCZOS = Image.LANCZOS
+    LANCZOS = Image.Resampling.LANCZOS
 except ImportError:
-    # pillow is optional so may not be installed
     Image = None
     ImageOps = None
 
@@ -1057,11 +1052,6 @@ class DictField(ComplexBaseField):
             msg = "Invalid dictionary key - documents must have only string keys"
             self.error(msg)
 
-        # Following condition applies to MongoDB >= 3.6
-        # older Mongo has stricter constraints but
-        # it will be rejected upon insertion anyway
-        # Having a validation that depends on the MongoDB version
-        # is not straightforward as the field isn't aware of the connected Mongo
         if key_starts_with_dollar(value):
             self.error(
                 'Invalid dictionary key name - keys may not startswith "$" characters'

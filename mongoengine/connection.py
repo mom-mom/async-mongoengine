@@ -3,10 +3,7 @@ import contextvars
 from pymongo import AsyncMongoClient, ReadPreference, uri_parser
 from pymongo.common import _UUID_REPRESENTATIONS
 
-try:
-    from pymongo.database_shared import _check_name
-except ImportError:
-    from pymongo.database import _check_name
+from pymongo.database_shared import _check_name
 
 from pymongo.driver_info import DriverInfo
 
@@ -80,8 +77,7 @@ def _get_connection_settings(
     :param password: password to authenticate with
     :param authentication_source: database to authenticate against
     :param authentication_mechanism: database authentication mechanisms.
-        By default, use SCRAM-SHA-1 with MongoDB 3.0 and later,
-        MONGODB-CR (MongoDB Challenge Response protocol) for older servers.
+        By default, use SCRAM-SHA-256.
     :param mongo_client_class: using alternative connection client other than
         pymongo.AsyncMongoClient, e.g. mongomock, montydb, that provides pymongo alike
         interface but not necessarily for connecting to a real mongo instance.
@@ -216,8 +212,7 @@ def register_connection(
     :param password: password to authenticate with
     :param authentication_source: database to authenticate against
     :param authentication_mechanism: database authentication mechanisms.
-        By default, use SCRAM-SHA-1 with MongoDB 3.0 and later,
-        MONGODB-CR (MongoDB Challenge Response protocol) for older servers.
+        By default, use SCRAM-SHA-256.
     :param mongo_client_class: using alternative connection client other than
         pymongo.AsyncMongoClient, e.g. mongomock, montydb, that provides pymongo alike
         interface but not necessarily for connecting to a real mongo instance.

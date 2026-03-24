@@ -2,10 +2,6 @@ import pytest
 from pymongo.read_preferences import ReadPreference
 
 from mongoengine import Document, IntField, PointField, StringField
-from mongoengine.mongodb_support import (
-    MONGODB_36,
-    get_mongodb_version,
-)
 from tests.utils import MongoDBTestCase, db_ops_tracker
 
 
@@ -91,7 +87,6 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
     async def test_aggregation_propagates_hint_collation_and_comment(self):
         """Make sure adding a hint/comment/collation to the query gets added to the query"""
-        mongo_ver = await get_mongodb_version()
 
         base = {"locale": "en", "strength": 2}
         index_name = "name_1"
@@ -112,28 +107,25 @@ class TestQuerysetAggregate(MongoDBTestCase):
             data = await AggPerson.objects.comment(comment).aggregate(pipeline)
             _ = [doc async for doc in data]
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(length=1))[0]
-            CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
-            assert "hint" not in query_op[CMD_QUERY_KEY]
-            assert query_op[CMD_QUERY_KEY]["comment"] == comment
-            assert "collation" not in query_op[CMD_QUERY_KEY]
+            assert "hint" not in query_op["command"]
+            assert query_op["command"]["comment"] == comment
+            assert "collation" not in query_op["command"]
 
         async with db_ops_tracker() as q:
             data = await AggPerson.objects.hint(index_name).aggregate(pipeline)
             _ = [doc async for doc in data]
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(length=1))[0]
-            CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
-            assert query_op[CMD_QUERY_KEY]["hint"] == "name_1"
-            assert "comment" not in query_op[CMD_QUERY_KEY]
-            assert "collation" not in query_op[CMD_QUERY_KEY]
+            assert query_op["command"]["hint"] == "name_1"
+            assert "comment" not in query_op["command"]
+            assert "collation" not in query_op["command"]
 
         async with db_ops_tracker() as q:
             data = await AggPerson.objects.collation(base).aggregate(pipeline)
             _ = [doc async for doc in data]
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(length=1))[0]
-            CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
-            assert "hint" not in query_op[CMD_QUERY_KEY]
-            assert "comment" not in query_op[CMD_QUERY_KEY]
-            assert query_op[CMD_QUERY_KEY]["collation"] == base
+            assert "hint" not in query_op["command"]
+            assert "comment" not in query_op["command"]
+            assert query_op["command"]["collation"] == base
 
     async def test_queryset_aggregation_with_limit(self):
         class Person(Document):

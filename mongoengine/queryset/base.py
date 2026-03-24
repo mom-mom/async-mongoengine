@@ -61,7 +61,6 @@ class BaseQuerySet:
         self._where_clause = None
         self._loaded_fields = QueryFieldList()
         self._ordering = None
-        self._snapshot = False
         self._timeout = True
         self._allow_disk_use = False
         self._read_preference = None
@@ -891,7 +890,6 @@ class BaseQuerySet:
             "_where_clause",
             "_loaded_fields",
             "_ordering",
-            "_snapshot",
             "_timeout",
             "_allow_disk_use",
             "_read_preference",
@@ -1261,18 +1259,6 @@ class BaseQuerySet:
         await self._ensure_collection()
         return await self._cursor.explain()
 
-    # DEPRECATED. Has no more impact on PyMongo 3+
-    def snapshot(self, enabled):
-        """Enable or disable snapshot mode when querying.
-
-        :param enabled: whether or not snapshot mode is enabled
-        """
-        msg = "snapshot is deprecated as it has no impact when using PyMongo 3+."
-        warnings.warn(msg, DeprecationWarning, stacklevel=2)
-        queryset = self.clone()
-        queryset._snapshot = enabled
-        return queryset
-
     def allow_disk_use(self, enabled):
         """Enable or disable the use of temporary files on disk while processing a blocking sort operation.
          (To store data exceeding the 100 megabyte system memory limit)
@@ -1606,52 +1592,9 @@ class BaseQuerySet:
             )
         return results
 
-    async def exec_js(self, code, *fields, **options):
-        """Execute a Javascript function on the server. A list of fields may be
-        provided, which will be translated to their correct names and supplied
-        as the arguments to the function. A few extra variables are added to
-        the function's scope: ``collection``, which is the name of the
-        collection in use; ``query``, which is an object representing the
-        current query; and ``options``, which is an object containing any
-        options specified as keyword arguments.
-
-        As fields in MongoEngine may use different names in the database (set
-        using the :attr:`db_field` keyword argument to a :class:`Field`
-        constructor), a mechanism exists for replacing MongoEngine field names
-        with the database field names in Javascript code. When accessing a
-        field, use square-bracket notation, and prefix the MongoEngine field
-        name with a tilde (~).
-
-        :param code: a string of Javascript code to execute
-        :param fields: fields that you will be using in your function, which
-            will be passed in to your function as arguments
-        :param options: options that you want available to the function
-            (accessed in Javascript through the ``options`` object)
-        """
-        queryset = self.clone()
-
-        code = queryset._sub_js_fields(code)
-
-        fields = [queryset._document._translate_field_name(f) for f in fields]
-        collection = queryset._document._get_collection_name()
-
-        scope = {"collection": collection, "options": options or {}}
-
-        query = queryset._query
-        if queryset._where_clause:
-            query["$where"] = queryset._where_clause
-
-        scope["query"] = query
-        code = Code(code, scope=scope)
-
-        db = queryset._document._get_db()
-        result = await db.command("eval", code, args=fields)
-        return result.get("retval")
-
     def where(self, where_clause):
         """Filter ``QuerySet`` results with a ``$where`` clause (a Javascript
-        expression). Performs automatic field name substitution like
-        :meth:`mongoengine.queryset.Queryset.exec_js`.
+        expression). Performs automatic field name substitution.
 
         .. note:: When using this mode of query, the database will call your
                   function, or evaluate your predicate clause, for each object
@@ -1720,7 +1663,7 @@ class BaseQuerySet:
             return result[0]["total"]
         return 0
 
-    async def item_frequencies(self, field, normalize=False, map_reduce=True):
+    async def item_frequencies(self, field, normalize=False):
         """Returns a dictionary of all items present in a field across
         the whole queried set of documents, and their corresponding frequency.
         This is useful for generating tag clouds, or searching documents.
@@ -1737,11 +1680,8 @@ class BaseQuerySet:
 
         :param field: the field to use
         :param normalize: normalize the results so they add to 1.0
-        :param map_reduce: Use map_reduce over exec_js
         """
-        if map_reduce:
-            return await self._item_frequencies_map_reduce(field, normalize=normalize)
-        return await self._item_frequencies_exec_js(field, normalize=normalize)
+        return await self._item_frequencies_map_reduce(field, normalize=normalize)
 
     # Iterator helpers
 
@@ -1784,11 +1724,6 @@ class BaseQuerySet:
     @property
     def _cursor_args(self):
         fields_name = "projection"
-        # snapshot is not handled at all by PyMongo 3+
-        # TODO: evaluate similar possibilities using modifiers
-        if self._snapshot:
-            msg = "The snapshot option is not anymore available with PyMongo 3+"
-            warnings.warn(msg, DeprecationWarning, stacklevel=3)
 
         cursor_args = {}
         if not self._timeout:
@@ -1951,69 +1886,6 @@ class BaseQuerySet:
         if normalize:
             count = sum(frequencies.values())
             frequencies = {k: float(v) / count for k, v in frequencies.items()}
-
-        return frequencies
-
-    async def _item_frequencies_exec_js(self, field, normalize=False):
-        """Uses exec_js to execute"""
-        freq_func = """
-            function(path) {
-                var path = path.split('.');
-
-                var total = 0.0;
-                db[collection].find(query).forEach(function(doc) {
-                    var field = doc;
-                    for (p in path) {
-                        if (field)
-                            field = field[path[p]];
-                         else
-                            break;
-                    }
-                    if (field && field.constructor == Array) {
-                       total += field.length;
-                    } else {
-                       total++;
-                    }
-                });
-
-                var frequencies = {};
-                var types = {};
-                var inc = 1.0;
-
-                db[collection].find(query).forEach(function(doc) {
-                    field = doc;
-                    for (p in path) {
-                        if (field)
-                            field = field[path[p]];
-                        else
-                            break;
-                    }
-                    if (field && field.constructor == Array) {
-                        field.forEach(function(item) {
-                            frequencies[item] = inc + (isNaN(frequencies[item]) ? 0: frequencies[item]);
-                        });
-                    } else {
-                        var item = field;
-                        types[item] = item;
-                        frequencies[item] = inc + (isNaN(frequencies[item]) ? 0: frequencies[item]);
-                    }
-                });
-                return [total, frequencies, types];
-            }
-        """
-        total, data, types = await self.exec_js(freq_func, field)
-        values = {types.get(k): int(v) for k, v in data.items()}
-
-        if normalize:
-            values = {k: float(v) / total for k, v in values.items()}
-
-        frequencies = {}
-        for k, v in values.items():
-            if isinstance(k, float):
-                if int(k) == k:
-                    k = int(k)
-
-            frequencies[k] = v
 
         return frequencies
 

@@ -8,7 +8,7 @@ from mongoengine import (
     FloatField,
     StringField,
 )
-from tests.utils import MongoDBTestCase, requires_mongodb_gte_50
+from tests.utils import MongoDBTestCase
 
 
 class TestTimeSeriesCollections(MongoDBTestCase):
@@ -43,14 +43,12 @@ class TestTimeSeriesCollections(MongoDBTestCase):
             x.__class__.__name__ for x in self.SensorData._fields.values()
         )
 
-    @requires_mongodb_gte_50
     async def test_get_collection(self):
         """Ensure that get_collection returns the expected collection."""
         collection_name = "sensor_data"
         collection = await self.SensorData._get_collection()
         assert self.db[collection_name] == collection
 
-    @requires_mongodb_gte_50
     async def test_create_timeseries_collection(self):
         """Ensure that a time-series collection can be created."""
         collection_name = self.SensorData._get_collection_name()
@@ -64,7 +62,6 @@ class TestTimeSeriesCollections(MongoDBTestCase):
         assert options["timeseries"]["timeField"] == "timestamp"
         assert options["timeseries"]["granularity"] == "seconds"
 
-    @requires_mongodb_gte_50
     async def test_insert_document_into_timeseries_collection(self):
         """Ensure that a document can be inserted into a time-series collection."""
         collection_name = self.SensorData._get_collection_name()
@@ -75,7 +72,6 @@ class TestTimeSeriesCollections(MongoDBTestCase):
         await self.SensorData(timestamp=datetime.utcnow(), temperature=23.4).save()
         assert await collection.count_documents({}) == 1
 
-    @requires_mongodb_gte_50
     async def test_timeseries_expiration(self):
         """Ensure that documents in a time-series collection expire after the specified time."""
 
@@ -90,7 +86,6 @@ class TestTimeSeriesCollections(MongoDBTestCase):
 
         assert await collection.count_documents({}) == 1
 
-    @requires_mongodb_gte_50
     async def test_index_creation(self):
         """Test if the index defined in the meta dictionary is created properly."""
 
@@ -122,7 +117,6 @@ class TestTimeSeriesCollections(MongoDBTestCase):
         # indexes on the timeField (timestamp), so we only check temperature_index.
         assert "temperature_index" in indexes
 
-    @requires_mongodb_gte_50
     async def test_timeseries_data_insertion_order(self):
         """Ensure that data in the time-series collection is inserted and queried in the correct time order."""
         self.SensorData._get_collection_name()
@@ -142,7 +136,6 @@ class TestTimeSeriesCollections(MongoDBTestCase):
         assert documents[1].temperature == 23.4
         assert documents[2].temperature == 24.0
 
-    @requires_mongodb_gte_50
     async def test_timeseries_query_by_time_range(self):
         """Ensure that data can be queried by a specific time range in the time-series collection."""
 
