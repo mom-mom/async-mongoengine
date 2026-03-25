@@ -3,25 +3,28 @@
 async-mongoengine: MongoEngine fork with native PyMongo async support (`AsyncMongoClient`).
 See [docs/async/README.md](docs/async/README.md) for full API migration reference.
 
+## Language
+
+- All code, comments, commit messages, PR titles/descriptions, and documentation must be written in English — even when the user communicates in another language.
+
 ## Requirements
 
 - Python 3.13+, MongoDB 7.0+, PyMongo 4.10+
 
 ## Commands
 
-```shell
-# Python runtime (always use .venv)
-.venv/bin/python
+- If `uv run` fails with missing packages, run `uv sync --group dev` first.
 
+```shell
 # Run tests
-.venv/bin/python -m pytest tests/
+uv run pytest tests/
 
 # Run specific test
-.venv/bin/python -m pytest tests/path/to/test.py -k "test_name"
+uv run pytest tests/path/to/test.py -k "test_name"
 
 # Lint
-.venv/bin/python -m ruff check .
-.venv/bin/python -m ruff format .
+uv run ruff check .
+uv run ruff format .
 
 # Sync dependencies (after changing pyproject.toml)
 uv sync --group dev
