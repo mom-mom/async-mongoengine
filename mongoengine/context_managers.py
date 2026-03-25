@@ -40,8 +40,7 @@ _no_dereferencing_class: contextvars.ContextVar = contextvars.ContextVar("_no_de
 def _get_no_deref_map():
     m = _no_dereferencing_class.get()
     if m is None:
-        m = {}
-        _no_dereferencing_class.set(m)
+        return {}
     return m
 
 
@@ -50,15 +49,17 @@ def no_dereferencing_active_for_class(cls):
 
 
 def _register_no_dereferencing_for_class(cls):
-    m = _get_no_deref_map()
+    m = _get_no_deref_map().copy()
     m[cls] = m.get(cls, 0) + 1
+    _no_dereferencing_class.set(m)
 
 
 def _unregister_no_dereferencing_for_class(cls):
-    m = _get_no_deref_map()
+    m = _get_no_deref_map().copy()
     m[cls] = m.get(cls, 0) - 1
     if m[cls] <= 0:
         m.pop(cls, None)
+    _no_dereferencing_class.set(m)
 
 
 class switch_db:
