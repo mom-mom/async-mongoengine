@@ -3,6 +3,10 @@
 async-mongoengine: MongoEngine fork with native PyMongo async support (`AsyncMongoClient`).
 See [docs/async/README.md](docs/async/README.md) for full API migration reference.
 
+## Language
+
+- All code, comments, commit messages, PR titles/descriptions, and documentation must be written in English — even when the user communicates in another language.
+
 ## Requirements
 
 - Python 3.13+, MongoDB 7.0+, PyMongo 4.10+
