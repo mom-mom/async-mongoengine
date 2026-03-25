@@ -116,7 +116,7 @@ await doc._save_update(doc, save_condition, write_concern)
 
 ```
 Before: pre_save → validate → to_mongo(id) → to_mongo() → init_collection → DB write
-After:  pre_save → _generate_async_fields (recursive) → validate → to_mongo(id) → to_mongo() → init_collection → DB write
+After:  pre_save/pre_save_async → _generate_async_fields (recursive) → validate → pre_save_post_validation/pre_save_post_validation_async → to_mongo() → init_collection → DB write → post_save/post_save_async
 ```
 
 - **`_generate_async_fields(doc)`**: Module-level async function. Recursively traverses the document and all embedded sub-documents to generate SequenceField values.
@@ -525,15 +525,48 @@ Internal changes:
 
 ---
 
-## 9. Unsupported Features
+## 9. Signals (`mongoengine/signals.py`)
 
-### Intentionally Removed / Unsupported
+### Dual Sync/Async Signal System
+
+Each event (except `pre_init`/`post_init`) now has two signals:
+
+| Sync Signal | Async Signal | Emitted From |
+|---|---|---|
+| `pre_init` | *(none)* | `__init__()` — sync only |
+| `post_init` | *(none)* | `__init__()` — sync only |
+| `pre_save` | `pre_save_async` | `save()` |
+| `pre_save_post_validation` | `pre_save_post_validation_async` | `save()` |
+| `post_save` | `post_save_async` | `save()` |
+| `pre_delete` | `pre_delete_async` | `delete()` |
+| `post_delete` | `post_delete_async` | `delete()` |
+| `pre_bulk_insert` | `pre_bulk_insert_async` | `insert()` |
+| `post_bulk_insert` | `post_bulk_insert_async` | `insert()` |
+
+- **Sync signals** are emitted via `.send()` — register sync handlers with `.connect()`
+- **Async signals** are emitted via `await .send_async()` — register async handlers with `.connect()`
+- Both sync and async signals are emitted at each event point in async contexts
+- `pre_init` / `post_init` are sync-only because `__init__()` cannot be async
+
+### Migration
+
+```python
+# Before (sync handler — still works, no change needed)
+signals.pre_save.connect(my_sync_handler, sender=MyDoc)
+
+# New (async handler — use the _async signal)
+signals.pre_save_async.connect(my_async_handler, sender=MyDoc)
+```
+
+---
+
+## 10. Unsupported Features
 
 | Feature | Reason |
 |---|---|
 | ReferenceField auto-dereference | Cannot call async DB from `__get__` descriptor |
 | GenericReferenceField auto-dereference | Same |
-| CachedReferenceField auto-sync (signal) | Cannot call async from signal handler |
+| CachedReferenceField auto-sync (signal) | Removed (use async signal handlers instead) |
 | CachedReferenceField.sync_all() | Removed (no async version implemented) |
 | SequenceField auto-generate in `__get__`/`__set__` | Cannot call async from descriptor; auto-generated at `save()` |
 | LazyReference passthrough | Cannot call async `fetch()` from `__getattr__` |
@@ -551,7 +584,7 @@ Internal changes:
 
 ---
 
-## 10. Migration Checklist
+## 11. Migration Checklist
 
 Patterns to check when converting sync mongoengine code to async-mongoengine:
 
