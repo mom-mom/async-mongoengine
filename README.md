@@ -58,6 +58,26 @@ pip install "async-mongoengine[signals] @ git+https://github.com/mom-mom/async-m
 uv pip install "async-mongoengine[signals] @ git+https://github.com/mom-mom/async-mongoengine.git"
 ```
 
+## Type Hints
+
+This package ships with `py.typed` and comprehensive type annotations.
+`QuerySet` is generic, so type checkers (pyright, mypy) can infer document
+types from query results:
+
+```python
+user = await User.objects.first()       # User | None
+user = await User.objects.get(name="x") # User
+async for u in User.objects:            # User
+```
+
+For better field-level inference, add inline annotations to your models:
+
+```python
+class User(Document):
+    name: str = StringField(required=True)
+    age: int | None = IntField()
+```
+
 ## Examples
 
 ```python
