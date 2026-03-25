@@ -156,7 +156,6 @@ if obj:
 
 # After
 obj = await self._qs.filter(...).limit(1).first()
-# select_related() chaining removed (cannot chain async calls)
 # Uses `if obj is None:` instead of `if obj:` (QuerySet.__bool__ not supported)
 ```
 
@@ -202,7 +201,7 @@ await qs.modify(upsert=False, remove=False, new=False, ...)
 await qs.with_id(object_id)
 await qs.in_bulk(object_ids)
 await qs.distinct(field)
-await qs.select_related(max_depth=1)
+await qs.to_list()                   # New — materialize queryset into a list
 await qs.using(alias)
 await qs.explain()
 await qs.to_json(...)
@@ -217,7 +216,7 @@ await qs.get_item(index)     # New
 
 ### Unchanged (remain sync — chaining methods that return QuerySet)
 
-`filter()`, `__call__()`, `all()`, `order_by()`, `limit()`, `skip()`, `hint()`, `collation()`, `batch_size()`, `only()`, `exclude()`, `fields()`, `all_fields()`, `search_text()`, `scalar()`, `values_list()`, `as_pymongo()`, `max_time_ms()`, `comment()`, `no_sub_classes()`, `clear_cls_query()`, `none()`, `timeout()`, `allow_disk_use()`, `read_preference()`, `read_concern()`, `where()`, `clone()`, `no_cache()`, `cache()`
+`filter()`, `__call__()`, `all()`, `order_by()`, `limit()`, `skip()`, `hint()`, `collation()`, `batch_size()`, `only()`, `exclude()`, `fields()`, `all_fields()`, `search_text()`, `scalar()`, `values_list()`, `as_pymongo()`, `max_time_ms()`, `comment()`, `no_sub_classes()`, `clear_cls_query()`, `none()`, `timeout()`, `allow_disk_use()`, `read_preference()`, `read_concern()`, `where()`, `clone()`, `no_cache()`, `cache()`, `select_related()`
 
 ### Magic Method Changes
 
@@ -487,6 +486,32 @@ async with conn.start_session(**kwargs) as session:
     except Exception:
         await session.abort_transaction()
         raise
+```
+
+---
+
+### 6.3 `select_related()` — Lazy Chaining on QuerySet
+
+`QuerySet.select_related()` is a **sync** lazy modifier (like Django) — it sets a flag and
+returns the QuerySet for chaining. Actual dereferencing happens when results are consumed.
+
+`Document.select_related()` remains **async** since it performs I/O on an already-fetched instance.
+
+```python
+# QuerySet — sync chaining, dereference on consumption
+async for doc in MyDoc.objects.select_related():
+    doc.ref_field.name   # already resolved
+
+doc  = await MyDoc.objects.select_related().first()
+doc  = await MyDoc.objects.select_related().get(id=some_id)
+doc  = await MyDoc.objects.select_related().with_id(some_id)
+docs = await MyDoc.objects.select_related().to_list()
+docs = await MyDoc.objects.select_related()  # __await__ → to_list()
+
+# Document — async, must be awaited
+doc = await MyDoc.objects.first()
+await doc.select_related()
+doc.ref_field.name   # now resolved
 ```
 
 ---

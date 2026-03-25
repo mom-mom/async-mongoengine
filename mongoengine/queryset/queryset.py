@@ -46,14 +46,15 @@ class QuerySet(BaseQuerySet):
         self._iter = True
 
         if self._select_related_depth > 0 and not self._as_pymongo:
-            # Populate full cache for bulk dereference
-            while self._has_more:
-                await self._populate_cache()
-            if self._result_cache:
-                await self._dereference(
-                    self._result_cache,
-                    max_depth=self._select_related_depth,
-                )
+            # Populate full cache for bulk dereference (only on first iteration)
+            if self._has_more:
+                while self._has_more:
+                    await self._populate_cache()
+                if self._result_cache:
+                    await self._dereference(
+                        self._result_cache,
+                        max_depth=self._select_related_depth,
+                    )
             for item in self._result_cache or []:
                 yield item
             return

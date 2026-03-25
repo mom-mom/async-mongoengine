@@ -1349,3 +1349,30 @@ class TestDereference(MongoDBTestCase):
             songs = [item.song for item in playlist.items]
 
             assert await q.get_count() == 2
+
+    async def test_select_related_with_get(self):
+        """Ensure select_related works with get()."""
+
+        class User(Document):
+            name = StringField()
+
+        class Group(Document):
+            name = StringField()
+            owner = ReferenceField(User)
+
+        await User.drop_collection()
+        await Group.drop_collection()
+
+        user = await User(name="Alice").save()
+        group = await Group(name="Admins", owner=user).save()
+
+        # select_related().get() should dereference
+        fetched = await Group.objects.select_related().get(id=group.id)
+        assert isinstance(fetched.owner, User)
+        assert fetched.owner.name == "Alice"
+
+        # select_related().to_list() should dereference
+        groups = await Group.objects.select_related().to_list()
+        assert len(groups) == 1
+        assert isinstance(groups[0].owner, User)
+        assert groups[0].owner.name == "Alice"

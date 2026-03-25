@@ -164,7 +164,13 @@ def _get_connection_settings(
                 conn_settings["authmechanismproperties"] = uri_options["authmechanismproperties"]
             if "uuidrepresentation" in uri_options:
                 REV_UUID_REPRESENTATIONS = {v: k for k, v in _UUID_REPRESENTATIONS.items()}
-                conn_settings["uuidrepresentation"] = REV_UUID_REPRESENTATIONS[uri_options["uuidrepresentation"]]
+                uuid_value = uri_options["uuidrepresentation"]
+                if uuid_value not in REV_UUID_REPRESENTATIONS:
+                    raise ConnectionFailure(
+                        f"Invalid uuidRepresentation value: {uuid_value!r}. "
+                        f"Valid values: {list(_UUID_REPRESENTATIONS.keys())}"
+                    )
+                conn_settings["uuidrepresentation"] = REV_UUID_REPRESENTATIONS[uuid_value]
         else:
             resolved_hosts.append(entity)
     conn_settings["host"] = resolved_hosts

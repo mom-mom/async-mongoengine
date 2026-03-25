@@ -211,10 +211,14 @@ class BaseQuerySet:
         raise NotImplementedError
 
     def __await__(self):
-        return self._to_list().__await__()
+        return self.to_list().__await__()
 
-    async def _to_list(self):
-        """Materialize this queryset into a list."""
+    async def to_list(self):
+        """Materialize this queryset into a list.
+
+        >>> docs = await MyDoc.objects.to_list()
+        >>> docs = await MyDoc.objects.select_related().to_list()
+        """
         return [doc async for doc in self]
 
     async def _has_data(self):
@@ -297,6 +301,8 @@ class BaseQuerySet:
             # Check if there is another match
             await queryset.__anext__()
         except StopAsyncIteration:
+            if self._select_related_depth > 0 and not self._as_pymongo:
+                await self._dereference([result], max_depth=self._select_related_depth)
             return result
 
         # If we were able to retrieve a 2nd doc, raise the MultipleObjectsReturned exception.
