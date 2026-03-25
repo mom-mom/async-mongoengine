@@ -26,7 +26,7 @@ using native async/await. It is based on MongoEngine and uses PyMongo's built-in
 ## Installation
 
 ```shell
-pip install async-mongoengine
+pip install git+https://github.com/mom-mom/async-mongoengine.git@feat/async-mongoengine
 ```
 
 ## Dependencies
