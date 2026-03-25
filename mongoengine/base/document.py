@@ -118,12 +118,11 @@ class BaseDocument:
 
         # Set actual values
         dynamic_data = {}
-        FileField = _import_class("FileField")
         for key, value in values.items():
             field = self._fields.get(key)
             if field or key in ("id", "pk", "_cls"):
                 if __auto_convert and value is not None:
-                    if field and not isinstance(field, FileField):
+                    if field:
                         value = field.to_python(value)
                 setattr(self, key, value)
             else:

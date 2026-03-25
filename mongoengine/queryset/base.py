@@ -362,7 +362,7 @@ class BaseQuerySet:
 
         signal_kwargs = signal_kwargs or {}
 
-        # Pre-generate async fields (SequenceField, FileField) before to_mongo()
+        # Pre-generate async fields (SequenceField) before to_mongo()
         from mongoengine.document import _generate_async_fields
 
         for doc in docs:

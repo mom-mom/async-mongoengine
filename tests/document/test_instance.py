@@ -1,5 +1,4 @@
 import copy
-import os
 import pickle
 import uuid
 import weakref
@@ -40,7 +39,6 @@ from tests.utils import (
     get_as_pymongo,
 )
 
-TEST_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "../fields/mongoengine.png")
 
 
 class TestDocumentInstance(MongoDBTestCase):
@@ -1094,30 +1092,6 @@ class TestDocumentInstance(MongoDBTestCase):
         p0 = await Person.objects.first()
         p0.name = "wpjunior"
         await p0.save()
-
-    async def test_save_max_recursion_not_hit_with_file_field(self):
-        class Foo(Document):
-            name = StringField()
-            picture = FileField()
-            bar = ReferenceField("self")
-
-        await Foo.drop_collection()
-
-        a = await Foo(name="hello").save()
-
-        a.bar = a
-        with open(TEST_IMAGE_PATH, "rb") as test_image:
-            a.picture = test_image
-            await a.save()
-
-            # Confirm can save and it resets the changed fields without hitting
-            # max recursion error
-            foos = await Foo.objects(id=a.id).select_related(max_depth=2)
-            b = foos[0]
-            b.name = "world"
-            await b.save()
-
-            assert b.picture == b.bar.picture, b.bar.bar.picture
 
     async def test_save_cascades(self):
         class Person(Document):

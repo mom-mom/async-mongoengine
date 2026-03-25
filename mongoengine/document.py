@@ -67,8 +67,8 @@ class InvalidCollectionError(Exception):
 
 
 async def _generate_async_fields(doc):
-    """Pre-generate SequenceField values and flush FileField pending uploads
-    for *doc* and any embedded sub-documents recursively.
+    """Pre-generate SequenceField values for *doc* and any embedded
+    sub-documents recursively.
 
     Handles all nesting patterns:
     - ``EmbeddedDocumentField(Comment)``
@@ -78,24 +78,12 @@ async def _generate_async_fields(doc):
     Must be called before ``validate()`` and ``to_mongo()``.
     """
     SequenceField = _import_class("SequenceField")
-    FileField = _import_class("FileField")
     EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
     ComplexBaseField = _import_class("ComplexBaseField")
 
     for name, field in doc._fields.items():
         if isinstance(field, SequenceField) and doc._data.get(name) is None:
             doc._data[name] = await field.generate()
-        elif isinstance(field, FileField):
-            proxy = doc._data.get(name)
-            if proxy is not None and hasattr(proxy, "_pending_value"):
-                pending = proxy._pending_value
-                del proxy._pending_value
-                if proxy.grid_id:
-                    try:
-                        await proxy.delete()
-                    except Exception:
-                        pass
-                await proxy.put(pending)
         elif isinstance(field, EmbeddedDocumentField):
             item = doc._data.get(name)
             if item is not None and hasattr(item, "_fields"):
@@ -741,12 +729,6 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         signal_kwargs = signal_kwargs or {}
         signals.pre_delete.send(self.__class__, document=self, **signal_kwargs)
-
-        # Delete FileFields separately
-        FileField = _import_class("FileField")
-        for name, field in self._fields.items():
-            if isinstance(field, FileField):
-                await getattr(self, name).delete()
 
         try:
             await self._qs.filter(**self._object_key).delete(

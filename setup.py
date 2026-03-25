@@ -45,7 +45,6 @@ tests_require = [
     "pytest-cov",
     "coverage",
     "blinker",
-    "Pillow>=10.0.0",
 ]
 
 setup(
