@@ -48,7 +48,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
             assert await q.get_count() == 2
             _ = [m for m in group_obj.members]
             assert await q.get_count() == 2
@@ -104,7 +104,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
 
             assert await q.get_count() == 2
             _ = [m for m in group_obj.members]
@@ -503,7 +503,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -642,7 +642,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -711,7 +711,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
             assert await q.get_count() == 2
 
             _ = [m for m in group_obj.members]
@@ -790,7 +790,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -877,7 +877,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
             assert await q.get_count() == 2
 
             _ = [m for m in group_obj.members]
@@ -961,7 +961,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = await (await Group.objects.first()).select_related()
+            group_obj = await Group.objects.select_related().first()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -1054,7 +1054,7 @@ class TestDereference(MongoDBTestCase):
         ]
         await room_101.save()
 
-        room = await (await Room.objects.first()).select_related()
+        room = await Room.objects.select_related().first()
         assert room.staffs_with_position[0]["staff"] == sarah
         assert room.staffs_with_position[1]["staff"] == bob
 
@@ -1345,7 +1345,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            playlist = await (await Playlist.objects.first()).select_related()
+            playlist = await Playlist.objects.select_related().first()
             songs = [item.song for item in playlist.items]
 
             assert await q.get_count() == 2

@@ -203,6 +203,8 @@ class BaseQuerySet:
         result = self._document._from_son(doc)
         if self._scalar:
             return self._get_scalar(result)
+        if self._select_related_depth > 0:
+            await self._dereference([result], max_depth=self._select_related_depth)
         return result
 
     def __iter__(self):
