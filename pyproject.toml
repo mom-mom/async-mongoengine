@@ -38,6 +38,9 @@ asyncio_default_test_loop_scope = "session"
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
 reportMissingTypeStubs = false
+# Metaclass-injected attributes (_meta, _fields, _class_name, id, etc.)
+# are invisible to static analysis until Phase 4 adds proper annotations.
+reportAttributeAccessIssue = "warning"
 
 [tool.ruff]
 target-version = "py313"

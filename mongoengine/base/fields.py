@@ -1,5 +1,7 @@
 import operator
 import weakref
+from collections.abc import Callable, Iterable
+from typing import Any, NoReturn
 
 import pymongo
 from bson import SON, DBRef, ObjectId
@@ -21,30 +23,30 @@ class BaseField:
     may be added to subclasses of `Document` to define a document's schema.
     """
 
-    name = None  # set in TopLevelDocumentMetaclass
-    _geo_index = False
-    _auto_gen = False  # Call `generate` to generate a value
+    name: str | None = None  # set in TopLevelDocumentMetaclass
+    _geo_index: bool | str = False
+    _auto_gen: bool = False  # Call `generate` to generate a value
 
     # These track each time a Field instance is created. Used to retain order.
     # The auto_creation_counter is used for fields that MongoEngine implicitly
     # creates, creation_counter is used for all user-specified fields.
-    creation_counter = 0
-    auto_creation_counter = -1
+    creation_counter: int = 0
+    auto_creation_counter: int = -1
 
     def __init__(
         self,
-        db_field=None,
-        required=False,
-        default=None,
-        unique=False,
-        unique_with=None,
-        primary_key=False,
-        validation=None,
-        choices=None,
-        null=False,
-        sparse=False,
-        **kwargs,
-    ):
+        db_field: str | None = None,
+        required: bool = False,
+        default: Any = None,
+        unique: bool = False,
+        unique_with: str | list[str] | None = None,
+        primary_key: bool = False,
+        validation: Callable[[Any], None] | None = None,
+        choices: Iterable[Any] | None = None,
+        null: bool = False,
+        sparse: bool = False,
+        **kwargs: Any,
+    ) -> None:
         """
         :param db_field: The database field to store this field in
             (defaults to the name of the field)
@@ -82,7 +84,7 @@ class BaseField:
         self.choices = choices
         self.null = null
         self.sparse = sparse
-        self._owner_document = None
+        self._owner_document: type[Any] | None = None
 
         # Make sure db_field is a string (if it's explicitly defined).
         if self.db_field is not None and not isinstance(self.db_field, str):
@@ -114,7 +116,7 @@ class BaseField:
             self.creation_counter = BaseField.creation_counter
             BaseField.creation_counter += 1
 
-    def __get__(self, instance, owner):
+    def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Descriptor for retrieving a value from a field in a document."""
         if instance is None:
             # Document class being used rather than a document object
@@ -123,7 +125,7 @@ class BaseField:
         # Get value from document instance if available
         return instance._data.get(self.name)
 
-    def __set__(self, instance, value):
+    def __set__(self, instance: Any, value: Any) -> None:
         """Descriptor for assigning a value to a field in a document."""
         # If setting to None and there is a default value provided for this
         # field, then set the value to the default value.
@@ -156,23 +158,23 @@ class BaseField:
 
         instance._data[self.name] = value
 
-    def error(self, message="", errors=None, field_name=None):
+    def error(self, message: str = "", errors: dict[str, Any] | None = None, field_name: str | None = None) -> NoReturn:
         """Raise a ValidationError."""
         field_name = field_name if field_name else self.name
         raise ValidationError(message, errors=errors, field_name=field_name)
 
-    def to_python(self, value):
+    def to_python(self, value: Any) -> Any:
         """Convert a MongoDB-compatible type to a Python type."""
         return value
 
-    def to_mongo(self, value):
+    def to_mongo(self, value: Any) -> Any:
         """Convert a Python type to a MongoDB-compatible type."""
         return self.to_python(value)
 
-    def _to_mongo_safe_call(self, value, use_db_field=True, fields=None):
+    def _to_mongo_safe_call(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """Helper method to call to_mongo with proper inputs."""
         f_inputs = self.to_mongo.__code__.co_varnames
-        ex_vars = {}
+        ex_vars: dict[str, Any] = {}
         if "fields" in f_inputs:
             ex_vars["fields"] = fields
 
@@ -181,21 +183,25 @@ class BaseField:
 
         return self.to_mongo(value, **ex_vars)
 
-    def prepare_query_value(self, op, value):
+    def prepare_query_value(self, op: str, value: Any) -> Any:
         """Prepare a value that is being used in a query for PyMongo."""
         if op in UPDATE_OPERATORS:
             self.validate(value)
         return value
 
-    def validate(self, value, clean=True):
+    def validate(self, value: Any, clean: bool = True) -> None:
         """Perform validation on a value."""
         pass
 
-    def _validate_choices(self, value):
+    def lookup_member(self, member_name: str) -> Any:
+        return None
+
+    def _validate_choices(self, value: Any) -> None:
         Document = _import_class("Document")
         EmbeddedDocument = _import_class("EmbeddedDocument")
 
-        choice_list = self.choices
+        assert self.choices is not None
+        choice_list: Iterable[Any] = self.choices
         if isinstance(next(iter(choice_list)), (list, tuple)):
             # next(iter) is useful for sets
             choice_list = [k for k, _ in choice_list]
@@ -210,7 +216,7 @@ class BaseField:
             if len(set(values) - set(choice_list)):
                 self.error(f"Value must be one of {str(choice_list)}")
 
-    def _validate(self, value, **kwargs):
+    def _validate(self, value: Any, **kwargs: Any) -> None:
         # Check the Choices Constraint
         if self.choices:
             self._validate_choices(value)
@@ -236,14 +242,14 @@ class BaseField:
         self.validate(value, **kwargs)
 
     @property
-    def owner_document(self):
+    def owner_document(self) -> type[Any] | None:
         return self._owner_document
 
-    def _set_owner_document(self, owner_document):
+    def _set_owner_document(self, owner_document: type[Any] | None) -> None:
         self._owner_document = owner_document
 
     @owner_document.setter
-    def owner_document(self, owner_document):
+    def owner_document(self, owner_document: type[Any] | None) -> None:
         self._set_owner_document(owner_document)
 
 
@@ -255,13 +261,13 @@ class ComplexBaseField(BaseField):
     items in a list / dict rather than one at a time.
     """
 
-    def __init__(self, field=None, **kwargs):
+    def __init__(self, field: BaseField | None = None, **kwargs: Any) -> None:
         if field is not None and not isinstance(field, BaseField):
             raise TypeError(f"field argument must be a Field instance (e.g {self.__class__.__name__}(StringField()))")
         self.field = field
         super().__init__(**kwargs)
 
-    def __set__(self, instance, value):
+    def __set__(self, instance: Any, value: Any) -> None:
         # Some fields e.g EnumField are converted upon __set__
         # So it is fair to mimic the same behavior when using e.g ListField(EnumField)
         EnumField = _import_class("EnumField")
@@ -273,7 +279,7 @@ class ComplexBaseField(BaseField):
 
         return super().__set__(instance, value)
 
-    def __get__(self, instance, owner):
+    def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Descriptor for ComplexBaseField access."""
         if instance is None:
             # Document class being used rather than a document object
@@ -296,7 +302,7 @@ class ComplexBaseField(BaseField):
 
         return value
 
-    def to_python(self, value):
+    def to_python(self, value: Any) -> Any:
         """Convert a MongoDB-compatible type to a Python type."""
         if isinstance(value, str):
             return value
@@ -338,7 +344,7 @@ class ComplexBaseField(BaseField):
             return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
 
-    def to_mongo(self, value, use_db_field=True, fields=None):
+    def to_mongo(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """Convert a Python type to a MongoDB-compatible type."""
         Document = _import_class("Document")
         EmbeddedDocument = _import_class("EmbeddedDocument")
@@ -401,9 +407,9 @@ class ComplexBaseField(BaseField):
             return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
 
-    def validate(self, value):
+    def validate(self, value: Any) -> None:
         """If field is provided ensure the value is valid."""
-        errors = {}
+        errors: dict[str | int, Any] = {}
         if self.field:
             if hasattr(value, "items"):
                 sequence = value.items()
@@ -419,20 +425,20 @@ class ComplexBaseField(BaseField):
 
             if errors:
                 field_class = self.field.__class__.__name__
-                self.error(f"Invalid {field_class} item ({value})", errors=errors)
+                self.error(f"Invalid {field_class} item ({value})", errors=errors)  # type: ignore[arg-type]
         # Don't allow empty values if required
         if self.required and not value:
             self.error("Field is required and cannot be empty")
 
-    def prepare_query_value(self, op, value):
+    def prepare_query_value(self, op: str, value: Any) -> Any:
         return self.to_mongo(value)
 
-    def lookup_member(self, member_name):
+    def lookup_member(self, member_name: str) -> BaseField | None:
         if self.field:
             return self.field.lookup_member(member_name)
         return None
 
-    def _set_owner_document(self, owner_document):
+    def _set_owner_document(self, owner_document: type[Any] | None) -> None:
         if self.field:
             self.field.owner_document = owner_document
         self._owner_document = owner_document
@@ -441,7 +447,7 @@ class ComplexBaseField(BaseField):
 class ObjectIdField(BaseField):
     """A field wrapper around MongoDB's ObjectIds."""
 
-    def to_python(self, value):
+    def to_python(self, value: Any) -> Any:
         try:
             if not isinstance(value, ObjectId):
                 value = ObjectId(value)
@@ -449,7 +455,7 @@ class ObjectIdField(BaseField):
             pass
         return value
 
-    def to_mongo(self, value):
+    def to_mongo(self, value: Any) -> Any:
         if isinstance(value, ObjectId):
             return value
 
@@ -458,12 +464,12 @@ class ObjectIdField(BaseField):
         except Exception as e:
             self.error(str(e))
 
-    def prepare_query_value(self, op, value):
+    def prepare_query_value(self, op: str, value: Any) -> Any:
         if value is None:
             return value
         return self.to_mongo(value)
 
-    def validate(self, value):
+    def validate(self, value: Any) -> None:
         try:
             ObjectId(str(value))
         except Exception:
@@ -473,10 +479,10 @@ class ObjectIdField(BaseField):
 class GeoJsonBaseField(BaseField):
     """A geo json field storing a geojson style object."""
 
-    _geo_index = pymongo.GEOSPHERE
-    _type = "GeoBase"
+    _geo_index: bool | str = pymongo.GEOSPHERE
+    _type: str = "GeoBase"
 
-    def __init__(self, auto_index=True, *args, **kwargs):
+    def __init__(self, auto_index: bool = True, *args: Any, **kwargs: Any) -> None:
         """
         :param bool auto_index: Automatically create a '2dsphere' index.\
             Defaults to `True`.
@@ -486,7 +492,7 @@ class GeoJsonBaseField(BaseField):
             self._geo_index = False
         super().__init__(*args, **kwargs)
 
-    def validate(self, value):
+    def validate(self, value: Any) -> None:
         """Validate the GeoJson object based on its type."""
         if isinstance(value, dict):
             if set(value.keys()) == {"type", "coordinates"}:
@@ -505,7 +511,7 @@ class GeoJsonBaseField(BaseField):
         if error:
             self.error(error)
 
-    def _validate_polygon(self, value, top_level=True):
+    def _validate_polygon(self, value: Any, top_level: bool = True) -> str | None:
         if not isinstance(value, (list, tuple)):
             return "Polygons must contain list of linestrings"
 
@@ -515,7 +521,7 @@ class GeoJsonBaseField(BaseField):
         except (TypeError, IndexError):
             return "Invalid Polygon must contain at least one valid linestring"
 
-        errors = []
+        errors: list[str] = []
         for val in value:
             error = self._validate_linestring(val, False)
             if not error and val[0] != val[-1]:
@@ -527,8 +533,9 @@ class GeoJsonBaseField(BaseField):
                 return "Invalid Polygon:\n{}".format(", ".join(errors))
             else:
                 return "{}".format(", ".join(errors))
+        return None
 
-    def _validate_linestring(self, value, top_level=True):
+    def _validate_linestring(self, value: Any, top_level: bool = True) -> str | None:
         """Validate a linestring."""
         if not isinstance(value, (list, tuple)):
             return "LineStrings must contain list of coordinate pairs"
@@ -539,7 +546,7 @@ class GeoJsonBaseField(BaseField):
         except (TypeError, IndexError):
             return "Invalid LineString must contain at least one valid point"
 
-        errors = []
+        errors: list[str] = []
         for val in value:
             error = self._validate_point(val)
             if error and error not in errors:
@@ -549,8 +556,9 @@ class GeoJsonBaseField(BaseField):
                 return "Invalid LineString:\n{}".format(", ".join(errors))
             else:
                 return "{}".format(", ".join(errors))
+        return None
 
-    def _validate_point(self, value):
+    def _validate_point(self, value: Any) -> str | None:
         """Validate each set of coords"""
         if not isinstance(value, (list, tuple)):
             return "Points must be a list of coordinate pairs"
@@ -558,8 +566,9 @@ class GeoJsonBaseField(BaseField):
             return f"Value ({repr(value)}) must be a two-dimensional point"
         elif not isinstance(value[0], (float, int)) or not isinstance(value[1], (float, int)):
             return f"Both values ({repr(value)}) in point must be float or int"
+        return None
 
-    def _validate_multipoint(self, value):
+    def _validate_multipoint(self, value: Any) -> str | None:
         if not isinstance(value, (list, tuple)):
             return "MultiPoint must be a list of Point"
 
@@ -569,7 +578,7 @@ class GeoJsonBaseField(BaseField):
         except (TypeError, IndexError):
             return "Invalid MultiPoint must contain at least one valid point"
 
-        errors = []
+        errors: list[str] = []
         for point in value:
             error = self._validate_point(point)
             if error and error not in errors:
@@ -577,8 +586,9 @@ class GeoJsonBaseField(BaseField):
 
         if errors:
             return "{}".format(", ".join(errors))
+        return None
 
-    def _validate_multilinestring(self, value, top_level=True):
+    def _validate_multilinestring(self, value: Any, top_level: bool = True) -> str | None:
         if not isinstance(value, (list, tuple)):
             return "MultiLineString must be a list of LineString"
 
@@ -588,7 +598,7 @@ class GeoJsonBaseField(BaseField):
         except (TypeError, IndexError):
             return "Invalid MultiLineString must contain at least one valid linestring"
 
-        errors = []
+        errors: list[str] = []
         for linestring in value:
             error = self._validate_linestring(linestring, False)
             if error and error not in errors:
@@ -599,8 +609,9 @@ class GeoJsonBaseField(BaseField):
                 return "Invalid MultiLineString:\n{}".format(", ".join(errors))
             else:
                 return "{}".format(", ".join(errors))
+        return None
 
-    def _validate_multipolygon(self, value):
+    def _validate_multipolygon(self, value: Any) -> str | None:
         if not isinstance(value, (list, tuple)):
             return "MultiPolygon must be a list of Polygon"
 
@@ -610,7 +621,7 @@ class GeoJsonBaseField(BaseField):
         except (TypeError, IndexError):
             return "Invalid MultiPolygon must contain at least one valid Polygon"
 
-        errors = []
+        errors: list[str] = []
         for polygon in value:
             error = self._validate_polygon(polygon, False)
             if error and error not in errors:
@@ -618,8 +629,9 @@ class GeoJsonBaseField(BaseField):
 
         if errors:
             return "Invalid MultiPolygon:\n{}".format(", ".join(errors))
+        return None
 
-    def to_mongo(self, value):
+    def to_mongo(self, value: Any) -> Any:
         if isinstance(value, dict):
             return value
         return SON([("type", self._type), ("coordinates", value)])
