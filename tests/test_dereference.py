@@ -1376,3 +1376,8 @@ class TestDereference(MongoDBTestCase):
         assert len(groups) == 1
         assert isinstance(groups[0].owner, User)
         assert groups[0].owner.name == "Alice"
+
+        # select_related().in_bulk() should dereference
+        bulk = await Group.objects.select_related().in_bulk([group.id])
+        assert isinstance(bulk[group.id].owner, User)
+        assert bulk[group.id].owner.name == "Alice"
