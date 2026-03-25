@@ -48,6 +48,8 @@ doc.modify(query={}, set__name="new")
 doc.reload()
 doc.select_related()
 doc.cascade_save()
+doc.switch_db(db_alias)
+doc.switch_collection(collection_name)
 
 # After
 await doc.save()
@@ -57,6 +59,8 @@ await doc.modify(query={}, set__name="new")
 await doc.reload()
 await doc.select_related()
 await doc.cascade_save()
+await doc.switch_db(db_alias)
+await doc.switch_collection(collection_name)
 ```
 
 ### 2.2 Document class methods
@@ -104,6 +108,9 @@ qs.to_json()             → await qs.to_json()
 qs.aggregate(pipeline)   → await qs.aggregate(pipeline)
 qs.map_reduce(m, r, out) → await qs.map_reduce(m, r, out)
 qs.using(alias)          → await qs.using(alias)
+qs.to_list()             → await qs.to_list()          # New
+qs.is_empty()            → await qs.is_empty()          # New (replaces `if qs:`)
+qs.get_item(index)       → await qs.get_item(index)     # New (replaces `qs[0]`)
 ```
 
 ### 2.4 QuerySet chaining methods (remain sync, NO `await`)
@@ -334,7 +341,8 @@ doc.ref  # → {"_cls": "ClassName", "_ref": DBRef(...)}
 # Explicit fetch:
 from mongoengine import Document
 ref_data = doc.ref
-cls = Document._get_collection_for_cls(ref_data["_cls"])  # or map manually
+from mongoengine.base import _DocumentRegistry
+cls = _DocumentRegistry.get(ref_data["_cls"])
 obj = await cls.objects.get(pk=ref_data["_ref"].id)
 ```
 
@@ -473,40 +481,51 @@ Use this table to mechanically transform code. Search for the **Before** pattern
 | 4 | `doc.modify(...)` | `await doc.modify(...)` |
 | 5 | `doc.reload()` | `await doc.reload()` |
 | 6 | `doc.select_related()` | `await doc.select_related()` |
-| 7 | `MyDoc.drop_collection()` | `await MyDoc.drop_collection()` |
-| 8 | `MyDoc.ensure_indexes()` | `await MyDoc.ensure_indexes()` |
-| 9 | `.objects.get(...)` | `await .objects.get(...)` |
-| 10 | `.objects.first()` | `await .objects.first()` |
-| 11 | `.objects.count()` | `await .objects.count()` |
-| 12 | `.objects.create(...)` | `await .objects.create(...)` |
-| 13 | `.objects.insert(...)` | `await .objects.insert(...)` |
-| 14 | `.objects.delete()` | `await .objects.delete()` |
-| 15 | `.objects.update(...)` | `await .objects.update(...)` |
-| 16 | `.objects.update_one(...)` | `await .objects.update_one(...)` |
-| 17 | `.objects.upsert_one(...)` | `await .objects.upsert_one(...)` |
-| 18 | `.objects.modify(...)` | `await .objects.modify(...)` |
-| 19 | `.objects.with_id(...)` | `await .objects.with_id(...)` |
-| 20 | `.objects.in_bulk(...)` | `await .objects.in_bulk(...)` |
-| 21 | `.objects.distinct(...)` | `await .objects.distinct(...)` |
-| 22 | `.objects.sum(...)` | `await .objects.sum(...)` |
-| 23 | `.objects.average(...)` | `await .objects.average(...)` |
-| 24 | `.objects.aggregate(...)` | `await .objects.aggregate(...)` |
-| 25 | `.objects.to_json()` | `await .objects.to_json()` |
-| 26 | `for doc in qs:` | `async for doc in qs:` |
-| 27 | `list(qs)` | `await qs.to_list()` |
-| 28 | `len(qs)` | `await qs.count()` |
-| 29 | `if qs:` | `if not await qs.is_empty():` |
-| 30 | `qs[0]` | `await qs.get_item(0)` |
-| 31 | `with switch_db(...)` | `async with switch_db(...)` |
-| 32 | `with switch_collection(...)` | `async with switch_collection(...)` |
-| 33 | `with query_counter() as q:` | `async with query_counter() as q:` |
-| 34 | `with run_in_transaction():` | `async with run_in_transaction():` |
-| 35 | `q == N` (query_counter) | `await q.get_count() == N` |
-| 36 | `disconnect()` | `await disconnect()` |
-| 37 | `disconnect_all()` | `await disconnect_all()` |
-| 38 | `doc.ref_field.attr` (ReferenceField) | `ref = await RefDoc.objects.get(pk=doc.ref_field); ref.attr` |
-| 39 | `lazy_ref.attr` (LazyReference) | `doc = await lazy_ref.fetch(); doc.attr` |
-| 40 | `mr_doc.object` | `await mr_doc.get_object()` |
+| 7 | `doc.cascade_save()` | `await doc.cascade_save()` |
+| 8 | `doc.switch_db(alias)` | `await doc.switch_db(alias)` |
+| 9 | `doc.switch_collection(name)` | `await doc.switch_collection(name)` |
+| 10 | `MyDoc.drop_collection()` | `await MyDoc.drop_collection()` |
+| 11 | `MyDoc.create_index(keys)` | `await MyDoc.create_index(keys)` |
+| 12 | `MyDoc.ensure_indexes()` | `await MyDoc.ensure_indexes()` |
+| 13 | `MyDoc.list_indexes()` | `await MyDoc.list_indexes()` |
+| 14 | `MyDoc.compare_indexes()` | `await MyDoc.compare_indexes()` |
+| 15 | `.objects.get(...)` | `await .objects.get(...)` |
+| 16 | `.objects.first()` | `await .objects.first()` |
+| 17 | `.objects.count()` | `await .objects.count()` |
+| 18 | `.objects.create(...)` | `await .objects.create(...)` |
+| 19 | `.objects.insert(...)` | `await .objects.insert(...)` |
+| 20 | `.objects.delete()` | `await .objects.delete()` |
+| 21 | `.objects.update(...)` | `await .objects.update(...)` |
+| 22 | `.objects.update_one(...)` | `await .objects.update_one(...)` |
+| 23 | `.objects.upsert_one(...)` | `await .objects.upsert_one(...)` |
+| 24 | `.objects.modify(...)` | `await .objects.modify(...)` |
+| 25 | `.objects.with_id(...)` | `await .objects.with_id(...)` |
+| 26 | `.objects.in_bulk(...)` | `await .objects.in_bulk(...)` |
+| 27 | `.objects.distinct(...)` | `await .objects.distinct(...)` |
+| 28 | `.objects.sum(...)` | `await .objects.sum(...)` |
+| 29 | `.objects.average(...)` | `await .objects.average(...)` |
+| 30 | `.objects.item_frequencies(...)` | `await .objects.item_frequencies(...)` |
+| 31 | `.objects.aggregate(...)` | `await .objects.aggregate(...)` |
+| 32 | `.objects.map_reduce(...)` | `await .objects.map_reduce(...)` |
+| 33 | `.objects.explain()` | `await .objects.explain()` |
+| 34 | `.objects.to_json()` | `await .objects.to_json()` |
+| 35 | `.objects.to_list()` | `await .objects.to_list()` |
+| 36 | `.objects.using(alias)` | `await .objects.using(alias)` |
+| 37 | `for doc in qs:` | `async for doc in qs:` |
+| 38 | `list(qs)` | `await qs.to_list()` |
+| 39 | `len(qs)` | `await qs.count()` |
+| 40 | `if qs:` | `if not await qs.is_empty():` |
+| 41 | `qs[0]` | `await qs.get_item(0)` |
+| 42 | `with switch_db(...)` | `async with switch_db(...)` |
+| 43 | `with switch_collection(...)` | `async with switch_collection(...)` |
+| 44 | `with query_counter() as q:` | `async with query_counter() as q:` |
+| 45 | `with run_in_transaction():` | `async with run_in_transaction():` |
+| 46 | `q == N` (query_counter) | `await q.get_count() == N` |
+| 47 | `disconnect()` | `await disconnect()` |
+| 48 | `disconnect_all()` | `await disconnect_all()` |
+| 49 | `doc.ref_field.attr` (ReferenceField) | `ref = await RefDoc.objects.get(pk=doc.ref_field); ref.attr` |
+| 50 | `lazy_ref.attr` (LazyReference) | `doc = await lazy_ref.fetch(); doc.attr` |
+| 51 | `mr_doc.object` | `await mr_doc.get_object()` |
 
 ---
 
