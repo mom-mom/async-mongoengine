@@ -214,7 +214,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     if TYPE_CHECKING:
         from mongoengine.queryset.manager import QuerySetManager
 
-        objects: ClassVar[QuerySetManager[Self]]
+        objects: ClassVar[QuerySetManager]
 
     # my_metaclass is defined so that metaclass can be queried in Python 2 & 3
     my_metaclass = TopLevelDocumentMetaclass
