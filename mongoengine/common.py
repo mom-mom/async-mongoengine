@@ -1,8 +1,11 @@
-_class_registry_cache = {}
-_field_list_cache = []
+from types import ModuleType
+from typing import Any
+
+_class_registry_cache: dict[str, type[Any]] = {}
+_field_list_cache: list[str] = []
 
 
-def _import_class(cls_name):
+def _import_class(cls_name: str) -> type[Any]:
     """Cache mechanism for imports.
 
     Due to complications of circular imports mongoengine needs to do lots of
@@ -17,7 +20,7 @@ def _import_class(cls_name):
     class from the :data:`mongoengine.common._class_registry_cache`.
     """
     if cls_name in _class_registry_cache:
-        return _class_registry_cache.get(cls_name)
+        return _class_registry_cache.get(cls_name)  # type: ignore[return-value]
 
     doc_classes = (
         "Document",
@@ -39,6 +42,8 @@ def _import_class(cls_name):
 
     deref_classes = ("DeReference",)
 
+    module: ModuleType
+    import_classes: tuple[str, ...] | list[str]
     if cls_name == "BaseDocument":
         from mongoengine.base import document as module
 
@@ -61,4 +66,4 @@ def _import_class(cls_name):
     for cls in import_classes:
         _class_registry_cache[cls] = getattr(module, cls)
 
-    return _class_registry_cache.get(cls_name)
+    return _class_registry_cache.get(cls_name)  # type: ignore[return-value]

@@ -1,6 +1,7 @@
 import numbers
 import warnings
 from functools import partial
+from typing import Any, Self
 
 import pymongo
 from bson import SON, DBRef, ObjectId, json_util
@@ -57,11 +58,11 @@ class BaseDocument:
         "__weakref__",
     )
 
-    _dynamic = False
-    _dynamic_lock = True
-    STRICT = False
+    _dynamic: bool = False
+    _dynamic_lock: bool = True
+    STRICT: bool = False
 
-    def __init__(self, *args, **values):
+    def __init__(self, *args: Any, **values: Any) -> None:
         """
         Initialise a document or an embedded document.
 
@@ -81,9 +82,9 @@ class BaseDocument:
                 "supported. Please use `field_name=value` keyword arguments."
             )
 
-        __auto_convert = values.pop("__auto_convert", True)
+        __auto_convert: bool = values.pop("__auto_convert", True)
 
-        _created = values.pop("_created", True)
+        _created: bool = values.pop("_created", True)
 
         signals.pre_init.send(self.__class__, document=self, values=values)
 
@@ -113,10 +114,10 @@ class BaseDocument:
             setattr(self, field_name, value)
 
         if "_cls" not in values:
-            self._cls = self._class_name
+            self._cls = self._class_name  # pyright: ignore[reportGeneralTypeIssues]
 
         # Set actual values
-        dynamic_data = {}
+        dynamic_data: dict[str, Any] = {}
         for key, value in values.items():
             field = self._fields.get(key)
             if field or key in ("id", "pk", "_cls"):
@@ -135,7 +136,7 @@ class BaseDocument:
         self.__set_field_display()
 
         if self._dynamic:
-            self._dynamic_lock = False
+            self._dynamic_lock = False  # pyright: ignore[reportGeneralTypeIssues]
             for key, value in dynamic_data.items():
                 setattr(self, key, value)
 
@@ -145,7 +146,7 @@ class BaseDocument:
 
         signals.post_init.send(self.__class__, document=self)
 
-    def __delattr__(self, *args, **kwargs):
+    def __delattr__(self, *args: Any, **kwargs: Any) -> None:
         """Handle deletions of fields"""
         field_name = args[0]
         if field_name in self._fields:
@@ -156,7 +157,7 @@ class BaseDocument:
         else:
             super().__delattr__(*args, **kwargs)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         # Handle dynamic data only if an initialised dynamic document
         if self._dynamic and not self._dynamic_lock:
             if name not in self._fields_ordered and not name.startswith("_"):
@@ -164,7 +165,7 @@ class BaseDocument:
                 field = DynamicField(db_field=name, null=True)
                 field.name = name
                 self._dynamic_fields[name] = field
-                self._fields_ordered += (name,)
+                self._fields_ordered += (name,)  # pyright: ignore[reportGeneralTypeIssues]
 
             if not name.startswith("_"):
                 value = self.__expand_dynamic_values(name, value)
@@ -201,8 +202,8 @@ class BaseDocument:
 
         super().__setattr__(name, value)
 
-    def __getstate__(self):
-        data = {}
+    def __getstate__(self) -> dict[str, Any]:
+        data: dict[str, Any] = {}
         for k in (
             "_changed_fields",
             "_initialised",
@@ -215,7 +216,7 @@ class BaseDocument:
         data["_data"] = self.to_mongo()
         return data
 
-    def __setstate__(self, data):
+    def __setstate__(self, data: dict[str, Any]) -> None:
         if isinstance(data["_data"], SON):
             data["_data"] = self.__class__._from_son(data["_data"])._data
         for k in (
@@ -229,19 +230,19 @@ class BaseDocument:
                 setattr(self, k, data[k])
         if "_fields_ordered" in data:
             if self._dynamic:
-                self._fields_ordered = data["_fields_ordered"]
+                self._fields_ordered = data["_fields_ordered"]  # pyright: ignore[reportGeneralTypeIssues]
             else:
                 _super_fields_ordered = type(self)._fields_ordered
-                self._fields_ordered = _super_fields_ordered
+                self._fields_ordered = _super_fields_ordered  # pyright: ignore[reportGeneralTypeIssues]
 
         dynamic_fields = data.get("_dynamic_fields") or SON()
         for k in dynamic_fields.keys():
             setattr(self, k, data["_data"].get(k))
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         return iter(self._fields_ordered)
 
-    def __getitem__(self, name):
+    def __getitem__(self, name: str) -> Any:
         """Dictionary-style field access, return a field's value if present."""
         try:
             if name in self._fields_ordered:
@@ -250,24 +251,24 @@ class BaseDocument:
             pass
         raise KeyError(name)
 
-    def __setitem__(self, name, value):
+    def __setitem__(self, name: str, value: Any) -> None:
         """Dictionary-style field access, set a field's value."""
         # Ensure that the field exists before settings its value
         if not self._dynamic and name not in self._fields:
             raise KeyError(name)
         return setattr(self, name, value)
 
-    def __contains__(self, name):
+    def __contains__(self, name: object) -> bool:
         try:
-            val = getattr(self, name)
+            val = getattr(self, name)  # type: ignore[arg-type]
             return val is not None
         except AttributeError:
             return False
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._data)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         try:
             u = self.__str__()
         except (UnicodeEncodeError, UnicodeDecodeError):
@@ -275,13 +276,13 @@ class BaseDocument:
         repr_type = str if u is None else type(u)
         return repr_type(f"<{self.__class__.__name__}: {u}>")
 
-    def __str__(self):
+    def __str__(self) -> str:
         # TODO this could be simpler?
         if hasattr(self, "__unicode__"):
             return self.__unicode__()
         return f"{self.__class__.__name__} object"
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__) and hasattr(other, "id") and other.id is not None:
             return self.id == other.id
         if isinstance(other, DBRef):
@@ -290,10 +291,10 @@ class BaseDocument:
             return self is other
         return False
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         return not self.__eq__(other)
 
-    def clean(self):
+    def clean(self) -> None:
         """
         Hook for doing document level data cleaning (usually validation or assignment)
         before validation is run.
@@ -304,7 +305,7 @@ class BaseDocument:
         """
         pass
 
-    def get_text_score(self):
+    def get_text_score(self) -> Any:
         """
         Get text score from text query
         """
@@ -316,7 +317,7 @@ class BaseDocument:
 
         return self._data["_text_score"]
 
-    def to_mongo(self, use_db_field=True, fields=None):
+    def to_mongo(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """
         Return as SON data ready for use with MongoDB.
         """
@@ -341,7 +342,7 @@ class BaseDocument:
 
             if value is not None:
                 f_inputs = field.to_mongo.__code__.co_varnames
-                ex_vars = {}
+                ex_vars: dict[str, Any] = {}
                 if fields and "fields" in f_inputs:
                     key = f"{field_name}."
                     embedded_fields = [i.replace(key, "") for i in fields if i.startswith(key)]
@@ -376,7 +377,7 @@ class BaseDocument:
 
         return data
 
-    def validate(self, clean=True):
+    def validate(self, clean: bool = True) -> None:
         """Ensure that all fields' values are valid and that required fields
         are present.
 
@@ -384,7 +385,7 @@ class BaseDocument:
         to be invalid.
         """
         # Ensure that each field is matched to a valid value
-        errors = {}
+        errors: dict[str, Any] = {}
         if clean:
             try:
                 self.clean()
@@ -426,14 +427,14 @@ class BaseDocument:
             message = f"ValidationError ({self._class_name}:{pk}) "
             raise ValidationError(message, errors=errors)
 
-    def to_json(self, *args, **kwargs):
+    def to_json(self, *args: Any, **kwargs: Any) -> str:
         """Convert this document to JSON.
 
         :param use_db_field: Serialize field names as they appear in
             MongoDB (as opposed to attribute names on this document).
             Defaults to True.
         """
-        use_db_field = kwargs.pop("use_db_field", True)
+        use_db_field: bool = kwargs.pop("use_db_field", True)
         if "json_options" not in kwargs:
             warnings.warn(
                 "No 'json_options' are specified! Falling back to "
@@ -448,7 +449,7 @@ class BaseDocument:
         return json_util.dumps(self.to_mongo(use_db_field), *args, **kwargs)
 
     @classmethod
-    def from_json(cls, json_data, created=False, **kwargs):
+    def from_json(cls, json_data: str, created: bool = False, **kwargs: Any) -> Self:
         """Converts json data to a Document instance.
 
         :param str json_data: The json data to load into the Document.
@@ -479,7 +480,7 @@ class BaseDocument:
             kwargs["json_options"] = LEGACY_JSON_OPTIONS
         return cls._from_son(json_util.loads(json_data, **kwargs), created=created)
 
-    def __expand_dynamic_values(self, name, value):
+    def __expand_dynamic_values(self, name: str, value: Any) -> Any:
         """Expand any dynamic values to their correct types / values."""
         if not isinstance(value, (dict, list, tuple)):
             return value
@@ -507,7 +508,7 @@ class BaseDocument:
 
         return value
 
-    def _mark_as_changed(self, key):
+    def _mark_as_changed(self, key: str) -> None:
         """Mark a key as explicitly changed by the user."""
         if not hasattr(self, "_changed_fields"):
             return
@@ -534,7 +535,7 @@ class BaseDocument:
                     if field.startswith(level):
                         remove(field)
 
-    def _clear_changed_fields(self):
+    def _clear_changed_fields(self) -> None:
         """Using _get_changed_fields iterate and remove any fields that
         are marked as changed.
         """
@@ -543,7 +544,7 @@ class BaseDocument:
 
         for changed in self._get_changed_fields():
             parts = changed.split(".")
-            data = self
+            data: Any = self
             for part in parts:
                 if isinstance(data, list):
                     try:
@@ -569,7 +570,7 @@ class BaseDocument:
         self._changed_fields = []
 
     @staticmethod
-    def _nestable_types_clear_changed_fields(data):
+    def _nestable_types_clear_changed_fields(data: list[Any] | tuple[Any, ...] | dict[str, Any]) -> None:
         """Inspect nested data for changed fields
 
         :param data: data to inspect for changes
@@ -590,7 +591,11 @@ class BaseDocument:
                 BaseDocument._nestable_types_clear_changed_fields(value)
 
     @staticmethod
-    def _nestable_types_changed_fields(changed_fields, base_key, data):
+    def _nestable_types_changed_fields(
+        changed_fields: list[str],
+        base_key: str,
+        data: list[Any] | tuple[Any, ...] | dict[str, Any],
+    ) -> None:
         """Inspect nested data for changed fields
 
         :param changed_fields: Previously collected changed fields
@@ -617,7 +622,7 @@ class BaseDocument:
             elif isinstance(value, (list, tuple, dict)):
                 BaseDocument._nestable_types_changed_fields(changed_fields, item_key, value)
 
-    def _get_changed_fields(self):
+    def _get_changed_fields(self) -> list[str]:
         """Return a list of all fields that have explicitly been changed."""
         EmbeddedDocument = _import_class("EmbeddedDocument")
         LazyReferenceField = _import_class("LazyReferenceField")
@@ -626,7 +631,7 @@ class BaseDocument:
         GenericReferenceField = _import_class("GenericReferenceField")
         SortedListField = _import_class("SortedListField")
 
-        changed_fields = []
+        changed_fields: list[str] = []
         changed_fields += getattr(self, "_changed_fields", [])
 
         for field_name in self._fields_ordered:
@@ -666,7 +671,7 @@ class BaseDocument:
                 self._nestable_types_changed_fields(changed_fields, key, data)
         return changed_fields
 
-    def _delta(self):
+    def _delta(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Returns the delta (set, unset) of the changes for a document.
         Gets any values that have been explicitly changed.
         """
@@ -674,14 +679,14 @@ class BaseDocument:
         doc = self.to_mongo()
 
         set_fields = self._get_changed_fields()
-        unset_data = {}
+        unset_data: dict[str, Any] = {}
         if hasattr(self, "_changed_fields"):
-            set_data = {}
+            set_data: dict[str, Any] = {}
             # Fetch each set item from its path
             for path in set_fields:
                 parts = path.split(".")
-                d = doc
-                new_path = []
+                d: Any = doc
+                new_path: list[str] = []
                 for p in parts:
                     if isinstance(d, (ObjectId, DBRef)):
                         # Don't dig in the references
@@ -713,7 +718,7 @@ class BaseDocument:
                 continue
 
             # If we've set a value that ain't the default value don't unset it.
-            default = None
+            default: Any = None
             if path in self._fields:
                 default = self._fields[path].default
             else:  # Perform a full lookup for lists / embedded lookups
@@ -746,14 +751,14 @@ class BaseDocument:
         return set_data, unset_data
 
     @classmethod
-    def _get_collection_name(cls):
+    def _get_collection_name(cls) -> str | None:
         """Return the collection name for this class. None for abstract
         class.
         """
         return cls._meta.get("collection", None)
 
     @classmethod
-    def _from_son(cls, son, created=False):
+    def _from_son(cls, son: dict[str, Any], created: bool = False) -> Self:
         """Create an instance of a Document (subclass) from a PyMongo SON (dict)"""
         if son and not isinstance(son, dict):
             raise ValueError(f"The source SON object needs to be of type 'dict' but a '{type(son)}' was found")
@@ -766,7 +771,7 @@ class BaseDocument:
         # corresponds to the right db field.
         # This is needed as _from_son is currently called both from BaseDocument.__init__
         # and from EmbeddedDocumentField.to_python
-        data = {}
+        data: dict[str, Any] = {}
         for key, value in son.items():
             key = str(key)
             key = cls._db_field_map.get(key, key)
@@ -776,7 +781,7 @@ class BaseDocument:
         if class_name != cls._class_name:
             cls = _DocumentRegistry.get(class_name)
 
-        errors_dict = {}
+        errors_dict: dict[str, Any] = {}
 
         fields = cls._fields
 
@@ -806,13 +811,16 @@ class BaseDocument:
         return obj
 
     @classmethod
-    def _build_index_specs(cls, meta_indexes):
+    def _build_index_specs(cls, meta_indexes: list[Any]) -> list[dict[str, Any]]:
         """Generate and merge the full index specs."""
         geo_indices = cls._geo_indices()
         unique_indices = cls._unique_with_indexes()
         index_specs = [cls._build_index_spec(spec) for spec in meta_indexes]
 
-        def merge_index_specs(index_specs, indices):
+        def merge_index_specs(
+            index_specs: list[dict[str, Any]],
+            indices: list[dict[str, Any]],
+        ) -> list[dict[str, Any]]:
             """Helper method for merging index specs."""
             if not indices:
                 return index_specs
@@ -839,7 +847,7 @@ class BaseDocument:
         return index_specs
 
     @classmethod
-    def _build_index_spec(cls, spec):
+    def _build_index_spec(cls, spec: Any) -> dict[str, Any]:
         """Build a PyMongo index spec from a MongoEngine index spec."""
         if isinstance(spec, str):
             spec = {"fields": [spec]}
@@ -848,8 +856,8 @@ class BaseDocument:
         elif isinstance(spec, dict):
             spec = dict(spec)
 
-        index_list = []
-        direction = None
+        index_list: list[tuple[str, int | str]] = []
+        direction: int | str | None = None  # pyright: ignore[reportRedeclaration]
 
         # Check to see if we need to include _cls
         allow_inheritance = cls._meta.get("allow_inheritance")
@@ -911,7 +919,7 @@ class BaseDocument:
                         pass
                     parts.append(field)
                 key = ".".join(parts)
-            index_list.append((key, direction))
+            index_list.append((key, direction))  # type: ignore[arg-type]
 
         # Don't add cls to a geo index
         if (
@@ -927,9 +935,9 @@ class BaseDocument:
         return spec
 
     @classmethod
-    def _unique_with_indexes(cls, namespace=""):
+    def _unique_with_indexes(cls, namespace: str = "") -> list[dict[str, Any]]:
         """Find unique indexes in the document schema and return them."""
-        unique_indexes = []
+        unique_indexes: list[dict[str, Any]] = []
         for field_name, field in cls._fields.items():
             sparse = field.sparse
 
@@ -943,7 +951,7 @@ class BaseDocument:
                         field.unique_with = [field.unique_with]
 
                     # Convert unique_with field names to real field names
-                    unique_with = []
+                    unique_with: list[str] = []
                     for other_name in field.unique_with:
                         parts = other_name.split(".")
 
@@ -979,9 +987,13 @@ class BaseDocument:
         return unique_indexes
 
     @classmethod
-    def _geo_indices(cls, inspected=None, parent_field=None):
+    def _geo_indices(
+        cls,
+        inspected: list[Any] | None = None,
+        parent_field: str | None = None,
+    ) -> list[dict[str, Any]]:
         inspected = inspected or []
-        geo_indices = []
+        geo_indices: list[dict[str, Any]] = []
         inspected.append(cls)
 
         geo_field_type_names = (
@@ -1014,7 +1026,7 @@ class BaseDocument:
         return geo_indices
 
     @classmethod
-    def _lookup_field(cls, parts):
+    def _lookup_field(cls, parts: list[str] | tuple[str, ...] | str) -> list[Any]:
         """Given the path to a given field, return a list containing
         the Field object associated with that field and all of its parent
         Field objects.
@@ -1056,8 +1068,8 @@ class BaseDocument:
         if not isinstance(parts, (list, tuple)):
             parts = [parts]
 
-        fields = []
-        field = None
+        fields: list[Any] = []
+        field: Any = None
 
         for field_name in parts:
             # Handle ListField indexing:
@@ -1137,13 +1149,13 @@ class BaseDocument:
         return fields
 
     @classmethod
-    def _translate_field_name(cls, field, sep="."):
+    def _translate_field_name(cls, field: str, sep: str = ".") -> str:
         """Translate a field attribute name to a database field name."""
         parts = field.split(sep)
         parts = [f.db_field for f in cls._lookup_field(parts)]
         return ".".join(parts)
 
-    def __set_field_display(self):
+    def __set_field_display(self) -> None:
         """For each field that specifies choices, create a
         get_<field>_display method.
         """
@@ -1155,7 +1167,7 @@ class BaseDocument:
                 partial(self.__get_field_display, field=field),
             )
 
-    def __get_field_display(self, field):
+    def __get_field_display(self, field: Any) -> Any:
         """Return the display value for a choice field"""
         value = getattr(self, field.name)
         if field.choices and isinstance(field.choices[0], (list, tuple)):

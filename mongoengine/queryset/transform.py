@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Any
 
 import pymongo
 from bson import SON, ObjectId
@@ -10,7 +11,7 @@ from mongoengine.errors import InvalidQueryError
 
 __all__ = ("query", "update", "STRING_OPERATORS")
 
-COMPARISON_OPERATORS = (
+COMPARISON_OPERATORS: tuple[str, ...] = (
     "ne",
     "gt",
     "gte",
@@ -26,7 +27,7 @@ COMPARISON_OPERATORS = (
     "elemMatch",
     "type",
 )
-GEO_OPERATORS = (
+GEO_OPERATORS: tuple[str, ...] = (
     "within_distance",
     "within_spherical_distance",
     "within_box",
@@ -42,7 +43,7 @@ GEO_OPERATORS = (
     "geo_within_sphere",
     "geo_intersects",
 )
-STRING_OPERATORS = (
+STRING_OPERATORS: tuple[str, ...] = (
     "contains",
     "icontains",
     "startswith",
@@ -56,11 +57,11 @@ STRING_OPERATORS = (
     "wholeword",
     "iwholeword",
 )
-CUSTOM_OPERATORS = ("match",)
-MATCH_OPERATORS = COMPARISON_OPERATORS + GEO_OPERATORS + STRING_OPERATORS + CUSTOM_OPERATORS
+CUSTOM_OPERATORS: tuple[str, ...] = ("match",)
+MATCH_OPERATORS: tuple[str, ...] = COMPARISON_OPERATORS + GEO_OPERATORS + STRING_OPERATORS + CUSTOM_OPERATORS
 
 
-def handle_raw_query(value, mongo_query):
+def handle_raw_query(value: dict[str, Any], mongo_query: dict[str, Any]) -> None:
     """Combine a raw query with an existing one"""
     for op, v in value.items():
         if op not in mongo_query:
@@ -70,20 +71,20 @@ def handle_raw_query(value, mongo_query):
 
 
 # TODO make this less complex
-def query(_doc_cls=None, **kwargs):
+def query(_doc_cls: Any = None, **kwargs: Any) -> dict[str, Any]:
     """Transform a query from Django-style format to Mongo format."""
-    mongo_query = {}
-    merge_query = defaultdict(list)
+    mongo_query: dict[str, Any] = {}
+    merge_query: defaultdict[str, list[Any]] = defaultdict(list)
     for key, value in sorted(kwargs.items()):
         if key == "__raw__":
             handle_raw_query(value, mongo_query)
             continue
 
-        parts = key.rsplit("__")
-        indices = [(i, p) for i, p in enumerate(parts) if p.isdigit()]
+        parts: list[str] = key.rsplit("__")
+        indices: list[tuple[int, str]] = [(i, p) for i, p in enumerate(parts) if p.isdigit()]
         parts = [part for part in parts if not part.isdigit()]
         # Check for an operator and transform to mongo-style if there is
-        op = None
+        op: str | None = None
         if len(parts) > 1 and parts[-1] in MATCH_OPERATORS:
             op = parts.pop()
 
@@ -91,7 +92,7 @@ def query(_doc_cls=None, **kwargs):
         if len(parts) > 1 and parts[-1] == "":
             parts.pop()
 
-        negate = False
+        negate: bool = False
         if len(parts) > 1 and parts[-1] == "not":
             parts.pop()
             negate = True
@@ -107,9 +108,9 @@ def query(_doc_cls=None, **kwargs):
             CachedReferenceField = _import_class("CachedReferenceField")
             GenericReferenceField = _import_class("GenericReferenceField")
 
-            cleaned_fields = []
+            cleaned_fields: list[Any] = []
             for field in fields:
-                append_field = True
+                append_field: bool = True
                 if isinstance(field, str):
                     parts.append(field)
                     append_field = False
@@ -125,9 +126,9 @@ def query(_doc_cls=None, **kwargs):
             # Convert value to proper value
             field = cleaned_fields[-1]
 
-            singular_ops = [None, "ne", "gt", "gte", "lt", "lte", "not"]
+            singular_ops: list[str | None] = [None, "ne", "gt", "gte", "lt", "lte", "not"]
             singular_ops += STRING_OPERATORS
-            is_iterable = False
+            is_iterable: bool = False
             if op in singular_ops:
                 value = field.prepare_query_value(op, value)
 
@@ -193,18 +194,18 @@ def query(_doc_cls=None, **kwargs):
             if isinstance(mongo_query[key], dict) and isinstance(value, dict):
                 mongo_query[key].update(value)
                 # $max/minDistance needs to come last - convert to SON
-                value_dict = mongo_query[key]
+                value_dict: dict[str, Any] = mongo_query[key]
                 if ("$maxDistance" in value_dict or "$minDistance" in value_dict) and (
                     "$near" in value_dict or "$nearSphere" in value_dict
                 ):
-                    value_son = SON()
+                    value_son: SON = SON()
                     for k, v in value_dict.items():
                         if k == "$maxDistance" or k == "$minDistance":
                             continue
                         value_son[k] = v
                     # Required for MongoDB >= 2.6, may fail when combining
                     # PyMongo 3+ and MongoDB < 2.6
-                    near_embedded = False
+                    near_embedded: bool = False
                     for near_op in ("$near", "$nearSphere"):
                         if isinstance(value_dict.get(near_op), dict):
                             value_son[near_op] = SON(value_son[near_op])
@@ -238,29 +239,29 @@ def query(_doc_cls=None, **kwargs):
     return mongo_query
 
 
-def update(_doc_cls=None, **update):
+def update(_doc_cls: Any = None, **update: Any) -> dict[str, Any]:
     """Transform an update spec from Django-style format to Mongo
     format.
     """
-    mongo_update = {}
+    mongo_update: dict[str, Any] = {}
 
     for key, value in update.items():
         if key == "__raw__":
             handle_raw_query(value, mongo_update)
             continue
 
-        parts = key.split("__")
+        parts: list[str] = key.split("__")
 
         # if there is no operator, default to 'set'
         if len(parts) < 3 and parts[0] not in UPDATE_OPERATORS:
             parts.insert(0, "set")
 
         # Check for an operator and transform to mongo-style if there is
-        op = None
+        op: str | None = None
         if parts[0] in UPDATE_OPERATORS:
             op = parts.pop(0)
             # Convert Pythonic names to Mongo equivalents
-            operator_map = {
+            operator_map: dict[str, str] = {
                 "push_all": "pushAll",
                 "pull_all": "pullAll",
                 "dec": "inc",
@@ -275,7 +276,7 @@ def update(_doc_cls=None, **update):
             # will stay unchanged
             op = operator_map.get(op, op)
 
-        match = None
+        match: str | None = None
 
         if len(parts) == 1:
             # typical update like set__field
@@ -303,10 +304,10 @@ def update(_doc_cls=None, **update):
                 raise InvalidQueryError(e)
             parts = []
 
-            cleaned_fields = []
-            appended_sub_field = False
+            cleaned_fields: list[Any] = []
+            appended_sub_field: bool = False
             for field in fields:
-                append_field = True
+                append_field: bool = True
                 if isinstance(field, str):
                     # Convert the S operator to $
                     if field == "S":
@@ -361,7 +362,7 @@ def update(_doc_cls=None, **update):
 
         key = ".".join(parts)
 
-        if "pull" in op and "." in key:
+        if op and "pull" in op and "." in key:
             # Dot operators don't work on pull operations
             # unless they point to a list field
             # Otherwise it uses nested dict syntax
@@ -369,7 +370,7 @@ def update(_doc_cls=None, **update):
                 raise InvalidQueryError("pullAll operations only support a single field depth")
 
             # Look for the last list field and use dot notation until there
-            field_classes = [c.__class__ for c in cleaned_fields]
+            field_classes: list[type] = [c.__class__ for c in cleaned_fields]
             field_classes.reverse()
             ListField = _import_class("ListField")
             EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
@@ -381,7 +382,7 @@ def update(_doc_cls=None, **update):
                 else:
                     _check_field = EmbeddedDocumentListField
 
-                last_listField = len(cleaned_fields) - field_classes.index(_check_field)
+                last_listField: int = len(cleaned_fields) - field_classes.index(_check_field)
                 key = ".".join(parts[:last_listField])
                 parts = parts[last_listField:]
                 parts.insert(0, key)
@@ -394,7 +395,7 @@ def update(_doc_cls=None, **update):
         elif op in ("push", "pushAll"):
             if parts[-1].isdigit():
                 key = ".".join(parts[0:-1])
-                position = int(parts[-1])
+                position: int = int(parts[-1])
                 # $position expects an iterable. If pushing a single value,
                 # wrap it in a list.
                 if not isinstance(value, (set, tuple, list)):
@@ -410,7 +411,7 @@ def update(_doc_cls=None, **update):
                     value = {key: value}
         else:
             value = {key: value}
-        key = "$" + op
+        key = "$" + op  # type: ignore[operator]
         if key not in mongo_update:
             mongo_update[key] = value
         elif key in mongo_update and isinstance(mongo_update[key], dict):
@@ -419,7 +420,7 @@ def update(_doc_cls=None, **update):
     return mongo_update
 
 
-def _geo_operator(field, op, value):
+def _geo_operator(field: Any, op: str, value: Any) -> dict[str, Any]:
     """Helper to return the query for a given geo query."""
     if op == "max_distance":
         value = {"$maxDistance": value}
@@ -460,7 +461,7 @@ def _geo_operator(field, op, value):
     return value
 
 
-def _infer_geometry(value):
+def _infer_geometry(value: Any) -> dict[str, Any]:
     """Helper method that tries to infer the $geometry shape for a
     given value.
     """
@@ -474,19 +475,19 @@ def _infer_geometry(value):
         # TODO: shouldn't we test value[0][0][0][0] to see if it is MultiPolygon?
 
         try:
-            value[0][0][0]
+            value[0][0][0]  # type: ignore[index]
             return {"$geometry": {"type": "Polygon", "coordinates": value}}
         except (TypeError, IndexError):
             pass
 
         try:
-            value[0][0]
+            value[0][0]  # type: ignore[index]
             return {"$geometry": {"type": "LineString", "coordinates": value}}
         except (TypeError, IndexError):
             pass
 
         try:
-            value[0]
+            value[0]  # type: ignore[index]
             return {"$geometry": {"type": "Point", "coordinates": value}}
         except (TypeError, IndexError):
             pass
@@ -494,7 +495,7 @@ def _infer_geometry(value):
     raise InvalidQueryError("Invalid $geometry data. Can be either a dictionary or (nested) lists of coordinate(s)")
 
 
-def _prepare_query_for_iterable(field, op, value):
+def _prepare_query_for_iterable(field: Any, op: str, value: Any) -> list[Any]:
     # We need a special check for BaseDocument, because - although it's iterable - using
     # it as such in the context of this method is most definitely a mistake.
     BaseDocument = _import_class("BaseDocument")

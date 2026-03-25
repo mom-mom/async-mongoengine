@@ -1,3 +1,6 @@
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Any
+
 from mongoengine.errors import OperationError
 from mongoengine.queryset.base import (
     CASCADE,
@@ -23,7 +26,7 @@ REPR_OUTPUT_SIZE = 20
 ITER_CHUNK_SIZE = 100
 
 
-class QuerySet(BaseQuerySet):
+class QuerySet[T](BaseQuerySet[T]):
     """The default queryset, that builds queries and handles a set of results
     returned from a query.
 
@@ -31,11 +34,11 @@ class QuerySet(BaseQuerySet):
     the results.
     """
 
-    _has_more = True
-    _len = None
-    _result_cache = None
+    _has_more: bool = True
+    _len: int | None = None
+    _result_cache: list[T] | None = None
 
-    async def __aiter__(self):
+    async def __aiter__(self) -> AsyncIterator[T]:
         """Async iteration utilises a results cache which iterates the cursor
         in batches of ``ITER_CHUNK_SIZE``.
 
@@ -63,10 +66,10 @@ class QuerySet(BaseQuerySet):
             async for item in self._iter_results():
                 yield item
         else:
-            for item in self._result_cache:
+            for item in self._result_cache or []:
                 yield item
 
-    async def _iter_results(self):
+    async def _iter_results(self) -> AsyncGenerator[T]:
         """An async generator for iterating over the result cache.
 
         Also populates the cache if there are more possible results to
@@ -75,7 +78,7 @@ class QuerySet(BaseQuerySet):
         if self._result_cache is None:
             self._result_cache = []
 
-        pos = 0
+        pos: int = 0
         while True:
             while pos < len(self._result_cache):
                 yield self._result_cache[pos]
@@ -87,7 +90,7 @@ class QuerySet(BaseQuerySet):
             if len(self._result_cache) <= pos:
                 await self._populate_cache()
 
-    async def _populate_cache(self):
+    async def _populate_cache(self) -> None:
         """
         Populates the result cache with ``ITER_CHUNK_SIZE`` more entries
         (until the cursor is exhausted).
@@ -100,12 +103,12 @@ class QuerySet(BaseQuerySet):
 
         try:
             for _ in range(ITER_CHUNK_SIZE):
-                doc = await self.__anext__()
+                doc: T = await self.__anext__()
                 self._result_cache.append(doc)
         except StopAsyncIteration:
             self._has_more = False
 
-    async def count(self, with_limit_and_skip=False):
+    async def count(self, with_limit_and_skip: bool = False) -> int:
         """Count the selected elements in the query."""
         if with_limit_and_skip is False:
             return await super().count(with_limit_and_skip)
@@ -115,7 +118,7 @@ class QuerySet(BaseQuerySet):
 
         return self._len
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Provide a string representation of the QuerySet"""
         if self._iter:
             return ".. queryset mid-iteration .."
@@ -123,44 +126,44 @@ class QuerySet(BaseQuerySet):
         if self._result_cache is not None:
             data = self._result_cache[: REPR_OUTPUT_SIZE + 1]
             if len(data) > REPR_OUTPUT_SIZE:
-                data[-1] = "...(remaining elements truncated)..."
+                data[-1] = "...(remaining elements truncated)..."  # type: ignore[assignment]
             return repr(data)
 
         return f"{self._document._class_name} async queryset"
 
-    def no_cache(self):
+    def no_cache(self) -> "QuerySetNoCache[T]":
         """Convert to a non-caching queryset"""
         if self._result_cache is not None:
             raise OperationError("QuerySet already cached")
 
-        return self._clone_into(QuerySetNoCache(self._document, self._collection))
+        return self._clone_into(QuerySetNoCache(self._document, self._collection))  # type: ignore[arg-type,return-value]
 
 
-class QuerySetNoCache(BaseQuerySet):
+class QuerySetNoCache[T](BaseQuerySet[T]):
     """A non caching QuerySet"""
 
-    def cache(self):
+    def cache(self) -> QuerySet[T]:
         """Convert to a caching queryset"""
-        return self._clone_into(QuerySet(self._document, self._collection))
+        return self._clone_into(QuerySet(self._document, self._collection))  # type: ignore[arg-type,return-value]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Provides the string representation of the QuerySet"""
         if self._iter:
             return ".. queryset mid-iteration .."
         return f"{self._document._class_name} async queryset (no cache)"
 
-    async def __aiter__(self):
+    async def __aiter__(self) -> AsyncIterator[T]:
         queryset = self
         if queryset._iter:
             queryset = self.clone()
         queryset._iter = True
 
         if queryset._select_related_depth > 0 and not queryset._as_pymongo and not queryset._scalar:
-            docs = []
+            docs: list[Any] = []
             async for doc in queryset._get_async_cursor():
                 if queryset._none or queryset._empty:
                     return
-                result = queryset._document._from_son(doc)
+                result: Any = queryset._document._from_son(doc)
                 if queryset._scalar:
                     docs.append(queryset._get_scalar(result))
                 else:
@@ -183,7 +186,7 @@ class QuerySetNoCache(BaseQuerySet):
                 else:
                     yield result
 
-    async def _get_async_cursor(self):
+    async def _get_async_cursor(self) -> AsyncGenerator[Any]:
         """Iterate over the async cursor."""
         await self._ensure_collection()
         async for doc in self._cursor:

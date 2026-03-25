@@ -1,5 +1,7 @@
 import itertools
 import warnings
+from collections.abc import Generator
+from typing import Any, Union
 
 from mongoengine.base.common import _DocumentRegistry
 from mongoengine.base.fields import (
@@ -23,7 +25,7 @@ class DocumentMetaclass(type):
     """Metaclass for all documents."""
 
     # TODO lower complexity of this method
-    def __new__(mcs, name, bases, attrs):
+    def __new__(mcs, name: str, bases: tuple[type, ...], attrs: dict[str, Any], **kwargs: Any) -> Any:
         flattened_bases = mcs._get_bases(bases)
         super_new = super().__new__
 
@@ -41,7 +43,7 @@ class DocumentMetaclass(type):
 
         # EmbeddedDocuments should inherit meta data
         if "_meta" not in attrs:
-            meta = MetaDict()
+            meta: MetaDict = MetaDict()
             for base in flattened_bases[::-1]:
                 # Add any mixin metadata from plain objects
                 if hasattr(base, "meta"):
@@ -59,14 +61,14 @@ class DocumentMetaclass(type):
         # Handle document Fields
 
         # Merge all fields from subclasses
-        doc_fields = {}
+        doc_fields: dict[str, Any] = {}
         for base in flattened_bases[::-1]:
             if hasattr(base, "_fields"):
                 doc_fields.update(base._fields)
 
             # Standard object mixin - merge in any Fields
             if not hasattr(base, "_meta"):
-                base_fields = {}
+                base_fields: dict[str, Any] = {}
                 for attr_name, attr_value in base.__dict__.items():
                     if not isinstance(attr_value, BaseField):
                         continue
@@ -78,7 +80,7 @@ class DocumentMetaclass(type):
                 doc_fields.update(base_fields)
 
         # Discover any document fields
-        field_names = {}
+        field_names: dict[str, int] = {}
         for attr_name, attr_value in attrs.items():
             if not isinstance(attr_value, BaseField):
                 continue
@@ -108,8 +110,8 @@ class DocumentMetaclass(type):
         #
         # Set document hierarchy
         #
-        superclasses = ()
-        class_name = [name]
+        superclasses: tuple[str, ...] = ()
+        class_name: list[str] = [name]
         for base in flattened_bases:
             if not getattr(base, "_is_base_cls", True) and not getattr(base, "_meta", {}).get("abstract", True):
                 # Collate hierarchy for _cls and _subclasses
@@ -126,12 +128,12 @@ class DocumentMetaclass(type):
                     )
 
         # Get superclasses from last base superclass
-        document_bases = [b for b in flattened_bases if hasattr(b, "_class_name")]
+        document_bases: list[Any] = [b for b in flattened_bases if hasattr(b, "_class_name")]
         if document_bases:
             superclasses = document_bases[0]._superclasses
             superclasses += (document_bases[0]._class_name,)
 
-        _cls = ".".join(reversed(class_name))
+        _cls: str = ".".join(reversed(class_name))
         attrs["_class_name"] = _cls
         attrs["_superclasses"] = superclasses
         attrs["_subclasses"] = (_cls,)
@@ -195,16 +197,16 @@ class DocumentMetaclass(type):
         return new_class
 
     @classmethod
-    def _get_bases(mcs, bases):
+    def _get_bases(mcs, bases: Union[tuple[type, ...], "BasesTuple"]) -> "BasesTuple":
         if isinstance(bases, BasesTuple):
             return bases
-        seen = []
-        bases = mcs.__get_bases(bases)
+        seen: list[type] = []
+        bases = tuple(mcs.__get_bases(bases))
         unique_bases = (b for b in bases if not (b in seen or seen.append(b)))
         return BasesTuple(unique_bases)
 
     @classmethod
-    def __get_bases(mcs, bases):
+    def __get_bases(mcs, bases: tuple[type, ...]) -> Generator[type]:
         for base in bases:
             if base is object:
                 continue
@@ -212,7 +214,7 @@ class DocumentMetaclass(type):
             yield from mcs.__get_bases(base.__bases__)
 
     @classmethod
-    def _import_classes(mcs):
+    def _import_classes(mcs) -> tuple[Any, Any, Any, Any]:
         Document = _import_class("Document")
         EmbeddedDocument = _import_class("EmbeddedDocument")
         DictField = _import_class("DictField")
@@ -225,7 +227,7 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
     collection in the database.
     """
 
-    def __new__(mcs, name, bases, attrs):
+    def __new__(mcs, name: str, bases: tuple[type, ...], attrs: dict[str, Any], **kwargs: Any) -> Any:
         flattened_bases = mcs._get_bases(bases)
         super_new = super().__new__
 
@@ -270,8 +272,9 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
             del attrs["meta"]
 
         # Find the parent document class
-        parent_doc_cls = [b for b in flattened_bases if b.__class__ == TopLevelDocumentMetaclass]
-        parent_doc_cls = None if not parent_doc_cls else parent_doc_cls[0]
+        parent_doc_cls: type | None = next(
+            (b for b in flattened_bases if b.__class__ == TopLevelDocumentMetaclass), None
+        )
 
         # Prevent classes setting collection different to their parents
         # If parent wasn't an abstract class
@@ -289,7 +292,7 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
 
         # Merge base class metas.
         # Uses a special MetaDict that handles various merging rules
-        meta = MetaDict()
+        meta: MetaDict = MetaDict()
         for base in flattened_bases[::-1]:
             # Add any mixin metadata from plain objects
             if hasattr(base, "meta"):
@@ -308,7 +311,7 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
         # Only simple classes (i.e. direct subclasses of Document) may set
         # allow_inheritance to False. If the base Document allows inheritance,
         # none of its subclasses can override allow_inheritance to False.
-        simple_class = all(b._meta.get("abstract") for b in flattened_bases if hasattr(b, "_meta"))
+        simple_class: bool = all(b._meta.get("abstract") for b in flattened_bases if hasattr(b, "_meta"))
         if not simple_class and meta["allow_inheritance"] is False and not meta["abstract"]:
             raise ValueError('Only direct subclasses of Document may set "allow_inheritance" to False')
 
@@ -364,11 +367,13 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
             new_class._fields_ordered = (id_name,) + new_class._fields_ordered
 
         # Merge in exceptions with parent hierarchy.
-        exceptions_to_merge = (DoesNotExist, MultipleObjectsReturned)
-        module = attrs.get("__module__")
+        exceptions_to_merge: tuple[type[Exception], ...] = (DoesNotExist, MultipleObjectsReturned)
+        module: str | None = attrs.get("__module__")
         for exc in exceptions_to_merge:
             name = exc.__name__
-            parents = tuple(getattr(base, name) for base in flattened_bases if hasattr(base, name)) or (exc,)
+            parents: tuple[type[Exception], ...] = tuple(
+                getattr(base, name) for base in flattened_bases if hasattr(base, name)
+            ) or (exc,)
 
             # Create a new exception and set it as an attribute on the new
             # class.
@@ -378,7 +383,7 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
         return new_class
 
     @classmethod
-    def get_auto_id_names(mcs, new_class):
+    def get_auto_id_names(mcs, new_class: Any) -> tuple[str, str]:
         """Find a name for the automatic ID field for the given new class.
 
         Return a two-element tuple where the first item is the field name (i.e.
@@ -388,12 +393,16 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
         Defaults to ('id', '_id'), or generates a non-clashing name in the form
         of ('auto_id_X', '_auto_id_X') if the default name is already taken.
         """
+        id_name: str
+        id_db_name: str
         id_name, id_db_name = ("id", "_id")
-        existing_fields = {field_name for field_name in new_class._fields}
-        existing_db_fields = {v.db_field for v in new_class._fields.values()}
+        existing_fields: set[str] = {field_name for field_name in new_class._fields}
+        existing_db_fields: set[str] = {v.db_field for v in new_class._fields.values()}
         if id_name not in existing_fields and id_db_name not in existing_db_fields:
             return id_name, id_db_name
 
+        id_basename: str
+        id_db_basename: str
         id_basename, id_db_basename, i = ("auto_id", "_auto_id", 0)
         for i in itertools.count():
             id_name = f"{id_basename}_{i}"
@@ -401,15 +410,17 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
             if id_name not in existing_fields and id_db_name not in existing_db_fields:
                 return id_name, id_db_name
 
+        raise RuntimeError("Unable to generate auto id name")
 
-class MetaDict(dict):
+
+class MetaDict(dict[str, Any]):
     """Custom dictionary for meta classes.
     Handles the merging of set indexes
     """
 
-    _merge_options = ("indexes",)
+    _merge_options: tuple[str, ...] = ("indexes",)
 
-    def merge(self, new_options):
+    def merge(self, new_options: dict[str, Any]) -> None:
         for k, v in new_options.items():
             if k in self._merge_options:
                 self[k] = self.get(k, []) + v
@@ -417,7 +428,7 @@ class MetaDict(dict):
                 self[k] = v
 
 
-class BasesTuple(tuple):
+class BasesTuple(tuple[type, ...]):
     """Special class to handle introspection of bases tuple in __new__"""
 
     pass

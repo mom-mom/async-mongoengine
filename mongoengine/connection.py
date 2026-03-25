@@ -1,9 +1,13 @@
 import contextvars
+from typing import Any
 
 from pymongo import AsyncMongoClient, ReadPreference, uri_parser
+from pymongo.asynchronous.client_session import AsyncClientSession
+from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.common import _UUID_REPRESENTATIONS
 from pymongo.database_shared import _check_name
 from pymongo.driver_info import DriverInfo
+from pymongo.read_preferences import _ServerMode
 
 import mongoengine
 
@@ -25,9 +29,9 @@ DEFAULT_DATABASE_NAME = "test"
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 27017
 
-_connection_settings = {}
-_connections = {}
-_dbs = {}
+_connection_settings: dict[str, dict[str, Any]] = {}
+_connections: dict[str, AsyncMongoClient[Any]] = {}
+_dbs: dict[str, AsyncDatabase[Any]] = {}
 
 
 READ_PREFERENCE = ReadPreference.PRIMARY
@@ -41,7 +45,7 @@ class ConnectionFailure(Exception):
     pass
 
 
-def _check_db_name(name):
+def _check_db_name(name: str) -> None:
     """Check if a database name is valid.
     This functionality is copied from pymongo Database class constructor.
     """
@@ -52,18 +56,18 @@ def _check_db_name(name):
 
 
 def _get_connection_settings(
-    db=None,
-    name=None,
-    host=None,
-    port=None,
-    read_preference=READ_PREFERENCE,
-    username=None,
-    password=None,
-    authentication_source=None,
-    authentication_mechanism=None,
-    authmechanismproperties=None,
-    **kwargs,
-):
+    db: str | None = None,
+    name: str | None = None,
+    host: str | list[str] | None = None,
+    port: int | None = None,
+    read_preference: _ServerMode = READ_PREFERENCE,
+    username: str | None = None,
+    password: str | None = None,
+    authentication_source: str | None = None,
+    authentication_mechanism: str | None = None,
+    authmechanismproperties: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
     """Get the connection settings as a dict
 
     :param db: the name of the database to use, for compatibility with connect
@@ -83,7 +87,7 @@ def _get_connection_settings(
         for example maxpoolsize, tz_aware, etc. See the documentation
         for pymongo's `AsyncMongoClient` for a full list.
     """
-    conn_settings = {
+    conn_settings: dict[str, Any] = {
         "name": name or db or DEFAULT_DATABASE_NAME,
         "host": host or DEFAULT_HOST,
         "port": port or DEFAULT_PORT,
@@ -102,7 +106,7 @@ def _get_connection_settings(
     if isinstance(conn_host, str):
         conn_host = [conn_host]
 
-    resolved_hosts = []
+    resolved_hosts: list[str] = []
     for entity in conn_host:
         # Reject old mongomock integration
         if entity.startswith("mongomock://") or kwargs.get("is_mock"):
@@ -130,7 +134,7 @@ def _get_connection_settings(
             # (e.g. "replicaSet", "readPreference") instead of the old
             # _CaseInsensitiveDictionary.
             uri_options_raw = uri_dict["options"]
-            uri_options = {k.lower(): v for k, v in uri_options_raw.items()}
+            uri_options: dict[str, Any] = {k.lower(): v for k, v in uri_options_raw.items()}
 
             if "replicaset" in uri_options:
                 conn_settings["replicaSet"] = uri_options["replicaset"]
@@ -148,6 +152,7 @@ def _get_connection_settings(
                 )
 
                 read_pf_mode = uri_options["readpreference"]
+                ReadPrefClass: type[_ServerMode] | None = None
                 if isinstance(read_pf_mode, str):
                     read_pf_mode = read_pf_mode.lower()
                 for preference in read_preferences:
@@ -155,10 +160,11 @@ def _get_connection_settings(
                         ReadPrefClass = preference.__class__
                         break
 
-                if "readpreferencetags" in uri_options:
-                    conn_settings["read_preference"] = ReadPrefClass(tag_sets=uri_options["readpreferencetags"])
-                else:
-                    conn_settings["read_preference"] = ReadPrefClass()
+                if ReadPrefClass is not None:
+                    if "readpreferencetags" in uri_options:
+                        conn_settings["read_preference"] = ReadPrefClass(tag_sets=uri_options["readpreferencetags"])  # type: ignore[call-arg]
+                    else:
+                        conn_settings["read_preference"] = ReadPrefClass()
 
             if "authmechanismproperties" in uri_options:
                 conn_settings["authmechanismproperties"] = uri_options["authmechanismproperties"]
@@ -184,19 +190,19 @@ def _get_connection_settings(
 
 
 def register_connection(
-    alias,
-    db=None,
-    name=None,
-    host=None,
-    port=None,
-    read_preference=READ_PREFERENCE,
-    username=None,
-    password=None,
-    authentication_source=None,
-    authentication_mechanism=None,
-    authmechanismproperties=None,
-    **kwargs,
-):
+    alias: str,
+    db: str | None = None,
+    name: str | None = None,
+    host: str | list[str] | None = None,
+    port: int | None = None,
+    read_preference: _ServerMode = READ_PREFERENCE,
+    username: str | None = None,
+    password: str | None = None,
+    authentication_source: str | None = None,
+    authentication_mechanism: str | None = None,
+    authmechanismproperties: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> None:
     """Register the connection settings.
 
     :param alias: the name that will be used to refer to this connection throughout MongoEngine
@@ -233,7 +239,7 @@ def register_connection(
     _connection_settings[alias] = conn_settings
 
 
-async def disconnect(alias=DEFAULT_CONNECTION_NAME):
+async def disconnect(alias: str = DEFAULT_CONNECTION_NAME) -> None:
     """Close the connection with a given alias."""
     from mongoengine import Document
     from mongoengine.base.common import _get_documents_by_db
@@ -260,13 +266,13 @@ async def disconnect(alias=DEFAULT_CONNECTION_NAME):
         del _connection_settings[alias]
 
 
-async def disconnect_all():
+async def disconnect_all() -> None:
     """Close all registered database."""
     for alias in list(_connections.keys()):
         await disconnect(alias)
 
 
-def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
+def get_connection(alias: str = DEFAULT_CONNECTION_NAME, reconnect: bool = False) -> AsyncMongoClient[Any]:
     """Return a connection with a given alias.
 
     .. note:: In async mode, ``reconnect=True`` only drops the cached reference
@@ -299,7 +305,7 @@ def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
             msg = f'Connection with alias "{alias}" has not been defined'
         raise ConnectionFailure(msg)
 
-    def _clean_settings(settings_dict):
+    def _clean_settings(settings_dict: dict[str, Any]) -> dict[str, Any]:
         irrelevant_fields_set = {"name"}
         rename_fields = {
             "authentication_source": "authSource",
@@ -335,7 +341,7 @@ def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
     return _connections[alias]
 
 
-def _create_connection(alias, mongo_client_class, **connection_settings):
+def _create_connection(alias: str, mongo_client_class: type[Any], **connection_settings: Any) -> AsyncMongoClient[Any]:
     """
     Create the new connection for this alias. Raise
     ConnectionFailure if it can't be established.
@@ -346,7 +352,7 @@ def _create_connection(alias, mongo_client_class, **connection_settings):
         raise ConnectionFailure(f"Cannot connect to database {alias} :\n{e}")
 
 
-def _find_existing_connection(connection_settings):
+def _find_existing_connection(connection_settings: dict[str, Any]) -> AsyncMongoClient[Any] | None:
     """
     Check if an existing connection could be reused
 
@@ -358,7 +364,7 @@ def _find_existing_connection(connection_settings):
     """
     connection_settings_bis = ((db_alias, settings.copy()) for db_alias, settings in _connection_settings.items())
 
-    def _clean_settings(settings_dict):
+    def _clean_settings(settings_dict: dict[str, Any]) -> dict[str, Any]:
         # Only remove the name but it's important to
         # keep the username/password/authentication_source/authentication_mechanism
         # to identify if the connection could be shared (cfr https://github.com/MongoEngine/mongoengine/issues/2047)
@@ -370,8 +376,10 @@ def _find_existing_connection(connection_settings):
         if cleaned_conn_settings == db_conn_settings and _connections.get(db_alias):
             return _connections[db_alias]
 
+    return None
 
-def get_db(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
+
+def get_db(alias: str = DEFAULT_CONNECTION_NAME, reconnect: bool = False) -> AsyncDatabase[Any]:
     if reconnect:
         import warnings
 
@@ -392,7 +400,7 @@ def get_db(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
     return _dbs[alias]
 
 
-def connect(db=None, alias=DEFAULT_CONNECTION_NAME, **kwargs):
+def connect(db: str | None = None, alias: str = DEFAULT_CONNECTION_NAME, **kwargs: Any) -> AsyncMongoClient[Any]:
     """Connect to the database specified by the 'db' argument.
 
     Connection settings may be provided here as well if the database is not
@@ -428,20 +436,22 @@ _get_db = get_db
 
 # Session management using contextvars for async compatibility.
 # Uses a tuple-based stack to support nested session contexts.
-_session_stack: contextvars.ContextVar = contextvars.ContextVar("_session_stack", default=())
+_session_stack: contextvars.ContextVar[tuple[AsyncClientSession, ...]] = contextvars.ContextVar(
+    "_session_stack", default=()
+)
 
 
-def _set_session(session):
+def _set_session(session: AsyncClientSession) -> None:
     stack = _session_stack.get()
-    _session_stack.set(stack + (session,))
+    _session_stack.set((*stack, session))
 
 
-def _get_session():
+def _get_session() -> AsyncClientSession | None:
     stack = _session_stack.get()
     return stack[-1] if stack else None
 
 
-def _clear_session():
+def _clear_session() -> None:
     stack = _session_stack.get()
     if stack:
         _session_stack.set(stack[:-1])

@@ -1,4 +1,6 @@
 import weakref
+from collections.abc import Callable, Generator, Iterator
+from typing import Any
 
 from bson import DBRef
 
@@ -14,10 +16,10 @@ __all__ = (
 )
 
 
-def mark_as_changed_wrapper(parent_method):
+def mark_as_changed_wrapper(parent_method: Any) -> Callable[..., Any]:
     """Decorator that ensures _mark_as_changed method gets called."""
 
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         # Can't use super() in the decorator.
         result = parent_method(self, *args, **kwargs)
         self._mark_as_changed()
@@ -26,10 +28,10 @@ def mark_as_changed_wrapper(parent_method):
     return wrapper
 
 
-def mark_key_as_changed_wrapper(parent_method):
+def mark_key_as_changed_wrapper(parent_method: Any) -> Callable[..., Any]:
     """Decorator that ensures _mark_as_changed method gets called with the key argument"""
 
-    def wrapper(self, key, *args, **kwargs):
+    def wrapper(self: Any, key: str, *args: Any, **kwargs: Any) -> Any:
         # Can't use super() in the decorator.
         if not args or key not in self or self[key] != args[0]:
             self._mark_as_changed(key)
@@ -41,11 +43,11 @@ def mark_key_as_changed_wrapper(parent_method):
 class BaseDict(dict):
     """A special dict so we can watch any changes."""
 
-    _dereferenced = False
-    _instance = None
-    _name = None
+    _dereferenced: bool = False
+    _instance: Any = None
+    _name: str | None = None
 
-    def __init__(self, dict_items, instance, name):
+    def __init__(self, dict_items: dict[str, Any], instance: Any, name: str | None) -> None:
         BaseDocument = _import_class("BaseDocument")
 
         if isinstance(instance, BaseDocument):
@@ -53,14 +55,14 @@ class BaseDict(dict):
         self._name = name
         super().__init__(dict_items)
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: Any = None) -> Any:
         # get does not use __getitem__ by default so we must override it as well
         try:
             return self.__getitem__(key)
         except KeyError:
             return default
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         value = super().__getitem__(key)
 
         EmbeddedDocument = _import_class("EmbeddedDocument")
@@ -76,14 +78,13 @@ class BaseDict(dict):
             value._instance = self._instance
         return value
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict[str, Any]:
         self.instance = None
         self._dereferenced = False
         return self
 
-    def __setstate__(self, state):
-        self = state
-        return self
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self = state  # noqa: F841
 
     __setitem__ = mark_key_as_changed_wrapper(dict.__setitem__)
     __delattr__ = mark_key_as_changed_wrapper(dict.__delattr__)
@@ -94,7 +95,7 @@ class BaseDict(dict):
     popitem = mark_as_changed_wrapper(dict.popitem)
     setdefault = mark_as_changed_wrapper(dict.setdefault)
 
-    def _mark_as_changed(self, key=None):
+    def _mark_as_changed(self, key: str | None = None) -> None:
         if hasattr(self._instance, "_mark_as_changed"):
             if key:
                 self._instance._mark_as_changed(f"{self._name}.{key}")
@@ -105,11 +106,11 @@ class BaseDict(dict):
 class BaseList(list):
     """A special list so we can watch any changes."""
 
-    _dereferenced = False
-    _instance = None
-    _name = None
+    _dereferenced: bool = False
+    _instance: Any = None
+    _name: str | None = None
 
-    def __init__(self, list_items, instance, name):
+    def __init__(self, list_items: list[Any] | tuple[Any, ...], instance: Any, name: str | None) -> None:
         BaseDocument = _import_class("BaseDocument")
 
         if isinstance(instance, BaseDocument):
@@ -121,7 +122,7 @@ class BaseList(list):
         self._name = name
         super().__init__(list_items)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int | slice) -> Any:
         # change index to positive value because MongoDB does not support negative one
         if isinstance(key, int) and key < 0:
             key = len(self) + key
@@ -147,27 +148,26 @@ class BaseList(list):
             value._instance = self._instance
         return value
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         yield from super().__iter__()
 
-    def __getstate__(self):
+    def __getstate__(self) -> list[Any]:
         self.instance = None
         self._dereferenced = False
         return self
 
-    def __setstate__(self, state):
-        self = state
-        return self
+    def __setstate__(self, state: list[Any]) -> None:
+        self = state  # noqa: F841
 
-    def __setitem__(self, key, value):
-        changed_key = key
+    def __setitem__(self, key: int | slice, value: Any) -> None:
+        changed_key: int | slice | None = key
         if isinstance(key, slice):
             # In case of slice, we don't bother to identify the exact elements being updated
             # instead, we simply marks the whole list as changed
             changed_key = None
 
         result = super().__setitem__(key, value)
-        self._mark_as_changed(changed_key)
+        self._mark_as_changed(changed_key)  # type: ignore[arg-type]
         return result
 
     append = mark_as_changed_wrapper(list.append)
@@ -182,7 +182,7 @@ class BaseList(list):
     __iadd__ = mark_as_changed_wrapper(list.__iadd__)
     __imul__ = mark_as_changed_wrapper(list.__imul__)
 
-    def _mark_as_changed(self, key=None):
+    def _mark_as_changed(self, key: int | None = None) -> None:
         if hasattr(self._instance, "_mark_as_changed"):
             if key is not None:
                 self._instance._mark_as_changed(f"{self._name}.{key % len(self)}")
@@ -192,7 +192,7 @@ class BaseList(list):
 
 class EmbeddedDocumentList(BaseList):
     @classmethod
-    def __match_all(cls, embedded_doc, kwargs):
+    def __match_all(cls, embedded_doc: Any, kwargs: dict[str, Any]) -> bool:
         """Return True if a given embedded doc matches all the filter
         kwargs. If it doesn't return False.
         """
@@ -203,13 +203,13 @@ class EmbeddedDocumentList(BaseList):
         return True
 
     @classmethod
-    def __only_matches(cls, embedded_docs, kwargs):
+    def __only_matches(cls, embedded_docs: list[Any], kwargs: dict[str, Any]) -> list[Any]:
         """Return embedded docs that match the filter kwargs."""
         if not kwargs:
             return embedded_docs
         return [doc for doc in embedded_docs if cls.__match_all(doc, kwargs)]
 
-    def filter(self, **kwargs):
+    def filter(self, **kwargs: Any) -> "EmbeddedDocumentList":
         """
         Filters the list by only including embedded documents with the
         given keyword arguments.
@@ -229,7 +229,7 @@ class EmbeddedDocumentList(BaseList):
         values = self.__only_matches(self, kwargs)
         return EmbeddedDocumentList(values, self._instance, self._name)
 
-    def exclude(self, **kwargs):
+    def exclude(self, **kwargs: Any) -> "EmbeddedDocumentList":
         """
         Filters the list by excluding embedded documents with the given
         keyword arguments.
@@ -247,7 +247,7 @@ class EmbeddedDocumentList(BaseList):
         values = [item for item in self if item not in exclude]
         return EmbeddedDocumentList(values, self._instance, self._name)
 
-    def count(self):
+    def count(self) -> int:
         """
         The number of embedded documents in the list.
 
@@ -255,7 +255,7 @@ class EmbeddedDocumentList(BaseList):
         """
         return len(self)
 
-    def get(self, **kwargs):
+    def get(self, **kwargs: Any) -> Any:
         """
         Retrieves an embedded document determined by the given keyword
         arguments.
@@ -277,14 +277,14 @@ class EmbeddedDocumentList(BaseList):
 
         return values[0]
 
-    def first(self):
+    def first(self) -> Any | None:
         """Return the first embedded document in the list, or ``None``
         if empty.
         """
         if len(self) > 0:
             return self[0]
 
-    def create(self, **values):
+    def create(self, **values: Any) -> Any:
         """
         Creates a new instance of the EmbeddedDocument and appends it to this EmbeddedDocumentList.
 
@@ -301,7 +301,7 @@ class EmbeddedDocumentList(BaseList):
 
         return self._instance[self._name][-1]
 
-    async def save(self, *args, **kwargs):
+    async def save(self, *args: Any, **kwargs: Any) -> None:
         """
         Saves the ancestor document.
 
@@ -312,7 +312,7 @@ class EmbeddedDocumentList(BaseList):
         """
         await self._instance.save(*args, **kwargs)
 
-    def delete(self):
+    def delete(self) -> int:
         """
         Deletes the embedded documents from the database.
 
@@ -328,7 +328,7 @@ class EmbeddedDocumentList(BaseList):
 
         return len(values)
 
-    def update(self, **update):
+    def update(self, **update: Any) -> int:
         """
         Updates the embedded documents with the given replacement values. This
         function does not support mongoDB update operators such as ``inc__``.
@@ -352,35 +352,35 @@ class EmbeddedDocumentList(BaseList):
 
 
 class StrictDict:
-    __slots__ = ()
-    _special_fields = {"get", "pop", "iteritems", "items", "keys", "create"}
-    _classes = {}
+    __slots__: tuple[()] = ()
+    _special_fields: set[str] = {"get", "pop", "iteritems", "items", "keys", "create"}
+    _classes: dict[frozenset[str], type[Any]] = {}
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         key = "_reserved_" + key if key in self._special_fields else key
         try:
             return getattr(self, key)
         except AttributeError:
             raise KeyError(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: Any) -> None:
         key = "_reserved_" + key if key in self._special_fields else key
         return setattr(self, key, value)
 
-    def __contains__(self, key):
-        return hasattr(self, key)
+    def __contains__(self, key: object) -> bool:
+        return hasattr(self, key)  # type: ignore[arg-type]
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: Any = None) -> Any:
         try:
             return self[key]
         except KeyError:
             return default
 
-    def pop(self, key, default=None):
+    def pop(self, key: str, default: Any = None) -> Any:
         v = self.get(key, default)
         try:
             delattr(self, key)
@@ -388,51 +388,53 @@ class StrictDict:
             pass
         return v
 
-    def iteritems(self):
+    def iteritems(self) -> Generator[tuple[str, Any]]:
         for key in self:
             yield key, self[key]
 
-    def items(self):
+    def items(self) -> list[tuple[str, Any]]:
         return [(k, self[k]) for k in iter(self)]
 
-    def iterkeys(self):
+    def iterkeys(self) -> Iterator[str]:
         return iter(self)
 
-    def keys(self):
+    def keys(self) -> list[str]:
         return list(iter(self))
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[str]:
         return (key for key in self.__slots__ if hasattr(self, key))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(list(self.items()))
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, StrictDict):
+            return NotImplemented  # type: ignore[return-value]
         return list(self.items()) == list(other.items())
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         return not (self == other)
 
     @classmethod
-    def create(cls, allowed_keys):
+    def create(cls, allowed_keys: list[str] | tuple[str, ...]) -> type[Any]:
         allowed_keys_tuple = tuple(("_reserved_" + k if k in cls._special_fields else k) for k in allowed_keys)
-        allowed_keys = frozenset(allowed_keys_tuple)
-        if allowed_keys not in cls._classes:
+        allowed_keys_frozen = frozenset(allowed_keys_tuple)
+        if allowed_keys_frozen not in cls._classes:
 
             class SpecificStrictDict(cls):
-                __slots__ = allowed_keys_tuple
+                __slots__ = allowed_keys_tuple  # type: ignore[assignment]
 
-                def __repr__(self):
+                def __repr__(self) -> str:
                     return "{{{}}}".format(", ".join(f'"{k!s}": {v!r}' for k, v in self.items()))
 
-            cls._classes[allowed_keys] = SpecificStrictDict
-        return cls._classes[allowed_keys]
+            cls._classes[allowed_keys_frozen] = SpecificStrictDict
+        return cls._classes[allowed_keys_frozen]
 
 
 class LazyReference(DBRef):
     __slots__ = ("_cached_doc", "passthrough", "document_type")
 
-    async def fetch(self, force=False):
+    async def fetch(self, force: bool = False) -> Any:
         if not self._cached_doc or force:
             self._cached_doc = await self.document_type.objects.get(pk=self.pk)
             if not self._cached_doc:
@@ -440,16 +442,16 @@ class LazyReference(DBRef):
         return self._cached_doc
 
     @property
-    def pk(self):
+    def pk(self) -> Any:
         return self.id
 
-    def __init__(self, document_type, pk, cached_doc=None, passthrough=False):
+    def __init__(self, document_type: type[Any], pk: Any, cached_doc: Any = None, passthrough: bool = False) -> None:
         self.document_type = document_type
         self._cached_doc = cached_doc
         self.passthrough = passthrough
         super().__init__(self.document_type._get_collection_name(), pk)
 
-    def __getitem__(self, name):
+    def __getitem__(self, name: str) -> Any:
         if not self.passthrough:
             raise KeyError()
         raise KeyError(
@@ -457,7 +459,7 @@ class LazyReference(DBRef):
             f"Use `doc = await lazy_ref.fetch()` first, then access `doc[{name!r}]`."
         )
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         if not object.__getattribute__(self, "passthrough"):
             raise AttributeError()
         raise AttributeError(
@@ -465,5 +467,5 @@ class LazyReference(DBRef):
             f"Use `doc = await lazy_ref.fetch()` first, then access `doc.{name}`."
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<LazyReference({self.document_type}, {self.pk!r})>"

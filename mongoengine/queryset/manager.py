@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from functools import partial
+from typing import Any, overload
 
 from mongoengine.queryset.queryset import QuerySet
 
@@ -16,16 +18,40 @@ class QuerySetManager:
 
     The method function should return a :class:`~mongoengine.queryset.QuerySet`
     , probably the same one that was passed in, but modified in some way.
+
+    .. note:: **Typing limitation with custom queryset classes.**
+        When using ``meta = {"queryset_class": CustomQuerySet}``, the type
+        checker sees ``objects`` as ``QuerySet[MyDoc]`` and custom methods
+        on ``CustomQuerySet`` are not visible. To work around this, add a
+        ``TYPE_CHECKING`` annotation in your model::
+
+            from typing import TYPE_CHECKING, ClassVar
+
+            class CustomQuerySet[T](QuerySet[T]):
+                def published(self) -> "CustomQuerySet[T]": ...
+
+            class Post(Document):
+                if TYPE_CHECKING:
+                    objects: ClassVar[CustomQuerySet["Post"]]
+                meta = {"queryset_class": CustomQuerySet}
+
+            # Now Post.objects.published() is visible to the type checker.
     """
 
-    get_queryset = None
-    default = QuerySet
+    get_queryset: Callable[..., Any] | None = None
+    default: type[QuerySet[Any]] = QuerySet
 
-    def __init__(self, queryset_func=None):
+    def __init__(self, queryset_func: Callable[..., Any] | None = None) -> None:
         if queryset_func:
             self.get_queryset = queryset_func
 
-    def __get__(self, instance, owner):
+    @overload
+    def __get__[D](self, instance: None, owner: type[D]) -> QuerySet[D]: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: Any) -> "QuerySetManager": ...
+
+    def __get__(self, instance: Any, owner: Any) -> Any:
         """Descriptor for instantiating a new QuerySet object when
         Document.objects is accessed.
         """
@@ -35,20 +61,20 @@ class QuerySetManager:
 
         # owner is the document that contains the QuerySetManager
         # Use cached _collection (may be None; QuerySet will resolve lazily)
-        queryset_class = owner._meta.get("queryset_class", self.default)
-        queryset = queryset_class(owner, owner._collection)
+        queryset_class: type[QuerySet[Any]] = owner._meta.get("queryset_class", self.default)
+        queryset: QuerySet[Any] = queryset_class(owner, owner._collection)
         if self.get_queryset:
-            arg_count = self.get_queryset.__code__.co_argcount
+            arg_count: int = self.get_queryset.__code__.co_argcount
             if arg_count == 1:
                 queryset = self.get_queryset(queryset)
             elif arg_count == 2:
                 queryset = self.get_queryset(owner, queryset)
             else:
-                queryset = partial(self.get_queryset, owner, queryset)
+                queryset = partial(self.get_queryset, owner, queryset)  # type: ignore[assignment]
         return queryset
 
 
-def queryset_manager(func):
+def queryset_manager(func: Callable[..., Any]) -> QuerySetManager:
     """Decorator that allows you to define custom QuerySet managers on
     :class:`~mongoengine.Document` classes. The manager must be a function that
     accepts a :class:`~mongoengine.Document` class as its first argument, and a

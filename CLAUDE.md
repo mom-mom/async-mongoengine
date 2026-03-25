@@ -26,6 +26,9 @@ uv run pytest tests/path/to/test.py -k "test_name"
 uv run ruff check .
 uv run ruff format .
 
+# Type check
+uv run pyright
+
 # Sync dependencies (after changing pyproject.toml)
 uv sync --group dev
 ```
