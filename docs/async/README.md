@@ -308,8 +308,11 @@ queryset = queryset_class(owner, owner._collection)
 | `exec_js()` | MongoDB `$eval` removed in 4.2 |
 | `snapshot()` | No-op since PyMongo 3+ |
 | `_item_frequencies_exec_js()` | Depended on `exec_js` |
+| `no_dereference()` | No-op without auto-dereference; removed |
 
 `item_frequencies()` no longer accepts a `map_reduce` parameter — it always uses the map_reduce implementation.
+
+`distinct()` on ReferenceField now returns raw PKs instead of dereferenced Document objects, consistent with the removal of auto-dereference.
 
 ---
 
@@ -574,7 +577,7 @@ signals.pre_save_async.connect(my_async_handler, sender=MyDoc)
 | Python < 3.13 support | Minimum version requirement |
 | MongoDB < 7.0 support | Minimum version requirement |
 | `get_connection(reconnect=True)` | Deprecated (prevents connection leaks) |
-| `no_dereference()` context manager / queryset method | No-op without auto-dereference; removed |
+| `no_dereference()` context manager / queryset method | Removed — auto-dereference is disabled; `distinct()` returns raw PKs |
 
 ---
 

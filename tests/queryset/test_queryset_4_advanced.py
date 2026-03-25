@@ -370,7 +370,7 @@ class TestQueryset4(MongoDBTestCase):
         foo = Foo(bar=bar)
         await foo.save()
 
-        assert await Foo.objects.distinct("bar") == [bar]
+        assert await Foo.objects.distinct("bar") == [bar.pk]
 
     async def test_base_queryset_iter_raise_not_implemented(self):
         class Tmp(Document):
@@ -503,7 +503,7 @@ class TestQueryset4(MongoDBTestCase):
         foo = Foo(bar=bar)
         await foo.save()
 
-        assert await Foo.objects.distinct("bar") == [bar]
+        assert await Foo.objects.distinct("bar") == [bar.pk]
 
     async def test_distinct_handles_db_field(self):
         """Ensure that distinct resolves field name to db_field as expected."""
@@ -601,7 +601,7 @@ class TestQueryset4(MongoDBTestCase):
         foo = Foo(bar=bar_1, bar_lst=[bar_1, bar_2])
         await foo.save()
 
-        assert await Foo.objects.distinct("bar_lst") == [bar_1, bar_2]
+        assert await Foo.objects.distinct("bar_lst") == [bar_1.pk, bar_2.pk]
 
     async def test_custom_manager(self):
         """Ensure that custom QuerySetManager instances work as expected."""

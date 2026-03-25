@@ -999,9 +999,7 @@ class BaseQuerySet:
         except LookUpError:
             pass
 
-        raw_values = await queryset._cursor.distinct(field)
-
-        distinct = await self._dereference(raw_values, 1, name=field, instance=self._document)
+        distinct = await queryset._cursor.distinct(field)
 
         doc_field = self._document._fields.get(field.split(".", 1)[0])
         instance = None
