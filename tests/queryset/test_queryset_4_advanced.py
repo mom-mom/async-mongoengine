@@ -371,7 +371,6 @@ class TestQueryset4(MongoDBTestCase):
         await foo.save()
 
         assert await Foo.objects.distinct("bar") == [bar]
-        assert await Foo.objects.no_dereference().distinct("bar") == [bar.pk]
 
     async def test_base_queryset_iter_raise_not_implemented(self):
         class Tmp(Document):
@@ -603,7 +602,6 @@ class TestQueryset4(MongoDBTestCase):
         await foo.save()
 
         assert await Foo.objects.distinct("bar_lst") == [bar_1, bar_2]
-        assert await Foo.objects.no_dereference().distinct("bar_lst") == [bar_1.pk, bar_2.pk]
 
     async def test_custom_manager(self):
         """Ensure that custom QuerySetManager instances work as expected."""

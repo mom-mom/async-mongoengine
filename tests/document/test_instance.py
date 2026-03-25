@@ -3721,19 +3721,6 @@ class TestDocumentInstance(MongoDBTestCase):
             assert copied_u._fields["name"] is u._fields["name"]
             assert copied_u._fields["name"].regex is u._fields["name"].regex  # Compiled regex objects are atomic
 
-    async def test_from_son_with_auto_dereference_disabled(self):
-        class User(Document):
-            name = StringField(regex=r"(^ABC\d\d\d\d$)")
-
-        data = {"name": "ABC0000"}
-        user_obj = User._from_son(son=data, _auto_dereference=False)
-
-        assert user_obj._fields["name"] is not User.name
-        assert user_obj._fields["name"].regex is User.name.regex  # Compiled regex are atomic
-        copied_user = copy.deepcopy(user_obj)
-        assert user_obj._fields["name"] is not copied_user._fields["name"]
-        assert user_obj._fields["name"].regex is copied_user._fields["name"].regex  # Compiled regex are atomic
-
     async def test_embedded_document_failed_while_loading_instance_when_it_is_not_a_dict(
         self,
     ):

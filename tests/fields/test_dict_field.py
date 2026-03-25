@@ -121,8 +121,7 @@ class TestDictField(MongoDBTestCase):
 
         doc_dump_as_dict = to_embed_child.to_mongo().to_dict()
         doc = Doc(field=doc_dump_as_dict)
-        assert Doc.field._auto_dereference is False
-        assert isinstance(doc.field, dict)  # depends on auto_dereference
+        assert isinstance(doc.field, dict)
         await doc.save()
         assert isinstance(doc.field, dict)
         expected = {

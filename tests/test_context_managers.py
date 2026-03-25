@@ -5,12 +5,10 @@ from threading import Thread
 
 import pymongo
 import pytest
-from bson import DBRef
 
 from mongoengine import *
 from mongoengine.connection import _get_session, get_db
 from mongoengine.context_managers import (
-    no_dereference,
     no_sub_classes,
     query_counter,
     run_in_transaction,

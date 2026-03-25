@@ -1,5 +1,3 @@
-import contextlib
-import contextvars
 import logging
 from contextlib import asynccontextmanager, contextmanager
 
@@ -7,8 +5,6 @@ from pymongo.errors import ConnectionFailure, OperationFailure
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
-from mongoengine.base.fields import _no_dereference_for_fields
-from mongoengine.common import _import_class
 from mongoengine.connection import (
     DEFAULT_CONNECTION_NAME,
     _clear_session,
@@ -22,44 +18,12 @@ from mongoengine.pymongo_support import count_documents
 __all__ = (
     "switch_db",
     "switch_collection",
-    "no_dereference",
     "no_sub_classes",
     "query_counter",
     "set_write_concern",
     "set_read_write_concern",
-    "no_dereferencing_active_for_class",
     "run_in_transaction",
 )
-
-
-# {cls: refcount} dict stored in a ContextVar for async task isolation.
-# Supports nested no_dereference() calls for the same class.
-_no_dereferencing_class: contextvars.ContextVar = contextvars.ContextVar("_no_dereferencing_class", default=None)
-
-
-def _get_no_deref_map():
-    m = _no_dereferencing_class.get()
-    if m is None:
-        return {}
-    return m
-
-
-def no_dereferencing_active_for_class(cls):
-    return _get_no_deref_map().get(cls, 0) > 0
-
-
-def _register_no_dereferencing_for_class(cls):
-    m = _get_no_deref_map().copy()
-    m[cls] = m.get(cls, 0) + 1
-    _no_dereferencing_class.set(m)
-
-
-def _unregister_no_dereferencing_for_class(cls):
-    m = _get_no_deref_map().copy()
-    m[cls] = m.get(cls, 0) - 1
-    if m[cls] <= 0:
-        m.pop(cls, None)
-    _no_dereferencing_class.set(m)
 
 
 class switch_db:
@@ -145,37 +109,6 @@ class switch_collection:
         self.cls._get_collection_name = self.ori_get_collection_name
 
 
-@contextlib.contextmanager
-def no_dereference(cls):
-    """no_dereference context manager.
-
-    Turns off all dereferencing in Documents for the duration of the context
-    manager::
-
-        with no_dereference(Group):
-            Group.objects()
-    """
-    try:
-        cls = cls
-
-        ReferenceField = _import_class("ReferenceField")
-        GenericReferenceField = _import_class("GenericReferenceField")
-        ComplexBaseField = _import_class("ComplexBaseField")
-
-        deref_fields = [
-            field
-            for name, field in cls._fields.items()
-            if isinstance(field, (ReferenceField, GenericReferenceField, ComplexBaseField))
-        ]
-
-        _register_no_dereferencing_for_class(cls)
-
-        with _no_dereference_for_fields(*deref_fields):
-            yield None
-    finally:
-        _unregister_no_dereferencing_for_class(cls)
-
-
 class no_sub_classes:
     """no_sub_classes context manager.
 
@@ -194,13 +127,13 @@ class no_sub_classes:
         self.cls_initial_subclasses = None
 
     def __enter__(self):
-        """Change the objects default and _auto_dereference values."""
+        """Restrict subclass queries to only the given class."""
         self.cls_initial_subclasses = self.cls._subclasses
         self.cls._subclasses = (self.cls._class_name,)
         return self.cls
 
     def __exit__(self, t, value, traceback):
-        """Reset the default and _auto_dereference values."""
+        """Restore the original subclass list."""
         self.cls._subclasses = self.cls_initial_subclasses
 
 

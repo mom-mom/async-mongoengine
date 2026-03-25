@@ -700,7 +700,7 @@ class EmbeddedDocumentField(BaseField):
 
     def to_python(self, value):
         if not isinstance(value, self.document_type):
-            return self.document_type._from_son(value, _auto_dereference=self._auto_dereference)
+            return self.document_type._from_son(value)
         return value
 
     def to_mongo(self, value, use_db_field=True, fields=None):
@@ -981,7 +981,6 @@ class DictField(ComplexBaseField):
     def __init__(self, field=None, *args, **kwargs):
         kwargs.setdefault("default", dict)
         super().__init__(*args, field=field, **kwargs)
-        self.set_auto_dereferencing(False)
 
     def validate(self, value):
         """Make sure that a list of valid fields is being used."""

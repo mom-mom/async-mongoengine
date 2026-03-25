@@ -17,7 +17,6 @@ from mongoengine.base import _DocumentRegistry
 from mongoengine.common import _import_class
 from mongoengine.connection import _get_session, get_db
 from mongoengine.context_managers import (
-    no_dereferencing_active_for_class,
     set_read_write_concern,
     set_write_concern,
     switch_db,
@@ -73,7 +72,6 @@ class BaseQuerySet:
         self._search_text_score = None
 
         self.__dereference = False
-        self.__auto_dereference = True
 
         # If inheritance is allowed, only return instances and instances of
         # subclasses of the class being used
@@ -201,7 +199,7 @@ class BaseQuerySet:
             raise IndexError("index out of range")
         if self._as_pymongo:
             return doc
-        result = self._document._from_son(doc, _auto_dereference=self._auto_dereference)
+        result = self._document._from_son(doc)
         if self._scalar:
             return self._get_scalar(result)
         return result
@@ -797,10 +795,7 @@ class BaseQuerySet:
                 doc_map[doc["_id"]] = doc
         else:
             async for doc in docs:
-                doc_map[doc["_id"]] = self._document._from_son(
-                    doc,
-                    _auto_dereference=self._auto_dereference,
-                )
+                doc_map[doc["_id"]] = self._document._from_son(doc)
 
         return doc_map
 
@@ -876,8 +871,6 @@ class BaseQuerySet:
         for prop in copy_props:
             val = getattr(self, prop)
             setattr(new_qs, prop, copy.copy(val))
-
-        new_qs.__auto_dereference = self._BaseQuerySet__auto_dereference
 
         if self._cursor_obj:
             new_qs._cursor_obj = self._cursor_obj.clone()
@@ -1007,8 +1000,6 @@ class BaseQuerySet:
             pass
 
         raw_values = await queryset._cursor.distinct(field)
-        if not self._auto_dereference:
-            return raw_values
 
         distinct = await self._dereference(raw_values, 1, name=field, instance=self._document)
 
@@ -1261,10 +1252,6 @@ class BaseQuerySet:
     def scalar(self, *fields):
         """Instead of returning Document instances, return either a specific
         value or a tuple of values in order.
-
-        Can be used along with
-        :func:`~mongoengine.queryset.QuerySet.no_dereference` to turn off
-        dereferencing.
 
         .. note:: This effects all results and can be unset by calling
                   ``scalar`` without arguments. Calls ``only`` automatically.
@@ -1641,10 +1628,7 @@ class BaseQuerySet:
         if self._as_pymongo:
             return raw_doc
 
-        doc = self._document._from_son(
-            raw_doc,
-            _auto_dereference=self._auto_dereference,
-        )
+        doc = self._document._from_son(raw_doc)
 
         if self._scalar:
             return self._get_scalar(doc)
@@ -1768,17 +1752,6 @@ class BaseQuerySet:
         if not self.__dereference:
             self.__dereference = _import_class("DeReference")()
         return self.__dereference
-
-    @property
-    def _auto_dereference(self):
-        should_deref = not no_dereferencing_active_for_class(self._document)
-        return should_deref and self.__auto_dereference
-
-    def no_dereference(self):
-        """Turn off any dereferencing for the results of this queryset."""
-        queryset = self.clone()
-        queryset.__auto_dereference = False
-        return queryset
 
     # Helper Functions
 

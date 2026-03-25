@@ -35,7 +35,6 @@ from mongoengine import (
     ValidationError,
 )
 from mongoengine.base import BaseField, EmbeddedDocumentList
-from mongoengine.base.fields import _no_dereference_for_fields
 from mongoengine.errors import DeprecatedError
 from tests.utils import MongoDBTestCase
 
@@ -2248,30 +2247,4 @@ class TestEmbeddedDocumentListField(MongoDBTestCase):
 
 
 class TestUtils(MongoDBTestCase):
-    async def test__no_dereference_for_fields(self):
-        class User(Document):
-            name = StringField()
-
-        class Group(Document):
-            member = ReferenceField(User)
-
-        await User.drop_collection()
-        await Group.drop_collection()
-
-        user1 = User(name="user1")
-        await user1.save()
-
-        group = Group(member=user1)
-        await group.save()
-
-        # No auto-dereference by default in async, member is already a DBRef/ObjectId
-        group = await Group.objects.first()
-        # With _no_dereference_for_fields context manager
-        with _no_dereference_for_fields(Group.member):
-            group = await Group.objects.first()
-            assert isinstance(group.member, (DBRef, ObjectId))
-
-        # Test instance fetched outside context mgr
-        group = await Group.objects.first()
-        with _no_dereference_for_fields(group._fields["member"]):
-            assert isinstance(group.member, (DBRef, ObjectId))
+    pass

@@ -1,4 +1,3 @@
-import copy
 import numbers
 import warnings
 from functools import partial
@@ -780,14 +779,9 @@ class BaseDocument:
         errors_dict = {}
 
         fields = cls._fields
-        if not _auto_dereference:
-            # if auto_deref is turned off, we copy the fields so
-            # we can mutate the auto_dereference of the fields
-            fields = copy.deepcopy(fields)
 
         # Apply field-name / db-field conversion
         for field_name, field in fields.items():
-            field.set_auto_dereferencing(_auto_dereference)  # align the field's auto-dereferencing with the document's
             if field.db_field in data:
                 value = data[field.db_field]
                 try:
@@ -808,8 +802,6 @@ class BaseDocument:
 
         obj = cls(__auto_convert=False, _created=created, **data)
         obj._changed_fields = []
-        if not _auto_dereference:
-            obj._fields = fields
 
         return obj
 
