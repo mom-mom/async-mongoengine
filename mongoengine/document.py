@@ -209,6 +209,18 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     in your model will raise a :class:`~mongoengine.FieldDoesNotExist` error.
     This can be disabled by setting :attr:`strict` to ``False``
     in the :attr:`meta` dictionary.
+
+    .. tip:: **Type annotations for fields.**
+        Field attributes are dynamically managed by the metaclass, so type
+        checkers cannot infer the Python type from the field class alone
+        (e.g. ``StringField`` → ``str``). Adding inline type annotations
+        gives full IDE support (autocomplete, type checking) with no
+        runtime cost::
+
+            class User(Document):
+                name: str = StringField(required=True)
+                age: int | None = IntField()
+                email: str = EmailField(required=True)
     """
 
     if TYPE_CHECKING:
