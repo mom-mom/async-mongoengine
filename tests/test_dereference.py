@@ -304,7 +304,7 @@ class TestDereference(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            peter = await (await Employee.objects.with_id(peter.id)).select_related()
+            peter = await Employee.objects.select_related().with_id(peter.id)
             assert await q.get_count() == 2
 
             assert peter.boss == bill

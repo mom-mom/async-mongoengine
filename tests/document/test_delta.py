@@ -322,7 +322,7 @@ class TestDelta(MongoDBTestCase):
         await person.save()
         await organization.save()
 
-        p = await (await Person.objects.get_item(0)).select_related()
+        p = await Person.objects.select_related().get_item(0)
         o = await Organization.objects.first()
         assert p.owns[0] == o
         assert o.owner == p
