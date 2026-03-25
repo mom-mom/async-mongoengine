@@ -976,22 +976,24 @@ class SortedListField(ListField):
         return sorted(value, reverse=self._order_reverse)
 
 
-def key_not_string(d: dict[str, Any]) -> bool | None:
+def key_not_string(d: dict[str, Any]) -> bool:
     """Helper function to recursively determine if any key in a
     dictionary is not a string.
     """
     for k, v in d.items():
         if not isinstance(k, str) or (isinstance(v, dict) and key_not_string(v)):
             return True
+    return False
 
 
-def key_starts_with_dollar(d: dict[str, Any]) -> bool | None:
+def key_starts_with_dollar(d: dict[str, Any]) -> bool:
     """Helper function to recursively determine if any key in a
     dictionary starts with a dollar
     """
     for k, v in d.items():
         if (k.startswith("$")) or (isinstance(v, dict) and key_starts_with_dollar(v)):
             return True
+    return False
 
 
 class DictField(ComplexBaseField):

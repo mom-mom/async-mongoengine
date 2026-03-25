@@ -114,7 +114,7 @@ class BaseDocument:
             setattr(self, field_name, value)
 
         if "_cls" not in values:
-            self._cls = self._class_name
+            self._cls = self._class_name  # pyright: ignore[reportGeneralTypeIssues]
 
         # Set actual values
         dynamic_data: dict[str, Any] = {}
@@ -136,7 +136,7 @@ class BaseDocument:
         self.__set_field_display()
 
         if self._dynamic:
-            self._dynamic_lock = False
+            self._dynamic_lock = False  # pyright: ignore[reportGeneralTypeIssues]
             for key, value in dynamic_data.items():
                 setattr(self, key, value)
 
@@ -165,7 +165,7 @@ class BaseDocument:
                 field = DynamicField(db_field=name, null=True)
                 field.name = name
                 self._dynamic_fields[name] = field
-                self._fields_ordered += (name,)
+                self._fields_ordered += (name,)  # pyright: ignore[reportGeneralTypeIssues]
 
             if not name.startswith("_"):
                 value = self.__expand_dynamic_values(name, value)
@@ -230,10 +230,10 @@ class BaseDocument:
                 setattr(self, k, data[k])
         if "_fields_ordered" in data:
             if self._dynamic:
-                self._fields_ordered = data["_fields_ordered"]
+                self._fields_ordered = data["_fields_ordered"]  # pyright: ignore[reportGeneralTypeIssues]
             else:
                 _super_fields_ordered = type(self)._fields_ordered
-                self._fields_ordered = _super_fields_ordered
+                self._fields_ordered = _super_fields_ordered  # pyright: ignore[reportGeneralTypeIssues]
 
         dynamic_fields = data.get("_dynamic_fields") or SON()
         for k in dynamic_fields.keys():

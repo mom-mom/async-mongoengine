@@ -41,8 +41,6 @@ reportMissingTypeStubs = false
 # Metaclass-injected attributes (_meta, _fields, _class_name, id, etc.)
 # are invisible to static analysis.
 reportAttributeAccessIssue = "warning"
-# Metaclass dynamically adds slots and attributes at class creation time.
-reportGeneralTypeIssues = "warning"
 # Fields from dict.get() are used extensively without None checks in the
 # codebase — they are guaranteed by metaclass initialization.
 reportOptionalMemberAccess = "warning"

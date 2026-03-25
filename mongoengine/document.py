@@ -758,7 +758,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         async with switch_db(self.__class__, db_alias) as cls:
             collection: Any = await cls._get_collection()
-        self._collection = collection
+        self._collection = collection  # pyright: ignore[reportGeneralTypeIssues]
         self._created = True if not keep_created else self._created
         queryset_class = self._meta.get("queryset_class", QuerySet)
         self._objects = queryset_class(self.__class__, collection)
@@ -786,7 +786,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         async with switch_collection(self.__class__, collection_name) as cls:
             collection: Any = await cls._get_collection()
-        self._collection = collection
+        self._collection = collection  # pyright: ignore[reportGeneralTypeIssues]
         self._created = True if not keep_created else self._created
         queryset_class = self._meta.get("queryset_class", QuerySet)
         self._objects = queryset_class(self.__class__, collection)

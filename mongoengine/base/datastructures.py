@@ -78,14 +78,13 @@ class BaseDict(dict):
             value._instance = self._instance
         return value
 
-    def __getstate__(self) -> "BaseDict":
+    def __getstate__(self) -> dict[str, Any]:
         self.instance = None
         self._dereferenced = False
         return self
 
-    def __setstate__(self, state: "BaseDict") -> "BaseDict":
-        self = state
-        return self
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self = state  # noqa: F841
 
     __setitem__ = mark_key_as_changed_wrapper(dict.__setitem__)
     __delattr__ = mark_key_as_changed_wrapper(dict.__delattr__)
@@ -152,14 +151,13 @@ class BaseList(list):
     def __iter__(self) -> Iterator[Any]:
         yield from super().__iter__()
 
-    def __getstate__(self) -> "BaseList":
+    def __getstate__(self) -> list[Any]:
         self.instance = None
         self._dereferenced = False
         return self
 
-    def __setstate__(self, state: "BaseList") -> "BaseList":
-        self = state
-        return self
+    def __setstate__(self, state: list[Any]) -> None:
+        self = state  # noqa: F841
 
     def __setitem__(self, key: int | slice, value: Any) -> None:
         changed_key: int | slice | None = key
@@ -410,6 +408,8 @@ class StrictDict:
         return len(list(self.items()))
 
     def __eq__(self, other: object) -> bool:
+        if not isinstance(other, StrictDict):
+            return NotImplemented  # type: ignore[return-value]
         return list(self.items()) == list(other.items())
 
     def __ne__(self, other: object) -> bool:

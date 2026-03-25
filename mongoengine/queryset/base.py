@@ -3,7 +3,7 @@ import itertools
 import re
 import warnings
 from collections.abc import Iterable, Mapping
-from typing import Any, Self
+from typing import Any, NoReturn, Self
 
 import pymongo
 import pymongo.errors
@@ -238,7 +238,7 @@ class BaseQuerySet[T]:
             await self._dereference([result], max_depth=self._select_related_depth)
         return result
 
-    def __iter__(self) -> None:
+    def __iter__(self) -> NoReturn:
         raise NotImplementedError
 
     def __await__(self) -> Any:
@@ -250,14 +250,14 @@ class BaseQuerySet[T]:
         >>> docs = await MyDoc.objects.to_list()
         >>> docs = await MyDoc.objects.select_related().to_list()
         """
-        return [doc async for doc in self]  # type: ignore[reportOperatorIssue]
+        return [doc async for doc in self]  # pyright: ignore[reportGeneralTypeIssues]
 
     async def _has_data(self) -> bool:
         """Return True if cursor has any data."""
         queryset = self.order_by()
         return False if await queryset.first() is None else True
 
-    def __bool__(self) -> bool:
+    def __bool__(self) -> NoReturn:
         """Raises TypeError to prevent silent logic bugs.
 
         In async mode, use ``await qs.is_empty()`` or ``await qs.count()``
@@ -387,11 +387,13 @@ class BaseQuerySet[T]:
         if write_concern is None:
             write_concern = {}
 
-        docs = doc_or_docs
+        docs: list[T]
         return_one = False
-        if isinstance(docs, Document) or issubclass(docs.__class__, Document):
+        if isinstance(doc_or_docs, Document) or issubclass(doc_or_docs.__class__, Document):
             return_one = True
-            docs = [docs]
+            docs = [doc_or_docs]  # type: ignore[list-item]
+        else:
+            docs = doc_or_docs  # type: ignore[assignment]
 
         for doc in docs:
             if not isinstance(doc, self._document):
@@ -529,7 +531,7 @@ class BaseQuerySet[T]:
 
         if call_document_delete:
             cnt = 0
-            async for doc in queryset:  # type: ignore[reportOperatorIssue]
+            async for doc in queryset:  # pyright: ignore[reportGeneralTypeIssues]
                 await doc.delete(**write_concern)
                 cnt += 1
             return cnt
@@ -540,7 +542,7 @@ class BaseQuerySet[T]:
         # Pre-collect ids so we can pass a plain list (not a QuerySet)
         # to __in queries.  QuerySet cannot be sync-iterated in async mode.
         if delete_rules:
-            id_list = [d.id async for d in queryset]  # type: ignore[reportOperatorIssue]
+            id_list = [d.id async for d in queryset]  # pyright: ignore[reportGeneralTypeIssues]
         else:
             id_list = []
 
@@ -1382,7 +1384,7 @@ class BaseQuerySet[T]:
             kwargs["json_options"] = LEGACY_JSON_OPTIONS
         await self._ensure_collection()
         docs: list[dict[str, Any]] = []
-        async for doc in self.as_pymongo():  # type: ignore[reportOperatorIssue]
+        async for doc in self.as_pymongo():  # pyright: ignore[reportGeneralTypeIssues]
             docs.append(doc)
         return json_util.dumps(docs, *args, **kwargs)
 
