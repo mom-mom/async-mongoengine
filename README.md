@@ -50,7 +50,7 @@ from mongoengine import connect, Document, StringField
 Optional:
 
 - `dateutil>=2.1.0` (for flexible `DateTimeField` parsing)
-- `blinker>=1.3` (for signals support)
+- `blinker>=1.6` (for signals support — `send_async` requires 1.6+)
 
 ## Examples
 

@@ -13,7 +13,7 @@ setup(
             "pytest-asyncio",
             "pytest-cov",
             "coverage",
-            "blinker",
+            "blinker>=1.6",
         ],
     },
     packages=find_packages(exclude=["tests", "tests.*"]),
