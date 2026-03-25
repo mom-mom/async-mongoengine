@@ -125,7 +125,13 @@ def _get_connection_settings(
                 if uri_dict.get(param):
                     conn_settings[param] = uri_dict[param]
 
-            uri_options = uri_dict["options"]  # uri_options is a _CaseInsensitiveDictionary
+            # Normalize option keys to lowercase for case-insensitive lookup.
+            # PyMongo >= 4.10 returns a plain dict with mixed-case keys
+            # (e.g. "replicaSet", "readPreference") instead of the old
+            # _CaseInsensitiveDictionary.
+            uri_options_raw = uri_dict["options"]
+            uri_options = {k.lower(): v for k, v in uri_options_raw.items()}
+
             if "replicaset" in uri_options:
                 conn_settings["replicaSet"] = uri_options["replicaset"]
             if "authsource" in uri_options:

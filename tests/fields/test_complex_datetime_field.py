@@ -9,7 +9,7 @@ from mongoengine import *
 from tests.utils import MongoDBTestCase
 
 
-class ComplexDateTimeFieldTest(MongoDBTestCase):
+class TestComplexDateTimeField(MongoDBTestCase):
     async def test_complexdatetime_storage(self):
         """Tests for complex datetime fields - which can handle
         microseconds without rounding.
@@ -96,13 +96,13 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
         assert await LogEntry.objects.count() == 60
 
         # Test ordering
-        logs = LogEntry.objects.order_by("date")
+        logs = [d async for d in LogEntry.objects.order_by("date")]
         i = 0
         while i < 59:
             assert logs[i].date <= logs[i + 1].date
             i += 1
 
-        logs = LogEntry.objects.order_by("-date")
+        logs = [d async for d in LogEntry.objects.order_by("-date")]
         i = 0
         while i < 59:
             assert logs[i].date >= logs[i + 1].date

@@ -72,6 +72,7 @@ class BaseQuerySet:
         self._search_text_score = None
 
         self.__dereference = False
+        self._select_related_depth = 0
 
         # If inheritance is allowed, only return instances and instances of
         # subclasses of the class being used
@@ -206,6 +207,13 @@ class BaseQuerySet:
 
     def __iter__(self):
         raise NotImplementedError
+
+    def __await__(self):
+        return self._to_list().__await__()
+
+    async def _to_list(self):
+        """Materialize this queryset into a list."""
+        return [doc async for doc in self]
 
     async def _has_data(self):
         """Return True if cursor has any data."""
@@ -391,7 +399,9 @@ class BaseQuerySet:
 
         if not load_bulk:
             signals.post_bulk_insert.send(self._document, documents=docs, loaded=False, **signal_kwargs)
-            await signals.post_bulk_insert_async.send_async(self._document, documents=docs, loaded=False, **signal_kwargs)
+            await signals.post_bulk_insert_async.send_async(
+                self._document, documents=docs, loaded=False, **signal_kwargs
+            )
             return ids[0] if return_one else ids
 
         documents = await self.in_bulk(ids)
@@ -866,6 +876,7 @@ class BaseQuerySet:
             "_max_time_ms",
             "_comment",
             "_batch_size",
+            "_select_related_depth",
         )
 
         for prop in copy_props:
@@ -877,15 +888,17 @@ class BaseQuerySet:
 
         return new_qs
 
-    async def select_related(self, max_depth=1):
+    def select_related(self, max_depth=1):
         """Handles dereferencing of :class:`~bson.dbref.DBRef` objects or
         :class:`~bson.object_id.ObjectId` a maximum depth in order to cut down
         the number queries to mongodb.
+
+        This is a lazy modifier — actual dereferencing happens when the
+        queryset is consumed (e.g. via ``async for``).
         """
-        # Make select related work the same for querysets
-        max_depth += 1
         queryset = self.clone()
-        return await queryset._dereference(queryset, max_depth=max_depth)
+        queryset._select_related_depth = max_depth + 1
+        return queryset
 
     def limit(self, n):
         """Limit the number of returned documents to `n`. This may also be

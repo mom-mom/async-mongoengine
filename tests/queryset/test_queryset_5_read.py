@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 import pytest
-from bson import DBRef
 from pymongo.read_preferences import ReadPreference
 
 from mongoengine import *
@@ -558,7 +557,6 @@ class TestQueryset5(MongoDBTestCase):
 
         plist = [d async for d in Person.objects.scalar("name", "state")]
         assert plist == [("Wilson JR", s1)]
-
 
     async def test_scalar_db_field(self):
         class TestDoc(Document):

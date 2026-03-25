@@ -5,7 +5,7 @@ from mongoengine.context_managers import query_counter
 from tests.utils import MongoDBTestCase
 
 
-class FieldTest(MongoDBTestCase):
+class TestDereference(MongoDBTestCase):
     async def test_list_item_dereference(self):
         """Ensure that DBRef items in ListFields are dereferenced."""
 
@@ -37,17 +37,18 @@ class FieldTest(MongoDBTestCase):
             len(group_obj._data["members"])
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             len(group_obj.members)
-            assert await q.get_count() == 2
+            assert await q.get_count() == 1
 
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
             assert await q.get_count() == 2
             _ = [m for m in group_obj.members]
             assert await q.get_count() == 2
@@ -56,10 +57,10 @@ class FieldTest(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 2
+            assert await q.get_count() == 0
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 2
+            assert await q.get_count() == 2
 
         await User.drop_collection()
         await Group.drop_collection()
@@ -90,22 +91,20 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
-            assert group_obj._data["members"]._dereferenced
+            assert await q.get_count() == 1
 
             # verifies that no additional queries gets executed
-            # if we re-iterate over the ListField once it is
-            # dereferenced
+            # if we re-iterate over the ListField
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
-            assert group_obj._data["members"]._dereferenced
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
 
             assert await q.get_count() == 2
             _ = [m for m in group_obj.members]
@@ -115,10 +114,10 @@ class FieldTest(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 2
+            assert await q.get_count() == 0
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 2
+            assert await q.get_count() == 2
 
     async def test_list_item_dereference_orphan_dbref(self):
         """Ensure that orphan DBRef items in ListFields are dereferenced."""
@@ -149,16 +148,13 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
-            assert group_obj._data["members"]._dereferenced
+            assert await q.get_count() == 1
 
             # verifies that no additional queries gets executed
-            # if we re-iterate over the ListField once it is
-            # dereferenced
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
-            assert group_obj._data["members"]._dereferenced
+            assert await q.get_count() == 1
 
         await User.drop_collection()
         await Group.drop_collection()
@@ -181,7 +177,7 @@ class FieldTest(MongoDBTestCase):
         await Group(members=[u async for u in User.objects]).save()
         group = await Group.objects.first()
 
-        assert (await Group._get_collection()).find_one()["members"] == [1]
+        assert (await (await Group._get_collection()).find_one())["members"] == [1]
         assert group.members == [user]
 
     async def test_handle_old_style_references(self):
@@ -203,17 +199,19 @@ class FieldTest(MongoDBTestCase):
         group = Group(members=[u async for u in User.objects])
         await group.save()
 
-        group = (await Group._get_collection()).find_one()
+        group = await (await Group._get_collection()).find_one()
 
         # Update the model to change the reference
         class Group(Document):
             members = ListField(ReferenceField(User, dbref=False))
 
         group = await Group.objects.first()
+        await group.select_related()
         group.members.append(await User(name="String!").save())
         await group.save()
 
         group = await Group.objects.first()
+        await group.select_related()
         assert group.members[0].name == "user 1"
         assert group.members[-1].name == "String!"
 
@@ -234,7 +232,7 @@ class FieldTest(MongoDBTestCase):
         user = await User(name="Ross").save()
         group = await Group(author=user, members=[user]).save()
 
-        raw_data = (await Group._get_collection()).find_one()
+        raw_data = await (await Group._get_collection()).find_one()
         assert isinstance(raw_data["author"], DBRef)
         assert isinstance(raw_data["members"][0], DBRef)
         group = await Group.objects.first()
@@ -258,7 +256,7 @@ class FieldTest(MongoDBTestCase):
         assert group.author == user
         assert group.members == [user]
 
-        raw_data = (await Group._get_collection()).find_one()
+        raw_data = await (await Group._get_collection()).find_one()
         assert isinstance(raw_data["author"], ObjectId)
         assert isinstance(raw_data["members"][0], ObjectId)
 
@@ -292,20 +290,21 @@ class FieldTest(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            peter = Employee.objects.with_id(peter.id)
+            peter = await Employee.objects.with_id(peter.id)
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing boss/friends does not trigger extra queries
             peter.boss
-            assert await q.get_count() == 2
+            assert await q.get_count() == 1
 
             peter.friends
-            assert await q.get_count() == 3
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            peter = Employee.objects.with_id(peter.id).select_related()
+            peter = await (await Employee.objects.with_id(peter.id)).select_related()
             assert await q.get_count() == 2
 
             assert peter.boss == bill
@@ -319,14 +318,12 @@ class FieldTest(MongoDBTestCase):
             assert await q.get_count() == 0
 
             employees = Employee.objects(boss=bill).select_related()
-            assert await q.get_count() == 2
+            assert await q.get_count() == 0
 
             async for employee in employees:
                 assert employee.boss == bill
-                assert await q.get_count() == 2
-
                 assert employee.friends == friends
-                assert await q.get_count() == 2
+            assert await q.get_count() == 2
 
     async def test_list_of_lists_of_references(self):
         class User(Document):
@@ -495,20 +492,18 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
+            assert await q.get_count() == 1
 
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
-
-            for m in group_obj.members:
-                assert "User" in m.__class__.__name__
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -525,17 +520,16 @@ class FieldTest(MongoDBTestCase):
             assert await q.get_count() == 0
 
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 4
+            assert await q.get_count() == 0
 
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 for m in group_obj.members:
                     assert "User" in m.__class__.__name__
+            assert await q.get_count() == 4
 
     async def test_generic_reference_orphan_dbref(self):
         """Ensure that generic orphan DBRef items in ListFields are dereferenced."""
@@ -582,13 +576,12 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
-            assert group_obj._data["members"]._dereferenced
+            assert await q.get_count() == 1
 
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
-            assert group_obj._data["members"]._dereferenced
+            assert await q.get_count() == 1
 
         await UserA.drop_collection()
         await UserB.drop_collection()
@@ -638,20 +631,18 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
+            assert await q.get_count() == 1
 
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
-
-            for m in group_obj.members:
-                assert "User" in m.__class__.__name__
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -668,17 +659,16 @@ class FieldTest(MongoDBTestCase):
             assert await q.get_count() == 0
 
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 4
+            assert await q.get_count() == 0
 
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 for m in group_obj.members:
                     assert "User" in m.__class__.__name__
+            assert await q.get_count() == 4
 
         await UserA.drop_collection()
         await UserB.drop_collection()
@@ -713,17 +703,15 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
-
-            for _, m in group_obj.members.items():
-                assert isinstance(m, User)
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
             assert await q.get_count() == 2
 
             _ = [m for m in group_obj.members]
@@ -737,14 +725,14 @@ class FieldTest(MongoDBTestCase):
             assert await q.get_count() == 0
 
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 2
+            assert await q.get_count() == 0
 
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 2
 
                 for k, m in group_obj.members.items():
                     assert isinstance(m, User)
+            assert await q.get_count() == 2
 
         await User.drop_collection()
         await Group.drop_collection()
@@ -791,20 +779,18 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
+            assert await q.get_count() == 1
 
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
-
-            for k, m in group_obj.members.items():
-                assert "User" in m.__class__.__name__
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -821,17 +807,16 @@ class FieldTest(MongoDBTestCase):
             assert await q.get_count() == 0
 
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 4
+            assert await q.get_count() == 0
 
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 for k, m in group_obj.members.items():
                     assert "User" in m.__class__.__name__
+            assert await q.get_count() == 4
 
         await Group.objects.delete()
         await Group().save()
@@ -881,20 +866,18 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
+            assert await q.get_count() == 1
 
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 2
-
-            for k, m in group_obj.members.items():
-                assert isinstance(m, UserA)
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
             assert await q.get_count() == 2
 
             _ = [m for m in group_obj.members]
@@ -911,17 +894,16 @@ class FieldTest(MongoDBTestCase):
             assert await q.get_count() == 0
 
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 2
+            assert await q.get_count() == 0
 
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 2
 
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 2
 
                 for _, m in group_obj.members.items():
                     assert isinstance(m, UserA)
+            assert await q.get_count() == 2
 
         await UserA.drop_collection()
         await Group.drop_collection()
@@ -968,20 +950,18 @@ class FieldTest(MongoDBTestCase):
             group_obj = await Group.objects.first()
             assert await q.get_count() == 1
 
+            # No auto-dereference — accessing members does not trigger extra queries
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
+            assert await q.get_count() == 1
 
             _ = [m for m in group_obj.members]
-            assert await q.get_count() == 4
-
-            for _, m in group_obj.members.items():
-                assert "User" in m.__class__.__name__
+            assert await q.get_count() == 1
 
         # Document select_related
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            group_obj = (await Group.objects.first()).select_related()
+            group_obj = await (await Group.objects.first()).select_related()
             assert await q.get_count() == 4
 
             _ = [m for m in group_obj.members]
@@ -998,17 +978,16 @@ class FieldTest(MongoDBTestCase):
             assert await q.get_count() == 0
 
             group_objs = Group.objects.select_related()
-            assert await q.get_count() == 4
+            assert await q.get_count() == 0
 
             async for group_obj in group_objs:
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 _ = [m for m in group_obj.members]
-                assert await q.get_count() == 4
 
                 for _, m in group_obj.members.items():
                     assert "User" in m.__class__.__name__
+            assert await q.get_count() == 4
 
         await Group.objects.delete()
         await Group().save()
@@ -1048,6 +1027,7 @@ class FieldTest(MongoDBTestCase):
         await root.save()
 
         root = await root.reload()
+        await root.select_related()
         assert root.children == [company]
         assert company.parents == [root]
 
@@ -1074,7 +1054,7 @@ class FieldTest(MongoDBTestCase):
         ]
         await room_101.save()
 
-        room = (await Room.objects.first()).select_related()
+        room = await (await Room.objects.first()).select_related()
         assert room.staffs_with_position[0]["staff"] == sarah
         assert room.staffs_with_position[1]["staff"] == bob
 
@@ -1105,6 +1085,7 @@ class FieldTest(MongoDBTestCase):
         foo.baz = baz
         await foo.save()
         await foo.reload()
+        await foo.select_related()
 
         assert isinstance(foo.bar, Bar)
         assert isinstance(foo.baz, Baz)
@@ -1143,6 +1124,7 @@ class FieldTest(MongoDBTestCase):
 
         msg = await Message.objects.get(id=1)
         await msg.reload()
+        await msg.select_related()
         assert msg.topic == topic
         assert msg.author == user
         assert msg.author.name == "new-name"
@@ -1166,6 +1148,7 @@ class FieldTest(MongoDBTestCase):
         await Message(id=1, comments=[c1, c2]).save()
 
         msg = await Message.objects.get(id=1)
+        await msg.select_related()
         assert 0 == msg.comments[0].id
         assert 1 == msg.comments[1].id
 
@@ -1291,7 +1274,7 @@ class FieldTest(MongoDBTestCase):
         book = await Book.objects.first()
         assert not isinstance(book._data["author"], User)
 
-        book.select_related()
+        await book.select_related()
         assert isinstance(book._data["author"], User)
 
     async def test_non_ascii_pk(self):
@@ -1362,7 +1345,7 @@ class FieldTest(MongoDBTestCase):
         async with query_counter() as q:
             assert await q.get_count() == 0
 
-            playlist = (await Playlist.objects.first()).select_related()
+            playlist = await (await Playlist.objects.first()).select_related()
             songs = [item.song for item in playlist.items]
 
             assert await q.get_count() == 2

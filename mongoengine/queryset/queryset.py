@@ -45,6 +45,19 @@ class QuerySet(BaseQuerySet):
         await self._ensure_collection()
         self._iter = True
 
+        if self._select_related_depth > 0 and not self._as_pymongo:
+            # Populate full cache for bulk dereference
+            while self._has_more:
+                await self._populate_cache()
+            if self._result_cache:
+                await self._dereference(
+                    self._result_cache,
+                    max_depth=self._select_related_depth,
+                )
+            for item in self._result_cache or []:
+                yield item
+            return
+
         if self._has_more:
             async for item in self._iter_results():
                 yield item
@@ -140,6 +153,23 @@ class QuerySetNoCache(BaseQuerySet):
         if queryset._iter:
             queryset = self.clone()
         queryset._iter = True
+
+        if queryset._select_related_depth > 0 and not queryset._as_pymongo:
+            docs = []
+            async for doc in queryset._get_async_cursor():
+                if queryset._none or queryset._empty:
+                    return
+                result = queryset._document._from_son(doc)
+                if queryset._scalar:
+                    docs.append(queryset._get_scalar(result))
+                else:
+                    docs.append(result)
+            if docs:
+                await queryset._dereference(docs, max_depth=queryset._select_related_depth)
+            for doc in docs:
+                yield doc
+            return
+
         async for doc in queryset._get_async_cursor():
             if queryset._none or queryset._empty:
                 return
