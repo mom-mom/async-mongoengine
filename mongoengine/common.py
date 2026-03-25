@@ -56,7 +56,7 @@ def _import_class(cls_name):
 
         import_classes = deref_classes
     else:
-        raise ValueError("No import set for: %s" % cls_name)
+        raise ValueError(f"No import set for: {cls_name}")
 
     for cls in import_classes:
         _class_registry_cache[cls] = getattr(module, cls)

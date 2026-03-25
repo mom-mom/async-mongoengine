@@ -34,9 +34,7 @@ __all__ = (
 
 # {cls: refcount} dict stored in a ContextVar for async task isolation.
 # Supports nested no_dereference() calls for the same class.
-_no_dereferencing_class: contextvars.ContextVar = contextvars.ContextVar(
-    "_no_dereferencing_class", default=None
-)
+_no_dereferencing_class: contextvars.ContextVar = contextvars.ContextVar("_no_dereferencing_class", default=None)
 
 
 def _get_no_deref_map():
@@ -166,9 +164,7 @@ def no_dereference(cls):
         deref_fields = [
             field
             for name, field in cls._fields.items()
-            if isinstance(
-                field, (ReferenceField, GenericReferenceField, ComplexBaseField)
-            )
+            if isinstance(field, (ReferenceField, GenericReferenceField, ComplexBaseField))
         ]
 
         _register_no_dereferencing_for_class(cls)
@@ -242,7 +238,7 @@ class query_counter:
         self._ctx_query_counter = 0  # number of queries issued by the context
 
         self._ignored_query = {
-            "ns": {"$ne": "%s.system.indexes" % self.db.name},
+            "ns": {"$ne": f"{self.db.name}.system.indexes"},
             "op": {"$ne": "killcursors"},  # MONGODB < 3.2
             "command.killCursors": {"$exists": False},  # MONGODB >= 3.2
         }
@@ -279,13 +275,8 @@ class query_counter:
         Each call to ``get_count()`` itself issues one query to
         ``db.system.profile``, which is accounted for automatically.
         """
-        count = (
-            await count_documents(self.db.system.profile, self._ignored_query)
-            - self._ctx_query_counter
-        )
-        self._ctx_query_counter += (
-            1  # Account for the query we just issued to gather the information
-        )
+        count = await count_documents(self.db.system.profile, self._ignored_query) - self._ctx_query_counter
+        self._ctx_query_counter += 1  # Account for the query we just issued to gather the information
         return count
 
 
@@ -323,9 +314,7 @@ async def _commit_with_retry(session):
         except (ConnectionFailure, OperationFailure) as exc:
             # Can retry commit
             if exc.has_error_label("UnknownTransactionCommitResult"):
-                logging.warning(
-                    "UnknownTransactionCommitResult, retrying commit operation ..."
-                )
+                logging.warning("UnknownTransactionCommitResult, retrying commit operation ...")
                 continue
             else:
                 # Error during commit
@@ -333,9 +322,7 @@ async def _commit_with_retry(session):
 
 
 @asynccontextmanager
-async def run_in_transaction(
-    alias=DEFAULT_CONNECTION_NAME, session_kwargs=None, transaction_kwargs=None
-):
+async def run_in_transaction(alias=DEFAULT_CONNECTION_NAME, session_kwargs=None, transaction_kwargs=None):
     """run_in_transaction context manager
     Execute queries within the context in a database transaction.
 

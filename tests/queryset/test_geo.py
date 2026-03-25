@@ -181,17 +181,15 @@ class TestGeoQueries(MongoDBTestCase):
         assert [doc async for doc in events] == [event2]
 
         # find events within 1km of greenpoint, broolyn, nyc, ny
-        events = self.Event.objects(
-            location__near=[-73.9509714, 40.7237134], location__max_distance=1000
-        )
+        events = self.Event.objects(location__near=[-73.9509714, 40.7237134], location__max_distance=1000)
         if PYMONGO_VERSION < (4,):
             assert await events.count() == 0
         assert [doc async for doc in events] == []
 
         # ensure ordering is respected by "near"
-        events = self.Event.objects(
-            location__near=[-87.67892, 41.9120459], location__max_distance=10000
-        ).order_by("-date")
+        events = self.Event.objects(location__near=[-87.67892, 41.9120459], location__max_distance=10000).order_by(
+            "-date"
+        )
         if PYMONGO_VERSION < (4,):
             assert await events.count() == 2
         assert [doc async for doc in events] == [event3, event1]
@@ -250,9 +248,9 @@ class TestGeoQueries(MongoDBTestCase):
         assert [doc async for doc in events] == [event3]
 
         # ensure ordering is respected by "near" with "min_distance"
-        events = self.Event.objects(
-            location__near=[-87.67892, 41.9120459], location__min_distance=10000
-        ).order_by("-date")
+        events = self.Event.objects(location__near=[-87.67892, 41.9120459], location__min_distance=10000).order_by(
+            "-date"
+        )
         if PYMONGO_VERSION < (4,):
             assert await events.count() == 1
         assert [doc async for doc in events] == [event2]
@@ -291,9 +289,7 @@ class TestGeoQueries(MongoDBTestCase):
         venue2 = Venue(name="The Bridge", location=[-122.4194155, 37.7749295])
 
         event1 = await Event(title="Coltrane Motion @ Double Door", venue=venue1).save()
-        event2 = await Event(
-            title="Coltrane Motion @ Bottom of the Hill", venue=venue2
-        ).save()
+        event2 = await Event(title="Coltrane Motion @ Bottom of the Hill", venue=venue2).save()
         event3 = await Event(title="Coltrane Motion @ Empty Bottle", venue=venue1).save()
 
         # find all events "near" pitchfork office, chicago.
@@ -333,31 +329,23 @@ class TestGeoQueries(MongoDBTestCase):
         assert [doc async for doc in points] == [north_point, south_point]
 
         # Same behavior for _within_spherical_distance
-        points = Point.objects(
-            location__within_spherical_distance=[[-122, 37.5], 60 / earth_radius]
-        )
+        points = Point.objects(location__within_spherical_distance=[[-122, 37.5], 60 / earth_radius])
         assert await points.count() == 2
 
-        points = Point.objects(
-            location__near_sphere=[-122, 37.5], location__max_distance=60 / earth_radius
-        )
+        points = Point.objects(location__near_sphere=[-122, 37.5], location__max_distance=60 / earth_radius)
         if PYMONGO_VERSION < (4,):
             assert await points.count() == 2
         assert [doc async for doc in points] == [north_point, south_point]
 
         # Test query works with max_distance, being farer from one point
-        points = Point.objects(
-            location__near_sphere=[-122, 37.8], location__max_distance=60 / earth_radius
-        )
+        points = Point.objects(location__near_sphere=[-122, 37.8], location__max_distance=60 / earth_radius)
         close_point = await points.first()
         if PYMONGO_VERSION < (4,):
             assert await points.count() == 1
         assert [doc async for doc in points] == [north_point]
 
         # Test query works with min_distance, being farer from one point
-        points = Point.objects(
-            location__near_sphere=[-122, 37.8], location__min_distance=60 / earth_radius
-        )
+        points = Point.objects(location__near_sphere=[-122, 37.8], location__min_distance=60 / earth_radius)
         if PYMONGO_VERSION < (4,):
             assert await points.count() == 1
         far_point = await points.first()
@@ -380,9 +368,7 @@ class TestGeoQueries(MongoDBTestCase):
 
         # Finds only one point because only the first point is within 60km of
         # the reference point to the south.
-        points = Point.objects(
-            location__within_spherical_distance=[[-122, 36.5], 60 / earth_radius]
-        )
+        points = Point.objects(location__within_spherical_distance=[[-122, 36.5], 60 / earth_radius])
         assert await points.count() == 1
         assert (await points.get_item(0)).id == south_point.id
 

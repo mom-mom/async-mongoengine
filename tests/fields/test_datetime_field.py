@@ -159,9 +159,7 @@ class TestDateTimeField(MongoDBTestCase):
         logs = LogEntry.objects.filter(date__lte=dt.datetime(1980, 1, 1))
         assert await logs.count() == 10
 
-        logs = LogEntry.objects.filter(
-            date__lte=dt.datetime(1980, 1, 1), date__gte=dt.datetime(1975, 1, 1)
-        )
+        logs = LogEntry.objects.filter(date__lte=dt.datetime(1980, 1, 1), date__gte=dt.datetime(1975, 1, 1))
         assert await logs.count() == 5
 
     def test_datetime_validation(self):

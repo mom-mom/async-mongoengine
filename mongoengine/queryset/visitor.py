@@ -138,7 +138,7 @@ class QCombination(QNode):
 
     def __repr__(self):
         op = " & " if self.operation is self.AND else " | "
-        return "(%s)" % op.join([repr(node) for node in self.children])
+        return f"({op.join([repr(node) for node in self.children])})"
 
     def __bool__(self):
         return bool(self.children)
@@ -157,9 +157,7 @@ class QCombination(QNode):
 
     def __eq__(self, other):
         return (
-            self.__class__ == other.__class__
-            and self.operation == other.operation
-            and self.children == other.children
+            self.__class__ == other.__class__ and self.operation == other.operation and self.children == other.children
         )
 
 
@@ -172,7 +170,7 @@ class Q(QNode):
         self.query = query
 
     def __repr__(self):
-        return "Q(**%s)" % repr(self.query)
+        return f"Q(**{repr(self.query)})"
 
     def __bool__(self):
         return bool(self.query)

@@ -6,8 +6,10 @@ from bson import Binary
 from mongoengine import *
 from tests.utils import MongoDBTestCase
 
-BIN_VALUE = "\xa9\xf3\x8d(\xd7\x03\x84\xb4k[\x0f\xe3\xa2\x19\x85p[J\xa3\xd2>\xde\xe6\x87\xb1\x7f\xc6\xe6\xd9r\x18\xf5".encode(
-    "latin-1"
+BIN_VALUE = (
+    "\xa9\xf3\x8d(\xd7\x03\x84\xb4k[\x0f\xe3\xa2\x19\x85p[J\xa3\xd2>\xde\xe6\x87\xb1\x7f\xc6\xe6\xd9r\x18\xf5".encode(
+        "latin-1"
+    )
 )
 
 
@@ -123,9 +125,7 @@ class TestBinaryField(MongoDBTestCase):
 
         await MyDocument.drop_collection()
 
-        doc = await MyDocument.objects(some_field="test").modify(
-            upsert=True, new=True, set__bin_field=BIN_VALUE
-        )
+        doc = await MyDocument.objects(some_field="test").modify(upsert=True, new=True, set__bin_field=BIN_VALUE)
         assert doc.some_field == "test"
         assert doc.bin_field == BIN_VALUE
 
@@ -140,9 +140,7 @@ class TestBinaryField(MongoDBTestCase):
         bin_data = b"\xe6\x00\xc4\xff\x07"
         doc = await MyDocument(bin_field=bin_data).save()
 
-        n_updated = await MyDocument.objects(bin_field=bin_data).update_one(
-            bin_field=BIN_VALUE
-        )
+        n_updated = await MyDocument.objects(bin_field=bin_data).update_one(bin_field=BIN_VALUE)
         assert n_updated == 1
         fetched = await MyDocument.objects.with_id(doc.id)
         assert fetched.bin_field == BIN_VALUE

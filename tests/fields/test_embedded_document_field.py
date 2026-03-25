@@ -43,10 +43,7 @@ class TestEmbeddedDocumentField(MongoDBTestCase):
         emb = EmbeddedDocumentField("MyDoc")
         with pytest.raises(ValidationError) as exc_info:
             emb.document_type
-        assert (
-            "Invalid embedded document class provided to an EmbeddedDocumentField"
-            in str(exc_info.value)
-        )
+        assert "Invalid embedded document class provided to an EmbeddedDocumentField" in str(exc_info.value)
 
     def test_embedded_document_field_only_allow_subclasses_of_embedded_document(self):
         # Relates to #1661
@@ -389,9 +386,7 @@ class TestGenericEmbeddedDocumentField(MongoDBTestCase):
             foo2 = StringField()
 
         class Person(Document):
-            settings = GenericEmbeddedDocumentField(
-                choices=(AdminSettings, NonAdminSettings)
-            )
+            settings = GenericEmbeddedDocumentField(choices=(AdminSettings, NonAdminSettings))
 
         await Person.drop_collection()
 
@@ -452,9 +447,7 @@ class TestGenericEmbeddedDocumentField(MongoDBTestCase):
         assert copied_emb_doc._instance is None
 
         # Test on attached EmbeddedDoc
-        doc = Person(
-            id=ObjectId(), wallet=Wallet(money=2), wallet_map={"test": Wallet(money=2)}
-        )
+        doc = Person(id=ObjectId(), wallet=Wallet(money=2), wallet_map={"test": Wallet(money=2)})
         assert doc.wallet._instance == doc
         copied_emb_doc = deepcopy(doc.wallet)
         assert copied_emb_doc._instance is None

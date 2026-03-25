@@ -5,7 +5,6 @@ from mongoengine import (
     Document,
     GenericReferenceField,
     ListField,
-    NotRegistered,
     StringField,
     ValidationError,
 )
@@ -14,7 +13,6 @@ from tests.utils import MongoDBTestCase, get_as_pymongo
 
 
 class TestField(MongoDBTestCase):
-
     async def test_generic_reference_field_basics(self):
         """Ensure that a GenericReferenceField properly stores items."""
 

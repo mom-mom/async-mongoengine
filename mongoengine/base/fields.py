@@ -108,9 +108,7 @@ class BaseField:
 
         # Make sure db_field doesn't contain any forbidden characters.
         if isinstance(self.db_field, str) and (
-            "." in self.db_field
-            or "\0" in self.db_field
-            or self.db_field.startswith("$")
+            "." in self.db_field or "\0" in self.db_field or self.db_field.startswith("$")
         ):
             raise ValueError(
                 'field names cannot contain dots (".") or null characters '
@@ -120,10 +118,7 @@ class BaseField:
         # Detect and report conflicts between metadata and base properties.
         conflicts = set(dir(self)) & set(kwargs)
         if conflicts:
-            raise TypeError(
-                "%s already has attribute(s): %s"
-                % (self.__class__.__name__, ", ".join(conflicts))
-            )
+            raise TypeError("{} already has attribute(s): {}".format(self.__class__.__name__, ", ".join(conflicts)))
 
         # Assign metadata to the instance
         # This efficient method is available because no __slots__ are defined.
@@ -177,10 +172,7 @@ class BaseField:
 
         if instance._initialised:
             try:
-                value_has_changed = (
-                    self.name not in instance._data
-                    or instance._data[self.name] != value
-                )
+                value_has_changed = self.name not in instance._data or instance._data[self.name] != value
                 if value_has_changed:
                     instance._mark_as_changed(self.name)
             except Exception:
@@ -246,12 +238,12 @@ class BaseField:
         # Choices which are other types of Documents
         if isinstance(value, (Document, EmbeddedDocument)):
             if not any(isinstance(value, c) for c in choice_list):
-                self.error("Value must be an instance of %s" % (choice_list))
+                self.error(f"Value must be an instance of {choice_list}")
         # Choices which are types other than Documents
         else:
             values = value if isinstance(value, (list, tuple)) else [value]
             if len(set(values) - set(choice_list)):
-                self.error("Value must be one of %s" % str(choice_list))
+                self.error(f"Value must be one of {str(choice_list)}")
 
     def _validate(self, value, **kwargs):
         # Check the Choices Constraint
@@ -268,16 +260,13 @@ class BaseField:
                     ret = self.validation(value)
                     if ret is not None:
                         raise DeprecatedError(
-                            "validation argument for `%s` must not return anything, "
+                            f"validation argument for `{self.name}` must not return anything, "
                             "it should raise a ValidationError if validation fails"
-                            % self.name
                         )
                 except ValidationError as ex:
                     self.error(str(ex))
             else:
-                raise ValueError(
-                    'validation argument for `"%s"` must be a ' "callable." % self.name
-                )
+                raise ValueError(f'validation argument for `"{self.name}"` must be a callable.')
 
         self.validate(value, **kwargs)
 
@@ -303,9 +292,7 @@ class ComplexBaseField(BaseField):
 
     def __init__(self, field=None, **kwargs):
         if field is not None and not isinstance(field, BaseField):
-            raise TypeError(
-                f"field argument must be a Field instance (e.g {self.__class__.__name__}(StringField()))"
-            )
+            raise TypeError(f"field argument must be a Field instance (e.g {self.__class__.__name__}(StringField()))")
         self.field = field
         super().__init__(**kwargs)
 
@@ -349,9 +336,7 @@ class ComplexBaseField(BaseField):
 
         # Convert lists / values so we can watch for any changes on them
         if isinstance(value, (list, tuple)):
-            if issubclass(type(self), EmbeddedDocumentListField) and not isinstance(
-                value, EmbeddedDocumentList
-            ):
+            if issubclass(type(self), EmbeddedDocumentListField) and not isinstance(value, EmbeddedDocumentList):
                 value = EmbeddedDocumentList(value, instance, self.name)
             elif not isinstance(value, BaseList):
                 value = BaseList(value, instance, self.name)
@@ -385,9 +370,7 @@ class ComplexBaseField(BaseField):
 
         if self.field:
             self.field.set_auto_dereferencing(self._auto_dereference)
-            value_dict = {
-                key: self.field.to_python(item) for key, item in value.items()
-            }
+            value_dict = {key: self.field.to_python(item) for key, item in value.items()}
         else:
             Document = _import_class("Document")
             value_dict = {}
@@ -395,10 +378,7 @@ class ComplexBaseField(BaseField):
                 if isinstance(v, Document):
                     # We need the id from the saved object to create the DBRef
                     if v.pk is None:
-                        self.error(
-                            "You can only reference documents once they"
-                            " have been saved to the database"
-                        )
+                        self.error("You can only reference documents once they have been saved to the database")
                     collection = v._get_collection_name()
                     value_dict[k] = DBRef(collection, v.pk)
                 elif hasattr(v, "to_python"):
@@ -407,9 +387,7 @@ class ComplexBaseField(BaseField):
                     value_dict[k] = self.to_python(v)
 
         if is_list:  # Convert back to a list
-            return [
-                v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))
-            ]
+            return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
 
     def to_mongo(self, value, use_db_field=True, fields=None):
@@ -441,8 +419,7 @@ class ComplexBaseField(BaseField):
 
         if self.field:
             value_dict = {
-                key: self.field._to_mongo_safe_call(item, use_db_field, fields)
-                for key, item in value.items()
+                key: self.field._to_mongo_safe_call(item, use_db_field, fields) for key, item in value.items()
             }
         else:
             value_dict = {}
@@ -450,10 +427,7 @@ class ComplexBaseField(BaseField):
                 if isinstance(v, Document):
                     # We need the id from the saved object to create the DBRef
                     if v.pk is None:
-                        self.error(
-                            "You can only reference documents once they"
-                            " have been saved to the database"
-                        )
+                        self.error("You can only reference documents once they have been saved to the database")
 
                     # If it's a document that is not inheritable it won't have
                     # any _cls data so make it a generic reference allows
@@ -476,9 +450,7 @@ class ComplexBaseField(BaseField):
                     value_dict[k] = self.to_mongo(v, use_db_field, fields)
 
         if is_list:  # Convert back to a list
-            return [
-                v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))
-            ]
+            return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
 
     def validate(self, value):
@@ -561,7 +533,7 @@ class GeoJsonBaseField(BaseField):
         :param bool auto_index: Automatically create a '2dsphere' index.\
             Defaults to `True`.
         """
-        self._name = "%sField" % self._type
+        self._name = f"{self._type}Field"
         if not auto_index:
             self._geo_index = False
         super().__init__(*args, **kwargs)
@@ -574,16 +546,13 @@ class GeoJsonBaseField(BaseField):
                     self.error(f'{self._name} type must be "{self._type}"')
                 return self.validate(value["coordinates"])
             else:
-                self.error(
-                    "%s can only accept a valid GeoJson dictionary"
-                    " or lists of (x, y)" % self._name
-                )
+                self.error(f"{self._name} can only accept a valid GeoJson dictionary or lists of (x, y)")
                 return
         elif not isinstance(value, (list, tuple)):
-            self.error("%s can only accept lists of [x, y]" % self._name)
+            self.error(f"{self._name} can only accept lists of [x, y]")
             return
 
-        validate = getattr(self, "_validate_%s" % self._type.lower())
+        validate = getattr(self, f"_validate_{self._type.lower()}")
         error = validate(value)
         if error:
             self.error(error)
@@ -607,9 +576,9 @@ class GeoJsonBaseField(BaseField):
                 errors.append(error)
         if errors:
             if top_level:
-                return "Invalid Polygon:\n%s" % ", ".join(errors)
+                return "Invalid Polygon:\n{}".format(", ".join(errors))
             else:
-                return "%s" % ", ".join(errors)
+                return "{}".format(", ".join(errors))
 
     def _validate_linestring(self, value, top_level=True):
         """Validate a linestring."""
@@ -629,20 +598,18 @@ class GeoJsonBaseField(BaseField):
                 errors.append(error)
         if errors:
             if top_level:
-                return "Invalid LineString:\n%s" % ", ".join(errors)
+                return "Invalid LineString:\n{}".format(", ".join(errors))
             else:
-                return "%s" % ", ".join(errors)
+                return "{}".format(", ".join(errors))
 
     def _validate_point(self, value):
         """Validate each set of coords"""
         if not isinstance(value, (list, tuple)):
             return "Points must be a list of coordinate pairs"
         elif not len(value) == 2:
-            return "Value (%s) must be a two-dimensional point" % repr(value)
-        elif not isinstance(value[0], (float, int)) or not isinstance(
-            value[1], (float, int)
-        ):
-            return "Both values (%s) in point must be float or int" % repr(value)
+            return f"Value ({repr(value)}) must be a two-dimensional point"
+        elif not isinstance(value[0], (float, int)) or not isinstance(value[1], (float, int)):
+            return f"Both values ({repr(value)}) in point must be float or int"
 
     def _validate_multipoint(self, value):
         if not isinstance(value, (list, tuple)):
@@ -661,7 +628,7 @@ class GeoJsonBaseField(BaseField):
                 errors.append(error)
 
         if errors:
-            return "%s" % ", ".join(errors)
+            return "{}".format(", ".join(errors))
 
     def _validate_multilinestring(self, value, top_level=True):
         if not isinstance(value, (list, tuple)):
@@ -681,9 +648,9 @@ class GeoJsonBaseField(BaseField):
 
         if errors:
             if top_level:
-                return "Invalid MultiLineString:\n%s" % ", ".join(errors)
+                return "Invalid MultiLineString:\n{}".format(", ".join(errors))
             else:
-                return "%s" % ", ".join(errors)
+                return "{}".format(", ".join(errors))
 
     def _validate_multipolygon(self, value):
         if not isinstance(value, (list, tuple)):
@@ -702,7 +669,7 @@ class GeoJsonBaseField(BaseField):
                 errors.append(error)
 
         if errors:
-            return "Invalid MultiPolygon:\n%s" % ", ".join(errors)
+            return "Invalid MultiPolygon:\n{}".format(", ".join(errors))
 
     def to_mongo(self, value):
         if isinstance(value, dict):

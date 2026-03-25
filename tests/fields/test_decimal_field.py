@@ -134,9 +134,7 @@ class TestDecimalField(MongoDBTestCase):
 
     def test_precision_negative_raise(self):
         """prevent regression of a bug that was raising an exception when using precision=0"""
-        with pytest.raises(
-            ValidationError, match="precision must be a positive integer"
-        ):
+        with pytest.raises(ValidationError, match="precision must be a positive integer"):
 
             class TestDoc(Document):
                 dneg = DecimalField(precision=-1)

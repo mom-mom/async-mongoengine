@@ -123,7 +123,5 @@ class TestFindAndModify(MongoDBTestCase):
         assert blog.tags == ["python", "code", "java"]
 
         # Push multiple new tags with a positional argument.
-        blog = await BlogPost.objects(id=blog.id).modify(
-            push__tags__1=["go", "rust"], new=True
-        )
+        blog = await BlogPost.objects(id=blog.id).modify(push__tags__1=["go", "rust"], new=True)
         assert blog.tags == ["python", "go", "rust", "code", "java"]

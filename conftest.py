@@ -13,7 +13,7 @@ _CACHED = {}
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _mongo_connection():
     """Create MongoDB connection once for the entire test session."""
-    from mongoengine.connection import _connections, _dbs, _connection_settings
+    from mongoengine.connection import _connection_settings, _connections, _dbs
 
     _connections.clear()
     _dbs.clear()

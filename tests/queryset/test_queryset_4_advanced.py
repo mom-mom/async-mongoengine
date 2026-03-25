@@ -1,32 +1,17 @@
 import datetime
-import uuid
-from decimal import Decimal
 
-import pymongo
 import pytest
-from bson import DBRef, ObjectId
-from pymongo.read_preferences import ReadPreference
-from pymongo.results import UpdateResult
 
 from mongoengine import *
-from mongoengine.connection import get_db
-from mongoengine.context_managers import query_counter, switch_db
-from mongoengine.errors import InvalidQueryError
-from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
-    DoesNotExist,
-    MultipleObjectsReturned,
     QuerySet,
     QuerySetManager,
     queryset_manager,
 )
 from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
-    db_ops_tracker,
-    get_as_pymongo,
+    MongoDBTestCase,
 )
-
-from tests.utils import MongoDBTestCase
 
 
 class TestQueryset4(MongoDBTestCase):
@@ -43,8 +28,6 @@ class TestQueryset4(MongoDBTestCase):
         self.PersonMeta = PersonMeta
         self.Person = Person
 
-
-
     async def assertSequence(self, qs, expected):
         qs = [d async for d in qs]
         expected = list(expected)
@@ -52,10 +35,8 @@ class TestQueryset4(MongoDBTestCase):
         for i in range(len(qs)):
             assert qs[i] == expected[i]
 
-
     async def tearDown(self):
         await self.Person.drop_collection()
-
 
     async def test_item_frequencies(self):
         """Ensure that item frequencies are properly generated from lists."""
@@ -113,7 +94,6 @@ class TestQueryset4(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_item_frequencies_on_embedded(self):
         """Ensure that item frequencies are properly generated from lists."""
 
@@ -153,9 +133,7 @@ class TestQueryset4(MongoDBTestCase):
             assert {"62-3331-1656"} == set(f.keys())
             assert f["62-3331-1656"] == 2
 
-        freq = await Person.objects(phone__number="62-3331-1656").item_frequencies(
-            "phone.number"
-        )
+        freq = await Person.objects(phone__number="62-3331-1656").item_frequencies("phone.number")
         test_assertions(freq)
 
         # Check that normalization works
@@ -165,7 +143,6 @@ class TestQueryset4(MongoDBTestCase):
 
         freq = await Person.objects.item_frequencies("phone.number", normalize=True)
         test_assertions(freq)
-
 
     async def test_item_frequencies_null_values(self):
         class Person(Document):
@@ -182,8 +159,6 @@ class TestQueryset4(MongoDBTestCase):
         freq = await Person.objects.item_frequencies("city", normalize=True)
         assert freq == {"CRB": 0.5, None: 0.5}
 
-
-
     async def test_average(self):
         """Ensure that field can be averaged correctly."""
         await self.Person(name="person", age=0).save()
@@ -191,7 +166,7 @@ class TestQueryset4(MongoDBTestCase):
 
         ages = [23, 54, 12, 94, 27]
         for i, age in enumerate(ages):
-            await self.Person(name="test%s" % i, age=age).save()
+            await self.Person(name=f"test{i}", age=age).save()
 
         avg = float(sum(ages)) / (len(ages) + 1)  # take into account the 0
         assert round(abs(int(await self.Person.objects.average("age")) - avg), 7) == 0
@@ -201,20 +176,12 @@ class TestQueryset4(MongoDBTestCase):
 
         # dot notation
         await self.Person(name="person meta", person_meta=self.PersonMeta(weight=0)).save()
-        assert (
-            round(abs(int(await self.Person.objects.average("person_meta.weight")) - 0), 7)
-            == 0
-        )
+        assert round(abs(int(await self.Person.objects.average("person_meta.weight")) - 0), 7) == 0
 
         for i, weight in enumerate(ages):
-            await self.Person(
-                name=f"test meta{i}", person_meta=self.PersonMeta(weight=weight)
-            ).save()
+            await self.Person(name=f"test meta{i}", person_meta=self.PersonMeta(weight=weight)).save()
 
-        assert (
-            round(abs(int(await self.Person.objects.average("person_meta.weight")) - avg), 7)
-            == 0
-        )
+        assert round(abs(int(await self.Person.objects.average("person_meta.weight")) - avg), 7) == 0
 
         await self.Person(name="test meta none").save()
         assert int(await self.Person.objects.average("person_meta.weight")) == avg
@@ -224,12 +191,11 @@ class TestQueryset4(MongoDBTestCase):
         avg = float(sum(over_50)) / len(over_50)
         assert await self.Person.objects.filter(age__gte=50).average("age") == avg
 
-
     async def test_sum(self):
         """Ensure that field can be summed over correctly."""
         ages = [23, 54, 12, 94, 27]
         for i, age in enumerate(ages):
-            await self.Person(name="test%s" % i, age=age).save()
+            await self.Person(name=f"test{i}", age=age).save()
 
         assert await self.Person.objects.sum("age") == sum(ages)
 
@@ -237,9 +203,7 @@ class TestQueryset4(MongoDBTestCase):
         assert await self.Person.objects.sum("age") == sum(ages)
 
         for i, age in enumerate(ages):
-            await self.Person(
-                name="test meta%s" % i, person_meta=self.PersonMeta(weight=age)
-            ).save()
+            await self.Person(name=f"test meta{i}", person_meta=self.PersonMeta(weight=age)).save()
 
         assert await self.Person.objects.sum("person_meta.weight") == sum(ages)
 
@@ -247,15 +211,12 @@ class TestQueryset4(MongoDBTestCase):
         assert await self.Person.objects.sum("age") == sum(ages)
 
         # test summing over a filtered queryset
-        assert await self.Person.objects.filter(age__gte=50).sum("age") == sum(
-            a for a in ages if a >= 50
-        )
-
+        assert await self.Person.objects.filter(age__gte=50).sum("age") == sum(a for a in ages if a >= 50)
 
     async def test_sum_over_db_field(self):
         """Ensure that a field mapped to a db field with a different name
-            can be summed over correctly.
-            """
+        can be summed over correctly.
+        """
 
         class UserVisit(Document):
             num_visits = IntField(db_field="visits")
@@ -267,11 +228,10 @@ class TestQueryset4(MongoDBTestCase):
 
         assert await UserVisit.objects.sum("num_visits") == 15
 
-
     async def test_average_over_db_field(self):
         """Ensure that a field mapped to a db field with a different name
-            can have its average computed correctly.
-            """
+        can have its average computed correctly.
+        """
 
         class UserVisit(Document):
             num_visits = IntField(db_field="visits")
@@ -282,7 +242,6 @@ class TestQueryset4(MongoDBTestCase):
         await UserVisit.objects.create(num_visits=10)
 
         assert await UserVisit.objects.average("num_visits") == 15
-
 
     async def test_embedded_average(self):
         class Pay(EmbeddedDocument):
@@ -301,7 +260,6 @@ class TestQueryset4(MongoDBTestCase):
 
         assert await Doc.objects.average("pay.value") == 240
 
-
     async def test_embedded_array_average(self):
         class Pay(EmbeddedDocument):
             values = ListField(DecimalField())
@@ -319,7 +277,6 @@ class TestQueryset4(MongoDBTestCase):
 
         assert await Doc.objects.average("pay.values") == 170
 
-
     async def test_array_average(self):
         class Doc(Document):
             values = ListField(DecimalField())
@@ -332,7 +289,6 @@ class TestQueryset4(MongoDBTestCase):
         await Doc(values=[115, 100]).save()
 
         assert await Doc.objects.average("values") == 170
-
 
     async def test_embedded_sum(self):
         class Pay(EmbeddedDocument):
@@ -351,7 +307,6 @@ class TestQueryset4(MongoDBTestCase):
 
         assert await Doc.objects.sum("pay.value") == 960
 
-
     async def test_embedded_array_sum(self):
         class Pay(EmbeddedDocument):
             values = ListField(DecimalField())
@@ -369,7 +324,6 @@ class TestQueryset4(MongoDBTestCase):
 
         assert await Doc.objects.sum("pay.values") == 1360
 
-
     async def test_array_sum(self):
         class Doc(Document):
             values = ListField(DecimalField())
@@ -382,7 +336,6 @@ class TestQueryset4(MongoDBTestCase):
         await Doc(values=[115, 100]).save()
 
         assert await Doc.objects.sum("values") == 1360
-
 
     async def test_distinct(self):
         """Ensure that the QuerySet.distinct method works."""
@@ -400,7 +353,6 @@ class TestQueryset4(MongoDBTestCase):
             "Mr Orange",
             "Mr Pink",
         }
-
 
     async def test_distinct_handles_references(self):
         class Foo(Document):
@@ -421,7 +373,6 @@ class TestQueryset4(MongoDBTestCase):
         assert await Foo.objects.distinct("bar") == [bar]
         assert await Foo.objects.no_dereference().distinct("bar") == [bar.pk]
 
-
     async def test_base_queryset_iter_raise_not_implemented(self):
         class Tmp(Document):
             pass
@@ -429,7 +380,6 @@ class TestQueryset4(MongoDBTestCase):
         qs = BaseQuerySet(document=Tmp, collection=await Tmp._get_collection())
         with pytest.raises(NotImplementedError):
             _ = [d for d in qs]
-
 
     async def test_search_text_raise_if_called_2_times(self):
         class News(Document):
@@ -439,10 +389,7 @@ class TestQueryset4(MongoDBTestCase):
 
         await News.drop_collection()
         with pytest.raises(OperationError):
-            News.objects.search_text("t1", language="portuguese").search_text(
-                "t2", language="french"
-            )
-
+            News.objects.search_text("t1", language="portuguese").search_text("t2", language="french")
 
     async def test_search_text(self):
         class News(Document):
@@ -473,8 +420,7 @@ class TestQueryset4(MongoDBTestCase):
 
         await News(
             title="Brasil passa para as quartas de finais",
-            content="Com o brasil nas quartas de finais teremos um "
-            "jogo complicado com a alemanha",
+            content="Com o brasil nas quartas de finais teremos um jogo complicado com a alemanha",
         ).save()
 
         count = await News.objects.search_text("neymar", language="portuguese").count()
@@ -511,9 +457,7 @@ class TestQueryset4(MongoDBTestCase):
         assert isinstance(new.get_text_score(), float)
 
         # count
-        query = News.objects.search_text("brasil", text_score=True).order_by(
-            "$text_score"
-        )
+        query = News.objects.search_text("brasil", text_score=True).order_by("$text_score")
         assert query._search_text == "brasil"
 
         assert await query.count() == 3
@@ -540,7 +484,6 @@ class TestQueryset4(MongoDBTestCase):
             qs2 = News.objects.search_text("brasil", text_score=False)
             assert [d async for d in qs1] == [d async for d in qs2]
 
-
     async def test_distinct_handles_references_to_alias(self):
         register_connection("testdb", "mongoenginetest2")
 
@@ -563,7 +506,6 @@ class TestQueryset4(MongoDBTestCase):
 
         assert await Foo.objects.distinct("bar") == [bar]
 
-
     async def test_distinct_handles_db_field(self):
         """Ensure that distinct resolves field name to db_field as expected."""
 
@@ -580,7 +522,6 @@ class TestQueryset4(MongoDBTestCase):
         assert set(await Product.objects.distinct("pid")) == {1, 2}
 
         await Product.drop_collection()
-
 
     async def test_distinct_ListField_EmbeddedDocumentField(self):
         class Author(EmbeddedDocument):
@@ -602,7 +543,6 @@ class TestQueryset4(MongoDBTestCase):
         authors = await Book.objects.distinct("authors")
         authors_names = {author.name for author in authors}
         assert authors_names == {mark_twain.name, john_tolkien.name}
-
 
     async def test_distinct_ListField_EmbeddedDocumentField_EmbeddedDocumentField(self):
         class Continent(EmbeddedDocument):
@@ -642,7 +582,6 @@ class TestQueryset4(MongoDBTestCase):
         continent_list_names = {c.continent_name for c in continent_list}
         assert continent_list_names == {europe.continent_name, asia.continent_name}
 
-
     async def test_distinct_ListField_ReferenceField(self):
         class Bar(Document):
             text = StringField()
@@ -665,7 +604,6 @@ class TestQueryset4(MongoDBTestCase):
 
         assert await Foo.objects.distinct("bar_lst") == [bar_1, bar_2]
         assert await Foo.objects.no_dereference().distinct("bar_lst") == [bar_1.pk, bar_2.pk]
-
 
     async def test_custom_manager(self):
         """Ensure that custom QuerySetManager instances work as expected."""
@@ -708,7 +646,6 @@ class TestQueryset4(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_custom_manager_overriding_objects_works(self):
         class Foo(Document):
             bar = StringField(default="bar")
@@ -734,7 +671,6 @@ class TestQueryset4(MongoDBTestCase):
         assert 0 == await Foo.with_inactive.count()
         assert 1 == await Foo.objects.count()
 
-
     async def test_inherit_objects(self):
         class Foo(Document):
             meta = {"allow_inheritance": True}
@@ -750,7 +686,6 @@ class TestQueryset4(MongoDBTestCase):
         await Bar.drop_collection()
         await Bar.objects.create(active=False)
         assert 0 == await Bar.objects.count()
-
 
     async def test_inherit_objects_override(self):
         class Foo(Document):
@@ -770,7 +705,6 @@ class TestQueryset4(MongoDBTestCase):
         await Bar.objects.create(active=False)
         assert 0 == await Foo.objects.count()
         assert 1 == await Bar.objects.count()
-
 
     async def test_query_value_conversion(self):
         """Ensure that query values are properly converted when necessary."""
@@ -798,7 +732,6 @@ class TestQueryset4(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_update_value_conversion(self):
         """Ensure that values used in updates are converted before use."""
 
@@ -823,7 +756,6 @@ class TestQueryset4(MongoDBTestCase):
         assert group.members[1].id == user2.id
 
         await Group.drop_collection()
-
 
     async def test_bulk(self):
         """Ensure bulk querying by object id returns a proper dict."""
@@ -864,7 +796,6 @@ class TestQueryset4(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_custom_querysets(self):
         """Ensure that custom QuerySet classes may be used."""
 
@@ -884,7 +815,6 @@ class TestQueryset4(MongoDBTestCase):
         assert await Post.objects.not_empty()
 
         await Post.drop_collection()
-
 
     async def test_custom_querysets_set_manager_directly(self):
         """Ensure that custom QuerySet classes may be used."""
@@ -908,7 +838,6 @@ class TestQueryset4(MongoDBTestCase):
         assert await Post.objects.not_empty()
 
         await Post.drop_collection()
-
 
     async def test_custom_querysets_set_manager_methods(self):
         """Ensure that custom QuerySet classes methods may be used."""
@@ -936,4 +865,3 @@ class TestQueryset4(MongoDBTestCase):
         assert await Post.objects.count() == 1
 
         await Post.drop_collection()
-

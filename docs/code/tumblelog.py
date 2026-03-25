@@ -77,7 +77,7 @@ async def main():
     print()
 
     num_posts = await Post.objects(tags="mongodb").count()
-    print('Found %d posts with tag "mongodb"' % num_posts)
+    print(f'Found {num_posts} posts with tag "mongodb"')
 
 
 if __name__ == "__main__":

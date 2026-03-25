@@ -271,11 +271,9 @@ class EmbeddedDocumentList(BaseList):
         """
         values = self.__only_matches(self, kwargs)
         if len(values) == 0:
-            raise DoesNotExist("%s matching query does not exist." % self._name)
+            raise DoesNotExist(f"{self._name} matching query does not exist.")
         elif len(values) > 1:
-            raise MultipleObjectsReturned(
-                "%d items returned, instead of 1" % len(values)
-            )
+            raise MultipleObjectsReturned(f"{len(values)} items returned, instead of 1")
 
         return values[0]
 
@@ -417,9 +415,7 @@ class StrictDict:
 
     @classmethod
     def create(cls, allowed_keys):
-        allowed_keys_tuple = tuple(
-            ("_reserved_" + k if k in cls._special_fields else k) for k in allowed_keys
-        )
+        allowed_keys_tuple = tuple(("_reserved_" + k if k in cls._special_fields else k) for k in allowed_keys)
         allowed_keys = frozenset(allowed_keys_tuple)
         if allowed_keys not in cls._classes:
 
@@ -427,9 +423,7 @@ class StrictDict:
                 __slots__ = allowed_keys_tuple
 
                 def __repr__(self):
-                    return "{%s}" % ", ".join(
-                        f'"{k!s}": {v!r}' for k, v in self.items()
-                    )
+                    return "{{{}}}".format(", ".join(f'"{k!s}": {v!r}' for k, v in self.items()))
 
             cls._classes[allowed_keys] = SpecificStrictDict
         return cls._classes[allowed_keys]
@@ -442,7 +436,7 @@ class LazyReference(DBRef):
         if not self._cached_doc or force:
             self._cached_doc = await self.document_type.objects.get(pk=self.pk)
             if not self._cached_doc:
-                raise DoesNotExist("Trying to dereference unknown document %s" % (self))
+                raise DoesNotExist(f"Trying to dereference unknown document {self}")
         return self._cached_doc
 
     @property
@@ -460,7 +454,7 @@ class LazyReference(DBRef):
             raise KeyError()
         raise KeyError(
             "LazyReference does not support synchronous passthrough. "
-            "Use `doc = await lazy_ref.fetch()` first, then access `doc[%r]`." % name
+            f"Use `doc = await lazy_ref.fetch()` first, then access `doc[{name!r}]`."
         )
 
     def __getattr__(self, name):
@@ -468,7 +462,7 @@ class LazyReference(DBRef):
             raise AttributeError()
         raise AttributeError(
             "LazyReference does not support synchronous passthrough. "
-            "Use `doc = await lazy_ref.fetch()` first, then access `doc.%s`." % name
+            f"Use `doc = await lazy_ref.fetch()` first, then access `doc.{name}`."
         )
 
     def __repr__(self):

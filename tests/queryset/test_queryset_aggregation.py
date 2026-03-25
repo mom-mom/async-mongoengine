@@ -14,9 +14,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
         # Aggregates with read_preference
         pipeline = []
-        bars = await Bar.objects.read_preference(
-            ReadPreference.SECONDARY_PREFERRED
-        ).aggregate(pipeline)
+        bars = await Bar.objects.read_preference(ReadPreference.SECONDARY_PREFERRED).aggregate(pipeline)
         if hasattr(bars, "_CommandCursor__collection"):
             read_pref = bars._CommandCursor__collection.read_preference
         else:  # pymongo >= 4.9
@@ -51,14 +49,8 @@ class TestQuerysetAggregate(MongoDBTestCase):
             {"_id": p1.pk, "name": "ISABELLA LUANNA"},
         ]
 
-        pipeline = [
-            {"$group": {"_id": None, "total": {"$sum": 1}, "avg": {"$avg": "$age"}}}
-        ]
-        data = await (
-            Person.objects(age__gte=17, age__lte=40)
-            .order_by("-age")
-            .aggregate(pipeline)
-        )
+        pipeline = [{"$group": {"_id": None, "total": {"$sum": 1}, "avg": {"$avg": "$age"}}}]
+        data = await Person.objects(age__gte=17, age__lte=40).order_by("-age").aggregate(pipeline)
         assert [doc async for doc in data] == [{"_id": None, "avg": 29, "total": 2}]
 
         pipeline = [{"$match": {"name": "Isabella Luanna"}}]
@@ -93,9 +85,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
         class AggPerson(Document):
             name = StringField()
-            meta = {
-                "indexes": [{"fields": ["name"], "name": index_name, "collation": base}]
-            }
+            meta = {"indexes": [{"fields": ["name"], "name": index_name, "collation": base}]}
 
         await AggPerson.drop_collection()
         _ = await AggPerson.objects.first()
@@ -278,9 +268,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
             {"$project": {"name": {"$toUpper": "$name"}}},
             {"$limit": 1},
         ]
-        with pytest.raises(
-            TypeError, match="takes 2 positional arguments but 3 were given"
-        ):
+        with pytest.raises(TypeError, match="takes 2 positional arguments but 3 were given"):
             await Person.objects.order_by("name").limit(2).aggregate(*_2_step_pipeline)
 
     async def test_queryset_aggregation_geonear_aggregation_on_pointfield(self):

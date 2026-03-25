@@ -1,5 +1,3 @@
-
-import pytest
 from bson import SON
 
 from mongoengine import *
@@ -465,9 +463,7 @@ class TestDelta(MongoDBTestCase):
             int_field = IntField(db_field="db_int_field")
             dict_field = DictField(db_field="db_dict_field")
             list_field = ListField(db_field="db_list_field")
-            embedded_field = EmbeddedDocumentField(
-                Embedded, db_field="db_embedded_field"
-            )
+            embedded_field = EmbeddedDocumentField(Embedded, db_field="db_embedded_field")
 
         await Doc.drop_collection()
         doc = Doc()
@@ -763,9 +759,7 @@ class TestDelta(MongoDBTestCase):
         assert doc._delta() == ({}, {"list_field": 1})
 
     async def test_delta_with_dbref_true(self):
-        person, organization, employee = await self.circular_reference_deltas_2(
-            Document, Document, True
-        )
+        person, organization, employee = await self.circular_reference_deltas_2(Document, Document, True)
         employee.name = "test"
 
         assert organization._get_changed_fields() == []
@@ -780,9 +774,7 @@ class TestDelta(MongoDBTestCase):
         assert "employees" in updates
 
     async def test_delta_with_dbref_false(self):
-        person, organization, employee = await self.circular_reference_deltas_2(
-            Document, Document, False
-        )
+        person, organization, employee = await self.circular_reference_deltas_2(Document, Document, False)
         employee.name = "test"
 
         assert organization._get_changed_fields() == []
@@ -970,9 +962,9 @@ class TestDelta(MongoDBTestCase):
         d.users["007"]["rolist"].append(EmbeddedRole(type="oops"))
         d.users["007"]["info"] = uinfo
         delta = d._delta()
-        assert True == ("users.007.roles.666" in delta[0])
-        assert True == ("users.007.rolist" in delta[0])
-        assert True == ("users.007.info" in delta[0])
+        assert "users.007.roles.666" in delta[0]
+        assert "users.007.rolist" in delta[0]
+        assert "users.007.info" in delta[0]
         assert "superadmin" == delta[0]["users.007.roles.666"]["type"]
         assert "oops" == delta[0]["users.007.rolist"][0]["type"]
         assert uinfo.id == delta[0]["users.007.info"]
@@ -1019,5 +1011,3 @@ class TestDelta(MongoDBTestCase):
         await mydoc.save()
         raw_doc = await get_as_pymongo(mydoc)
         assert raw_doc == {"_id": mydoc.id, "dico": {"": 3, "a": {"b": 0}}}
-
-
