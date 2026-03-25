@@ -54,14 +54,14 @@ The following snippet provides a basic logging of all command events:
     log.info('GO!')
 
     log.info('Saving an item through MongoEngine...')
-    Jedi(name='Obi-Wan Kenobii').save()
+    await Jedi(name='Obi-Wan Kenobii').save()
 
     log.info('Querying through MongoEngine...')
-    obiwan = Jedi.objects.first()
+    obiwan = await Jedi.objects.first()
 
     log.info('Updating through MongoEngine...')
     obiwan.name = 'Obi-Wan Kenobi'
-    obiwan.save()
+    await obiwan.save()
 
 
 Executing this prints the following output::

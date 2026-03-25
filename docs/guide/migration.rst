@@ -23,10 +23,10 @@ Let's assume we start with the following schema and save an instance:
     class User(Document):
         name = StringField()
 
-    User(name="John Doe").save()
+    await User(name="John Doe").save()
 
     # print the objects as they exist in mongodb
-    print(User.objects().as_pymongo())    # [{u'_id': ObjectId('5d06b9c3d7c1f18db3e7c874'), u'name': u'John Doe'}]
+    print([doc async for doc in User.objects().as_pymongo()])    # [{u'_id': ObjectId('5d06b9c3d7c1f18db3e7c874'), u'name': u'John Doe'}]
 
 On the next version of your application, let's now assume that a new field `enabled` gets added to the
 existing ``User`` model with a `default=True`. Thus you simply update the ``User`` class to the following:
@@ -42,16 +42,16 @@ and checks its `enabled` attribute:
 
 .. code-block:: python
 
-    assert User.objects.count() == 1
-    user = User.objects().first()
+    assert await User.objects.count() == 1
+    user = await User.objects().first()
     assert user.enabled is True
-    assert User.objects(enabled=True).count() == 0    # uh?
-    assert User.objects(enabled=False).count() == 0   # uh?
+    assert await User.objects(enabled=True).count() == 0    # uh?
+    assert await User.objects(enabled=False).count() == 0   # uh?
 
     # this is consistent with what we have in the database
     # in fact, 'enabled' does not exist
-    print(User.objects().as_pymongo().first())    # {u'_id': ObjectId('5d06b9c3d7c1f18db3e7c874'), u'name': u'John'}
-    assert User.objects(enabled=None).count() == 1
+    print(await User.objects().as_pymongo().first())    # {u'_id': ObjectId('5d06b9c3d7c1f18db3e7c874'), u'name': u'John'}
+    assert await User.objects(enabled=None).count() == 1
 
 As you can see, even if the document wasn't updated, mongoengine applies the default value seamlessly when it
 loads the pymongo dict into a ``User`` instance. At first sight it looks like you don't need to migrate the
@@ -67,7 +67,7 @@ as a standalone script:
 .. code-block:: python
 
     # Use mongoengine to set a default value for a given field
-    User.objects().update(enabled=True)
+    await User.objects().update(enabled=True)
     # or use pymongo
     user_coll = User._get_collection()
     user_coll.update_many({}, {'$set': {'enabled': True}})
@@ -88,14 +88,14 @@ Let's consider the following example:
         dark_side = BooleanField()
         light_saber_color = StringField()
 
-    Jedi(name="Darth Vader", dark_side=True, light_saber_color="red").save()
-    Jedi(name="Obi Wan Kenobi", dark_side=False, light_saber_color="blue").save()
+    await Jedi(name="Darth Vader", dark_side=True, light_saber_color="red").save()
+    await Jedi(name="Obi Wan Kenobi", dark_side=False, light_saber_color="blue").save()
 
-    assert Human.objects.count() == 2
-    assert Jedi.objects.count() == 2
+    assert await Human.objects.count() == 2
+    assert await Jedi.objects.count() == 2
 
     # Let's check how these documents got stored in mongodb
-    print(Jedi.objects.as_pymongo())
+    print([doc async for doc in Jedi.objects.as_pymongo()])
     # [
     #   {'_id': ObjectId('5fac4aaaf61d7fb06046e0f9'), '_cls': 'Human.Jedi', 'name': 'Darth Vader', 'dark_side': True, 'light_saber_color': 'red'},
     #   {'_id': ObjectId('5fac4ac4f61d7fb06046e0fa'), '_cls': 'Human.Jedi', 'name': 'Obi Wan Kenobi', 'dark_side': False, 'light_saber_color': 'blue'}
@@ -137,13 +137,13 @@ empty.
     # Following has no match
     # because the query that is used behind the scene is
     # filtering on {'_cls': 'Human.GoodJedi'}
-    assert GoodJedi.objects().count() == 0
+    assert await GoodJedi.objects().count() == 0
 
     # Following has also no match
     # because it is filtering on {'_cls': {'$in': ('Human', 'Human.GoodJedi', 'Human.BadSith')}}
     # which has no match
-    assert Human.objects.count() == 0
-    assert Human.objects.first() is None
+    assert await Human.objects.count() == 0
+    assert await Human.objects.first() is None
 
     # If we bypass MongoEngine and make use of underlying driver (PyMongo)
     # we can see that the documents are there
@@ -169,12 +169,12 @@ Let's now check if querying improved in MongoEngine:
 
 .. code-block:: python
 
-    assert GoodJedi.objects().count() == 1  # Hoorah!
-    assert BadSith.objects().count() == 1   # Hoorah!
-    assert Human.objects.count() == 2       # Hoorah!
+    assert await GoodJedi.objects().count() == 1  # Hoorah!
+    assert await BadSith.objects().count() == 1   # Hoorah!
+    assert await Human.objects.count() == 2       # Hoorah!
 
     # let's now check that documents load correctly
-    jedi = GoodJedi.objects().first()
+    jedi = await GoodJedi.objects().first()
     # raises FieldDoesNotExist: The fields "{'dark_side'}" do not exist on the document "Human.GoodJedi"
 
 In fact we only took care of renaming the _cls values but we havn't removed the 'dark_side' fields
@@ -202,10 +202,10 @@ And verify that the documents now load correctly:
 
 .. code-block:: python
 
-    jedi = GoodJedi.objects().first()
+    jedi = await GoodJedi.objects().first()
     assert jedi.name == "Obi Wan Kenobi"
 
-    sith = BadSith.objects().first()
+    sith = await BadSith.objects().first()
     assert sith.name == "Darth Vader"
 
 
@@ -241,7 +241,7 @@ Let's for instance assume that you start with the following Document class
 
         meta = {"indexes": ["name"]}
 
-    User(name="John Doe").save()
+    await User(name="John Doe").save()
 
 As soon as you start interacting with the Document collection (when `.save()` is called in this case),
 it would create the following indexes:
@@ -291,7 +291,7 @@ on the first occurrence of an error but this is something that can be adapted ba
         return DocCls.objects(id__in=random_oids)
 
     def check_documents(DocCls, sample_size):
-        for doc in get_random_documents(DocCls, sample_size):
+        async for doc in get_random_documents(DocCls, sample_size):
             # general validation (types and values)
             doc.validate()
 

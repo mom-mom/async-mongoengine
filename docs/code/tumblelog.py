@@ -1,3 +1,5 @@
+import asyncio
+
 from mongoengine import *
 
 connect("tumblelog")
@@ -36,42 +38,47 @@ class LinkPost(Post):
     link_url = StringField()
 
 
-Post.drop_collection()
+async def main():
+    await Post.drop_collection()
 
-john = User(email="jdoe@example.com", first_name="John", last_name="Doe")
-john.save()
+    john = User(email="jdoe@example.com", first_name="John", last_name="Doe")
+    await john.save()
 
-post1 = TextPost(title="Fun with MongoEngine", author=john)
-post1.content = "Took a look at MongoEngine today, looks pretty cool."
-post1.tags = ["mongodb", "mongoengine"]
-post1.save()
+    post1 = TextPost(title="Fun with MongoEngine", author=john)
+    post1.content = "Took a look at MongoEngine today, looks pretty cool."
+    post1.tags = ["mongodb", "mongoengine"]
+    await post1.save()
 
-post2 = LinkPost(title="MongoEngine Documentation", author=john)
-post2.link_url = "http://tractiondigital.com/labs/mongoengine/docs"
-post2.tags = ["mongoengine"]
-post2.save()
+    post2 = LinkPost(title="MongoEngine Documentation", author=john)
+    post2.link_url = "http://tractiondigital.com/labs/mongoengine/docs"
+    post2.tags = ["mongoengine"]
+    await post2.save()
 
-print("ALL POSTS")
-print()
-for post in Post.objects:
-    print(post.title)
-    # print '=' * post.title.count()
-    print("=" * 20)
-
-    if isinstance(post, TextPost):
-        print(post.content)
-
-    if isinstance(post, LinkPost):
-        print("Link:", post.link_url)
-
+    print("ALL POSTS")
     print()
-print()
+    async for post in Post.objects:
+        print(post.title)
+        # print '=' * post.title.count()
+        print("=" * 20)
 
-print("POSTS TAGGED 'MONGODB'")
-print()
-for post in Post.objects(tags="mongodb"):
-    print(post.title)
-print()
+        if isinstance(post, TextPost):
+            print(post.content)
 
-num_posts = Post.objects(tags="mongodb").count()
-print('Found %d posts with tag "mongodb"' % num_posts)
+        if isinstance(post, LinkPost):
+            print("Link:", post.link_url)
+
+        print()
+    print()
+
+    print("POSTS TAGGED 'MONGODB'")
+    print()
+    async for post in Post.objects(tags="mongodb"):
+        print(post.title)
+    print()
+
+    num_posts = await Post.objects(tags="mongodb").count()
+    print('Found %d posts with tag "mongodb"' % num_posts)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -2,12 +2,12 @@
 Tutorial
 ========
 
-This tutorial introduces **MongoEngine** by means of example --- we will walk
-through how to create a simple **Tumblelog** application. A tumblelog is a
+This tutorial introduces **async-mongoengine** by means of example --- we will
+walk through how to create a simple **Tumblelog** application. A tumblelog is a
 blog that supports mixed media content, including text, images, links, video,
 audio, etc. For simplicity's sake, we'll stick to text, image, and link
-entries. As the purpose of this tutorial is to introduce MongoEngine, we'll
-focus on the data-modelling side of the application, leaving out a user
+entries. As the purpose of this tutorial is to introduce async-mongoengine,
+we'll focus on the data-modelling side of the application, leaving out a user
 interface.
 
 Getting started
@@ -15,15 +15,15 @@ Getting started
 
 Before we start, make sure that a copy of MongoDB is running in an accessible
 location --- running it locally will be easier, but if that is not an option
-then it may be run on a remote server. If you haven't installed MongoEngine,
-simply use pip to install it like so::
+then it may be run on a remote server. If you haven't installed
+async-mongoengine, simply use pip to install it like so::
 
-    $ python -m pip install mongoengine
+    $ python -m pip install async-mongoengine
 
-Before we can start using MongoEngine, we need to tell it how to connect to our
-instance of :program:`mongod`. For this we use the :func:`~mongoengine.connect`
-function. If running locally, the only argument we need to provide is the name
-of the MongoDB database to use::
+Before we can start using async-mongoengine, we need to tell it how to connect
+to our instance of :program:`mongod`. For this we use the
+:func:`~mongoengine.connect` function. The ``connect()`` call remains
+synchronous --- only database operations require ``await``::
 
     from mongoengine import *
 
@@ -57,7 +57,9 @@ Users
 -----
 
 Just as if we were using a relational database with an ORM, we need to define
-which fields a :class:`User` may have, and what types of data they might store::
+which fields a :class:`User` may have, and what types of data they might store.
+Document class and field definitions remain synchronous --- no ``async``
+needed here::
 
     class User(Document):
         email = StringField(required=True)
@@ -94,9 +96,9 @@ video posts, we don't have to modify the collection at all, we just *start
 using* the new fields we need to support video posts. This fits with the
 Object-Oriented principle of *inheritance* nicely. We can think of
 :class:`Post` as a base class, and :class:`TextPost`, :class:`ImagePost` and
-:class:`LinkPost` as subclasses of :class:`Post`. In fact, MongoEngine supports
-this kind of modeling out of the box --- all you need do is turn on inheritance
-by setting :attr:`allow_inheritance` to True in the :attr:`meta`::
+:class:`LinkPost` as subclasses of :class:`Post`. In fact, async-mongoengine
+supports this kind of modeling out of the box --- all you need do is turn on
+inheritance by setting :attr:`allow_inheritance` to True in the :attr:`meta`::
 
     class Post(Document):
         title = StringField(max_length=120, required=True)
@@ -116,7 +118,14 @@ by setting :attr:`allow_inheritance` to True in the :attr:`meta`::
 We are storing a reference to the author of the posts using a
 :class:`~mongoengine.fields.ReferenceField` object. These are similar to foreign key
 fields in traditional ORMs, and are automatically translated into references
-when they are saved, and dereferenced when they are loaded.
+when they are saved.
+
+.. note::
+    In async-mongoengine, ``ReferenceField`` does **not** auto-dereference on
+    access. Reading ``post.author`` returns a raw ``DBRef`` or ``ObjectId``.
+    To get the referenced document, query explicitly::
+
+        author = await User.objects.get(pk=post.author.id)
 
 Tags
 ^^^^
@@ -154,9 +163,9 @@ separately from their associated posts, other than to work around the
 relational model. Using MongoDB we can store the comments as a list of
 *embedded documents* directly on a post document. An embedded document should
 be treated no differently than a regular document; it just doesn't have its own
-collection in the database. Using MongoEngine, we can define the structure of
-embedded documents, along with utility methods, in exactly the same way we do
-with regular documents::
+collection in the database. Using async-mongoengine, we can define the
+structure of embedded documents, along with utility methods, in exactly the
+same way we do with regular documents::
 
     class Comment(EmbeddedDocument):
         content = StringField()
@@ -193,10 +202,11 @@ See :class:`~mongoengine.fields.ReferenceField` for more information.
 Adding data to our Tumblelog
 ============================
 Now that we've defined how our documents will be structured, let's start adding
-some documents to the database. Firstly, we'll need to create a :class:`User`
-object::
+some documents to the database. Since all database operations are async, we
+need to use ``await``. Firstly, we'll need to create a :class:`User` object::
 
-    ross = User(email='ross@example.com', first_name='Ross', last_name='Lawley').save()
+    ross = User(email='ross@example.com', first_name='Ross', last_name='Lawley')
+    await ross.save()
 
 .. note::
     We could have also defined our user using attribute syntax::
@@ -204,7 +214,7 @@ object::
         ross = User(email='ross@example.com')
         ross.first_name = 'Ross'
         ross.last_name = 'Lawley'
-        ross.save()
+        await ross.save()
 
 Assign another user to a variable called ``john``, just like we did above with
 ``ross``.
@@ -214,15 +224,15 @@ Now that we've got our users in the database, let's add a couple of posts::
     post1 = TextPost(title='Fun with MongoEngine', author=john)
     post1.content = 'Took a look at MongoEngine today, looks pretty cool.'
     post1.tags = ['mongodb', 'mongoengine']
-    post1.save()
+    await post1.save()
 
     post2 = LinkPost(title='MongoEngine Documentation', author=ross)
     post2.link_url = 'http://docs.mongoengine.com/'
     post2.tags = ['mongoengine']
-    post2.save()
+    await post2.save()
 
 .. note:: If you change a field on an object that has already been saved and
-    then call :meth:`save` again, the document will be updated.
+    then call ``await obj.save()`` again, the document will be updated.
 
 Accessing our data
 ==================
@@ -231,9 +241,10 @@ So now we've got a couple of posts in our database, how do we display them?
 Each document class (i.e. any class that inherits either directly or indirectly
 from :class:`~mongoengine.Document`) has an :attr:`objects` attribute, which is
 used to access the documents in the database collection associated with that
-class. So let's see how we can get our posts' titles::
+class. Iteration over querysets uses ``async for``. So let's see how we can get
+our posts' titles::
 
-    for post in Post.objects:
+    async for post in Post.objects:
         print(post.title)
 
 Retrieving type-specific information
@@ -243,7 +254,7 @@ This will print the titles of our posts, one on each line. But what if we want
 to access the type-specific data (link_url, content, etc.)? One way is simply
 to use the :attr:`objects` attribute of a subclass of :class:`Post`::
 
-    for post in TextPost.objects:
+    async for post in TextPost.objects:
         print(post.content)
 
 Using TextPost's :attr:`objects` attribute only returns documents that were
@@ -260,7 +271,7 @@ instances of :class:`Post` --- they were instances of the subclass of
 :class:`Post` that matches the post's type. Let's look at how this works in
 practice::
 
-    for post in Post.objects:
+    async for post in Post.objects:
         print(post.title)
         print('=' * len(post.title))
 
@@ -282,21 +293,21 @@ database only when you need the data. It may also be filtered to narrow down
 your query.  Let's adjust our query so that only posts with the tag "mongodb"
 are returned::
 
-    for post in Post.objects(tags='mongodb'):
+    async for post in Post.objects(tags='mongodb'):
         print(post.title)
 
 There are also methods available on :class:`~mongoengine.queryset.QuerySet`
 objects that allow different results to be returned, for example, calling
-:meth:`first` on the :attr:`objects` attribute will return a single document,
-the first matched by the query you provide. Aggregation functions may also be
-used on :class:`~mongoengine.queryset.QuerySet` objects::
+``await qs.first()`` on the :attr:`objects` attribute will return a single
+document, the first matched by the query you provide. Aggregation functions may
+also be used on :class:`~mongoengine.queryset.QuerySet` objects::
 
-    num_posts = Post.objects(tags='mongodb').count()
+    num_posts = await Post.objects(tags='mongodb').count()
     print('Found {} posts with tag "mongodb"'.format(num_posts))
 
-Learning more about MongoEngine
--------------------------------
+Learning more about async-mongoengine
+--------------------------------------
 
 If you got this far you've made a great start, so well done! The next step on
-your MongoEngine journey is the `full user guide <guide/index.html>`_, where
-you can learn in-depth about how to use MongoEngine and MongoDB.
+your async-mongoengine journey is the `full user guide <guide/index.html>`_,
+where you can learn in-depth about how to use async-mongoengine and MongoDB.

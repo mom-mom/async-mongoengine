@@ -47,9 +47,9 @@ be saved ::
     # Create a new page and add tags
     >>> page = Page(title='Using MongoEngine')
     >>> page.tags = ['mongodb', 'mongoengine']
-    >>> page.save()
+    >>> await page.save()
 
-    >>> Page.objects(tags='mongoengine').count()
+    >>> await Page.objects(tags='mongoengine').count()
     >>> 1
 
 .. note::
@@ -120,13 +120,13 @@ arguments can be set on all fields:
                 page_number = IntField(db_field="pageNumber")
 
             # Create a Page and save it
-            Page(page_number=1).save()
+            await Page(page_number=1).save()
 
             # How 'pageNumber' is stored in MongoDB
-            Page.objects.as_pymongo() # [{'_id': ObjectId('629dfc45ee4cc407b1586b1f'), 'pageNumber': 1}]
+            [doc async for doc in Page.objects.as_pymongo()] # [{'_id': ObjectId('629dfc45ee4cc407b1586b1f'), 'pageNumber': 1}]
 
             # Retrieve the object
-            page: Page = Page.objects.first()
+            page: Page = await Page.objects.first()
 
             print(page.page_number)  # prints 1
 
@@ -275,7 +275,7 @@ store; in this situation a :class:`~mongoengine.fields.DictField` is appropriate
     survey_response = SurveyResponse(date=datetime.utcnow(), user=request.user)
     response_form = ResponseForm(request.POST)
     survey_response.answers = response_form.cleaned_data()
-    survey_response.save()
+    await survey_response.save()
 
 Dictionaries can store complex data, other dictionaries, lists, references to
 other objects, so are the most flexible field type available.
@@ -295,11 +295,11 @@ field::
         author = ReferenceField(User)
 
     john = User(name="John Smith")
-    john.save()
+    await john.save()
 
     post = Page(content="Test Page")
     post.author = john
-    post.save()
+    await post.save()
 
 The :class:`User` object is automatically turned into a reference behind the
 scenes, and dereferenced when the :class:`Page` object is retrieved.
@@ -335,11 +335,11 @@ instance of the object to the query::
         content = StringField()
         authors = ListField(ReferenceField(User))
 
-    bob = User(name="Bob Jones").save()
-    john = User(name="John Smith").save()
+    bob = await User(name="Bob Jones").save()
+    john = await User(name="John Smith").save()
 
-    Page(content="Test Page", authors=[bob, john]).save()
-    Page(content="Another Page", authors=[john]).save()
+    await Page(content="Test Page", authors=[bob, john]).save()
+    await Page(content="Another Page", authors=[john]).save()
 
     # Find all pages Bob authored
     Page.objects(authors__in=[bob])
@@ -425,13 +425,13 @@ kind of :class:`~mongoengine.Document`, and hence doesn't take a
         bookmark_object = GenericReferenceField()
 
     link = Link(url='http://hmarr.com/mongoengine/')
-    link.save()
+    await link.save()
 
     post = Post(title='Using MongoEngine')
-    post.save()
+    await post.save()
 
-    Bookmark(bookmark_object=link).save()
-    Bookmark(bookmark_object=post).save()
+    await Bookmark(bookmark_object=link).save()
+    await Bookmark(bookmark_object=post).save()
 
 .. note::
 
@@ -734,17 +734,17 @@ subsequent calls to :meth:`~mongoengine.queryset.QuerySet.order_by`. ::
     blog_post_3 = BlogPost(title="Blog Post #3")
     blog_post_3.published_date = datetime(2010, 1, 7, 0, 0 ,0)
 
-    blog_post_1.save()
-    blog_post_2.save()
-    blog_post_3.save()
+    await blog_post_1.save()
+    await blog_post_2.save()
+    await blog_post_3.save()
 
     # get the "first" BlogPost using default ordering
     # from BlogPost.meta.ordering
-    latest_post = BlogPost.objects.first()
+    latest_post = await BlogPost.objects.first()
     assert latest_post.title == "Blog Post #3"
 
     # override default ordering, order BlogPosts by "published_date"
-    first_post = BlogPost.objects.order_by("+published_date").first()
+    first_post = await BlogPost.objects.order_by("+published_date").first()
     assert first_post.title == "Blog Post #1"
 
 Shard keys
@@ -809,16 +809,16 @@ Behind the scenes, MongoEngine deals with inheritance by adding a :attr:`_cls` a
 the class name in every documents. When a document is loaded, MongoEngine checks
 it's :attr:`_cls` attribute and use that class to construct the instance.::
 
-    Page(title='a funky title').save()
-    DatedPage(title='another title', date=datetime.utcnow()).save()
+    await Page(title='a funky title').save()
+    await DatedPage(title='another title', date=datetime.utcnow()).save()
 
-    print(Page.objects().count())         # 2
-    print(DatedPage.objects().count())    # 1
+    print(await Page.objects().count())         # 2
+    print(await DatedPage.objects().count())    # 1
 
     # print documents in their native form
     # we remove 'id' to avoid polluting the output with unnecessary detail
     qs = Page.objects.exclude('id').as_pymongo()
-    print(list(qs))
+    print([doc async for doc in qs])
     # [
     #   {'_cls': u 'Page', 'title': 'a funky title'},
     #   {'_cls': u 'Page.DatedPage', 'title': u 'another title', 'date': datetime.datetime(2019, 12, 13, 20, 16, 59, 993000)}

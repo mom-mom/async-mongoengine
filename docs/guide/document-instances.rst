@@ -24,9 +24,9 @@ If the document does not exist in the database, it will be created. If it does
 already exist, then any changes will be updated atomically.  For example::
 
     >>> page = Page(title="Test Page")
-    >>> page.save()  # Performs an insert
+    >>> await page.save()  # Performs an insert
     >>> page.title = "My Page"
-    >>> page.save()  # Performs an atomic set on the title field.
+    >>> await page.save()  # Performs an atomic set on the title field.
 
 .. note::
 
@@ -35,7 +35,7 @@ already exist, then any changes will be updated atomically.  For example::
     * ``list_field.push(0)`` --- *sets* the resulting list
     * ``del(list_field)``   --- *unsets* whole list
 
-    With lists its preferable to use ``Doc.update(push__list_field=0)`` as
+    With lists its preferable to use ``await Doc.update(push__list_field=0)`` as
     this stops the whole list being updated --- stopping any race conditions.
 
 .. seealso::
@@ -66,7 +66,7 @@ saved::
 
     >>> page = Page(title="Test Page")
     >>> page.id
-    >>> page.save()
+    >>> await page.save()
     >>> page.id
     ObjectId('123456789abcdef000000000')
 
@@ -81,7 +81,7 @@ you may still use :attr:`id` to access the primary key if you want::
     ...     name = StringField()
     ...
     >>> bob = User(email='bob@example.com', name='Bob')
-    >>> bob.save()
+    >>> await bob.save()
     >>> bob.id == bob.email == 'bob@example.com'
     True
 
@@ -89,7 +89,7 @@ You can also access the document's "primary key" using the :attr:`pk` field,
 it's an alias to :attr:`id`::
 
     >>> page = Page(title="Another Test Page")
-    >>> page.save()
+    >>> await page.save()
     >>> page.id == page.pk
     True
 

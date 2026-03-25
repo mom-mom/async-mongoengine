@@ -27,10 +27,10 @@ out of the box. Validation runs when calling `.validate()` or `.save()`
 
     user = User(email='invalid@', age=24)
     user.validate()     # raises ValidationError (Invalid email address: ['email'])
-    user.save()         # raises ValidationError (Invalid email address: ['email'])
+    await user.save()   # raises ValidationError (Invalid email address: ['email'])
 
     user2 = User(email='john.doe@garbage.com', age=1000)
-    user2.save()        # raises ValidationError (Integer value is too large: ['age'])
+    await user2.save()  # raises ValidationError (Integer value is too large: ['age'])
 
 Custom validation
 =================
@@ -48,8 +48,8 @@ The following feature can be used to customize the validation:
     class Person(Document):
         full_name = StringField(validation=not_john_doe)
 
-    Person(full_name='Billy Doe').save()
-    Person(full_name='John Doe').save()  # raises ValidationError (John Doe is not a valid name)
+    await Person(full_name='Billy Doe').save()
+    await Person(full_name='John Doe').save()  # raises ValidationError (John Doe is not a valid name)
 
 
 * Document `clean` method
@@ -94,9 +94,9 @@ to subclass a Field and encapsulate some validation by overriding the `validate`
     class Person(Document):
         age = AgeField(min_value=0, max_value=99)
 
-    Person(age=20).save()   # passes
-    Person(age=1000).save() # raises ValidationError (Integer value is too large: ['age'])
-    Person(age=60).save()   # raises ValidationError (Person:None) (60 is not allowed: ['age'])
+    await Person(age=20).save()   # passes
+    await Person(age=1000).save() # raises ValidationError (Integer value is too large: ['age'])
+    await Person(age=60).save()   # raises ValidationError (Person:None) (60 is not allowed: ['age'])
 
 
 .. note::
@@ -115,8 +115,8 @@ the validation and cleaning of a document when you call :meth:`~mongoengine.docu
     class Person(Document):
         age = IntField(max_value=100)
 
-    Person(age=1000).save()    # raises ValidationError (Integer value is too large)
+    await Person(age=1000).save()    # raises ValidationError (Integer value is too large)
 
-    Person(age=1000).save(validate=False)
-    person = Person.objects.first()
+    await Person(age=1000).save(validate=False)
+    person = await Person.objects.first()
     assert person.age == 1000
