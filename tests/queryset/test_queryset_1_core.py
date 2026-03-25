@@ -29,10 +29,6 @@ from tests.utils import (
 from tests.utils import MongoDBTestCase
 
 
-def get_key_compat():
-    return ("sort", "command")
-
-
 class TestQueryset1(MongoDBTestCase):
     def setup_method(self, method=None):
         class PersonMeta(EmbeddedDocument):

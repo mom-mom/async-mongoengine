@@ -29,10 +29,6 @@ from tests.utils import (
 from tests.utils import MongoDBTestCase
 
 
-def get_key_compat():
-    return ("sort", "command")
-
-
 class TestQueryset6(MongoDBTestCase):
     def setup_method(self, method=None):
         class PersonMeta(EmbeddedDocument):
@@ -778,7 +774,7 @@ class TestQueryset6(MongoDBTestCase):
 
 
     async def test_bool_with_ordering(self):
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat()
+        ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class Person(Document):
             name = StringField()
@@ -814,7 +810,7 @@ class TestQueryset6(MongoDBTestCase):
 
 
     async def test_bool_with_ordering_from_meta_dict(self):
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat()
+        ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class Person(Document):
             name = StringField()

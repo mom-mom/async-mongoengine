@@ -106,9 +106,8 @@ Before: pre_save → validate → to_mongo(id) → to_mongo() → init_collectio
 After:  pre_save → _generate_async_fields (재귀) → validate → to_mongo(id) → to_mongo() → init_collection → DB write
 ```
 
-- **`_generate_async_fields(doc)`**: 모듈 레벨 async 함수. document와 모든 embedded sub-document를 재귀 순회하며 SequenceField 값 생성 + FileField pending flush 처리.
+- **`_generate_async_fields(doc)`**: 모듈 레벨 async 함수. document와 모든 embedded sub-document를 재귀 순회하며 SequenceField 값 생성.
 - **SequenceField**: `_auto_gen = True` 유지 (validation required-field 면제). `to_mongo()`의 sync `_auto_gen` 경로는 `inspect.iscoroutinefunction(field.generate)` 가드로 건너뜀. 실제 생성은 `_generate_async_fields()`에서 수행.
-- **FileField**: `__set__`에서 deferred된 `_pending_value`를 `_generate_async_fields()`에서 flush.
 - 이 단계가 `validate()` 보다 **앞**에 위치하여 SequenceField(primary_key=True) 필드도 validation 전에 값이 채워짐.
 - embedded document 안의 SequenceField도 재귀적으로 처리.
 
@@ -170,16 +169,6 @@ doc.object  # sync property, 내부에서 with_id() 호출
 await doc.get_object()  # async 메서드만 존재
 ```
 
-### `delete()` 내 FileField 처리
-
-```python
-# Before
-getattr(self, name).delete()  # sync
-
-# After
-await getattr(self, name).delete()  # async
-```
-
 ---
 
 ## 4. QuerySet (`mongoengine/queryset/base.py`, `queryset.py`)
@@ -206,7 +195,6 @@ await qs.explain()
 await qs.to_json(...)
 await qs.aggregate(pipeline, **kwargs)
 await qs.map_reduce(map_f, reduce_f, output, ...)
-await qs.exec_js(code, *fields, **options)
 await qs.sum(field)
 await qs.average(field)
 await qs.item_frequencies(field, normalize=False, map_reduce=True)
@@ -399,52 +387,7 @@ doc.seq = await MyDoc.seq.generate()
 # After: _ref가 있으면 raw dict 그대로 반환 (dereference 안 함)
 ```
 
-### 5.8 FileField / GridFSProxy
-
-#### GridFSProxy — `def` → `async def`
-
-```python
-await proxy.get()
-await proxy.new_file(**kwargs)
-await proxy.put(file_obj, **kwargs)
-await proxy.write(string)
-await proxy.writelines(lines)
-await proxy.read(**kwargs)
-await proxy.delete()
-await proxy.replace(file_obj, **kwargs)
-await proxy.close()
-```
-
-#### GridFSProxy — 기타 변경
-
-| 항목 | Before | After |
-|---|---|---|
-| `fs` property | `gridfs.GridFS(...)` | `AsyncGridFS(...)` |
-| `__getattr__` | `self.get()` 호출 → gridout 위임 | gridout이 이미 fetch된 경우만 위임, 아니면 AttributeError |
-| `__str__` | `self.get()` 후 filename 접근 | `self.gridout`가 있으면 filename, 없으면 `"<no file>"` |
-
-#### FileField.__set__ 변경
-
-```python
-# Before: __set__에서 바로 grid_file.delete() + grid_file.put(value) 호출
-# After: _pending_value에 저장만 하고 save() 시점에 flush
-```
-
-#### ImageGridFsProxy — `@property` → `async def`
-
-```python
-# Before
-proxy.size       # @property
-proxy.format     # @property
-proxy.thumbnail  # @property
-
-# After
-await proxy.get_size()
-await proxy.get_format()
-await proxy.get_thumbnail()
-```
-
-### 5.9 EmbeddedDocumentList (`mongoengine/base/datastructures.py`)
+### 5.8 EmbeddedDocumentList (`mongoengine/base/datastructures.py`)
 
 ```python
 # Before
@@ -554,7 +497,6 @@ await DeReference()(items, max_depth=1, instance=None, name=None)  # async
 | CachedReferenceField.sync_all() | 제거됨 (async 버전 미구현) |
 | SequenceField auto-generate in `__get__`/`__set__` | descriptor에서 async 호출 불가, save() 시 자동 생성 |
 | LazyReference passthrough | `__getattr__`에서 async fetch 불가 |
-| FileField `__set__` 즉시 업로드 | descriptor에서 async 호출 불가, save() 시 flush |
 | `QuerySet.__bool__()` | async 불가, TypeError 발생으로 변경 |
 | `QuerySet.__getitem__(int)` | async 불가, TypeError 발생으로 변경 |
 | `QuerySet.__len__()` | async 불가, 제거 |
@@ -624,12 +566,7 @@ assert doc.seq == 1           →  doc = MyDoc()
                                   await doc.save()
                                   assert doc.seq == 1
 
-# 12. ImageGridFsProxy properties
-proxy.size                    →  await proxy.get_size()
-proxy.format                  →  await proxy.get_format()
-proxy.thumbnail               →  await proxy.get_thumbnail()
-
-# 13. MapReduceDocument
+# 12. MapReduceDocument
 doc.object                    →  await doc.get_object()
 
 # 14. map_reduce (반환 타입)

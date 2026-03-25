@@ -29,10 +29,6 @@ from tests.utils import (
 from tests.utils import MongoDBTestCase
 
 
-def get_key_compat():
-    return ("sort", "command")
-
-
 class TestQueryset2(MongoDBTestCase):
     def setup_method(self, method=None):
         class PersonMeta(EmbeddedDocument):
@@ -608,7 +604,7 @@ class TestQueryset2(MongoDBTestCase):
         """Ensure that the default ordering can be cleared by calling
             order_by() w/o any arguments.
             """
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat()
+        ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class BlogPost(Document):
             title = StringField()
@@ -650,7 +646,7 @@ class TestQueryset2(MongoDBTestCase):
 
     async def test_no_ordering_for_get(self):
         """Ensure that Doc.objects.get doesn't use any ordering."""
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat()
+        ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class BlogPost(Document):
             title = StringField()

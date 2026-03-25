@@ -79,13 +79,11 @@ are as follows:
 * :class:`~mongoengine.fields.EmbeddedDocumentField`
 * :class:`~mongoengine.fields.EmbeddedDocumentListField`
 * :class:`~mongoengine.fields.EnumField`
-* :class:`~mongoengine.fields.FileField`
 * :class:`~mongoengine.fields.FloatField`
 * :class:`~mongoengine.fields.GenericEmbeddedDocumentField`
 * :class:`~mongoengine.fields.GenericReferenceField`
 * :class:`~mongoengine.fields.GenericLazyReferenceField`
 * :class:`~mongoengine.fields.GeoPointField`
-* :class:`~mongoengine.fields.ImageField`
 * :class:`~mongoengine.fields.IntField`
 * :class:`~mongoengine.fields.ListField`
 * :class:`~mongoengine.fields.MapField`

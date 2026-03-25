@@ -29,10 +29,6 @@ from tests.utils import (
 from tests.utils import MongoDBTestCase
 
 
-def get_key_compat():
-    return ("sort", "command")
-
-
 class TestQueryset3(MongoDBTestCase):
     def setup_method(self, method=None):
         class PersonMeta(EmbeddedDocument):
@@ -864,7 +860,7 @@ class TestQueryset3(MongoDBTestCase):
 
     async def test_comment(self):
         """Make sure adding a comment to the query gets added to the query"""
-        _, CMD_QUERY_KEY = get_key_compat()
+        _, CMD_QUERY_KEY = "sort", "command"
         QUERY_KEY = "filter"
         COMMENT_KEY = "comment"
 
