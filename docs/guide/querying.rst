@@ -530,28 +530,6 @@ references to the depth of 1 level.  If you have more complicated documents and
 want to dereference more of the object at once then increasing the :attr:`max_depth`
 will dereference more levels of the document.
 
-Turning off dereferencing
--------------------------
-
-Sometimes for performance reasons you don't want to automatically dereference
-data. To turn off dereferencing of the results of a query use
-:func:`~mongoengine.queryset.QuerySet.no_dereference` on the queryset like so::
-
-    post = await Post.objects.no_dereference().first()
-    assert(isinstance(post.author, DBRef))
-
-You can also turn off all dereferencing for a fixed period by using the
-:class:`~mongoengine.context_managers.no_dereference` context manager::
-
-    with no_dereference(Post):
-        post = await Post.objects.first()
-        assert(isinstance(post.author, DBRef))
-
-.. note::
-
-    ``no_dereference`` remains a sync context manager (no ``async with`` needed).
-
-
 Advanced queries
 ================
 

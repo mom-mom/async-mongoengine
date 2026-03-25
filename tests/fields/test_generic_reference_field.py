@@ -228,9 +228,9 @@ class TestField(MongoDBTestCase):
         with pytest.raises(ValidationError):
             bm.validate()
 
-    async def test_generic_reference_choices_no_dereference(self):
+    async def test_generic_reference_choices_with_raw_dbref(self):
         """Ensure that a GenericReferenceField can handle choices on
-        non-derefenreced (i.e. DBRef) elements
+        raw DBRef elements
         """
 
         class Post(Document):

@@ -217,7 +217,7 @@ await qs.get_item(index)     # New
 
 ### Unchanged (remain sync — chaining methods that return QuerySet)
 
-`filter()`, `__call__()`, `all()`, `order_by()`, `limit()`, `skip()`, `hint()`, `collation()`, `batch_size()`, `only()`, `exclude()`, `fields()`, `all_fields()`, `search_text()`, `scalar()`, `values_list()`, `as_pymongo()`, `max_time_ms()`, `comment()`, `no_dereference()`, `no_sub_classes()`, `clear_cls_query()`, `none()`, `timeout()`, `allow_disk_use()`, `read_preference()`, `read_concern()`, `where()`, `clone()`, `no_cache()`, `cache()`
+`filter()`, `__call__()`, `all()`, `order_by()`, `limit()`, `skip()`, `hint()`, `collation()`, `batch_size()`, `only()`, `exclude()`, `fields()`, `all_fields()`, `search_text()`, `scalar()`, `values_list()`, `as_pymongo()`, `max_time_ms()`, `comment()`, `no_sub_classes()`, `clear_cls_query()`, `none()`, `timeout()`, `allow_disk_use()`, `read_preference()`, `read_concern()`, `where()`, `clone()`, `no_cache()`, `cache()`
 
 ### Magic Method Changes
 
@@ -308,8 +308,11 @@ queryset = queryset_class(owner, owner._collection)
 | `exec_js()` | MongoDB `$eval` removed in 4.2 |
 | `snapshot()` | No-op since PyMongo 3+ |
 | `_item_frequencies_exec_js()` | Depended on `exec_js` |
+| `no_dereference()` | No-op without auto-dereference; removed |
 
 `item_frequencies()` no longer accepts a `map_reduce` parameter — it always uses the map_reduce implementation.
+
+`distinct()` on ReferenceField now returns raw stored values (ObjectId or DBRef) instead of dereferenced Document objects, consistent with the removal of auto-dereference.
 
 ---
 
@@ -448,7 +451,7 @@ await embedded_list.save()  # async def save(): await self._instance.save(...)
 
 ### Unchanged (remain sync)
 
-`no_dereference(cls)`, `no_sub_classes(cls)`, `set_write_concern(...)`, `set_read_write_concern(...)`
+`no_sub_classes(cls)`, `set_write_concern(...)`, `set_read_write_concern(...)`
 
 ### query_counter Comparison Magic Methods Removed
 
@@ -484,13 +487,6 @@ async with conn.start_session(**kwargs) as session:
     except Exception:
         await session.abort_transaction()
         raise
-```
-
-### no_dereference Internal Implementation
-
-```python
-# Before: threading.local based dict
-# After: contextvars.ContextVar based frozenset
 ```
 
 ---
@@ -581,6 +577,7 @@ signals.pre_save_async.connect(my_async_handler, sender=MyDoc)
 | Python < 3.13 support | Minimum version requirement |
 | MongoDB < 7.0 support | Minimum version requirement |
 | `get_connection(reconnect=True)` | Deprecated (prevents connection leaks) |
+| `no_dereference()` context manager / queryset method | Removed — auto-dereference is disabled; `distinct()` returns raw stored values (ObjectId or DBRef) |
 
 ---
 

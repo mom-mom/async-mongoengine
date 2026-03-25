@@ -1,5 +1,3 @@
-import contextlib
-import contextvars
 import operator
 import weakref
 
@@ -18,19 +16,6 @@ from mongoengine.errors import DeprecatedError, ValidationError
 __all__ = ("BaseField", "ComplexBaseField", "ObjectIdField", "GeoJsonBaseField")
 
 
-@contextlib.contextmanager
-def _no_dereference_for_fields(*fields):
-    """Context manager for temporarily disabling a Field's auto-dereferencing
-    (meant to be used from no_dereference context manager)"""
-    try:
-        for field in fields:
-            field._incr_no_dereference_context()
-        yield None
-    finally:
-        for field in fields:
-            field._decr_no_dereference_context()
-
-
 class BaseField:
     """A base class for fields in a MongoDB document. Instances of this class
     may be added to subclasses of `Document` to define a document's schema.
@@ -39,7 +24,6 @@ class BaseField:
     name = None  # set in TopLevelDocumentMetaclass
     _geo_index = False
     _auto_gen = False  # Call `generate` to generate a value
-    _no_deref_ctx = contextvars.ContextVar("_no_deref_ctx", default=0)
 
     # These track each time a Field instance is created. Used to retain order.
     # The auto_creation_counter is used for fields that MongoEngine implicitly
@@ -100,8 +84,6 @@ class BaseField:
         self.sparse = sparse
         self._owner_document = None
 
-        self.__auto_dereference = True
-
         # Make sure db_field is a string (if it's explicitly defined).
         if self.db_field is not None and not isinstance(self.db_field, str):
             raise TypeError("db_field should be a string.")
@@ -131,23 +113,6 @@ class BaseField:
         else:
             self.creation_counter = BaseField.creation_counter
             BaseField.creation_counter += 1
-
-    def set_auto_dereferencing(self, value):
-        self.__auto_dereference = value
-
-    @property
-    def _no_dereference_context_is_set(self):
-        return self._no_deref_ctx.get() > 0
-
-    def _incr_no_dereference_context(self):
-        self._no_deref_ctx.set(self._no_deref_ctx.get() + 1)
-
-    def _decr_no_dereference_context(self):
-        self._no_deref_ctx.set(self._no_deref_ctx.get() - 1)
-
-    @property
-    def _auto_dereference(self):
-        return self.__auto_dereference and not self._no_dereference_context_is_set
 
     def __get__(self, instance, owner):
         """Descriptor for retrieving a value from a field in a document."""
@@ -296,17 +261,6 @@ class ComplexBaseField(BaseField):
         self.field = field
         super().__init__(**kwargs)
 
-    @staticmethod
-    def _lazy_load_refs(instance, name, ref_values, *, max_depth):
-        _dereference = _import_class("DeReference")()
-        documents = _dereference(
-            ref_values,
-            max_depth=max_depth,
-            instance=instance,
-            name=name,
-        )
-        return documents
-
     def __set__(self, instance, value):
         # Some fields e.g EnumField are converted upon __set__
         # So it is fair to mimic the same behavior when using e.g ListField(EnumField)
@@ -320,12 +274,7 @@ class ComplexBaseField(BaseField):
         return super().__set__(instance, value)
 
     def __get__(self, instance, owner):
-        """Descriptor for ComplexBaseField access.
-
-        Auto-dereference is removed in async-mongoengine because DB I/O
-        cannot happen inside a sync ``__get__`` descriptor.  Use explicit
-        ``select_related()`` or manual fetching instead.
-        """
+        """Descriptor for ComplexBaseField access."""
         if instance is None:
             # Document class being used rather than a document object
             return self
@@ -369,7 +318,6 @@ class ComplexBaseField(BaseField):
                 return value
 
         if self.field:
-            self.field.set_auto_dereferencing(self._auto_dereference)
             value_dict = {key: self.field.to_python(item) for key, item in value.items()}
         else:
             Document = _import_class("Document")

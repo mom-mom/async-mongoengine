@@ -1,6 +1,7 @@
 import datetime
 
 import pytest
+from bson import DBRef
 
 from mongoengine import *
 from mongoengine.queryset import (
@@ -370,8 +371,30 @@ class TestQueryset4(MongoDBTestCase):
         foo = Foo(bar=bar)
         await foo.save()
 
-        assert await Foo.objects.distinct("bar") == [bar]
-        assert await Foo.objects.no_dereference().distinct("bar") == [bar.pk]
+        assert await Foo.objects.distinct("bar") == [bar.pk]
+
+    async def test_distinct_handles_references_dbref(self):
+        """Ensure distinct returns raw DBRef when dbref=True."""
+
+        class Bar(Document):
+            text = StringField()
+
+        class Foo(Document):
+            bar = ReferenceField(Bar, dbref=True)
+
+        await Bar.drop_collection()
+        await Foo.drop_collection()
+
+        bar = Bar(text="hi")
+        await bar.save()
+
+        foo = Foo(bar=bar)
+        await foo.save()
+
+        result = await Foo.objects.distinct("bar")
+        assert len(result) == 1
+        assert isinstance(result[0], DBRef)
+        assert result[0].id == bar.pk
 
     async def test_base_queryset_iter_raise_not_implemented(self):
         class Tmp(Document):
@@ -504,7 +527,7 @@ class TestQueryset4(MongoDBTestCase):
         foo = Foo(bar=bar)
         await foo.save()
 
-        assert await Foo.objects.distinct("bar") == [bar]
+        assert await Foo.objects.distinct("bar") == [bar.pk]
 
     async def test_distinct_handles_db_field(self):
         """Ensure that distinct resolves field name to db_field as expected."""
@@ -602,8 +625,7 @@ class TestQueryset4(MongoDBTestCase):
         foo = Foo(bar=bar_1, bar_lst=[bar_1, bar_2])
         await foo.save()
 
-        assert await Foo.objects.distinct("bar_lst") == [bar_1, bar_2]
-        assert await Foo.objects.no_dereference().distinct("bar_lst") == [bar_1.pk, bar_2.pk]
+        assert await Foo.objects.distinct("bar_lst") == [bar_1.pk, bar_2.pk]
 
     async def test_custom_manager(self):
         """Ensure that custom QuerySetManager instances work as expected."""

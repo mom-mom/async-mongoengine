@@ -146,7 +146,7 @@ class QuerySetNoCache(BaseQuerySet):
             if queryset._as_pymongo:
                 yield doc
             else:
-                result = queryset._document._from_son(doc, _auto_dereference=queryset._auto_dereference)
+                result = queryset._document._from_son(doc)
                 if queryset._scalar:
                     yield queryset._get_scalar(result)
                 else:
