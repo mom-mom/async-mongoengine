@@ -26,7 +26,21 @@ using native async/await. It is based on MongoEngine and uses PyMongo's built-in
 ## Installation
 
 ```shell
+# pip
 pip install git+https://github.com/mom-mom/async-mongoengine.git
+
+# uv
+uv pip install git+https://github.com/mom-mom/async-mongoengine.git
+
+# uv (add to project dependencies)
+uv add git+https://github.com/mom-mom/async-mongoengine.git
+```
+
+## Usage
+
+```python
+# Import — the package name is "mongoengine", not "async-mongoengine"
+from mongoengine import connect, Document, StringField
 ```
 
 ## Dependencies
