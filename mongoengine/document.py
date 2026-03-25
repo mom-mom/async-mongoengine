@@ -450,6 +450,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             raise InvalidDocumentError("Cannot save an abstract document.")
 
         signals.pre_save.send(self.__class__, document=self, **signal_kwargs)
+        await signals.pre_save_async.send_async(self.__class__, document=self, **signal_kwargs)
 
         if write_concern is None:
             write_concern = {}
@@ -468,6 +469,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         created = "_id" not in doc_id or self._created or force_insert
 
         signals.pre_save_post_validation.send(self.__class__, document=self, created=created, **signal_kwargs)
+        await signals.pre_save_post_validation_async.send_async(self.__class__, document=self, created=created, **signal_kwargs)
         # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
         doc = self.to_mongo()
 
@@ -520,6 +522,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             self[id_field] = self._fields[id_field].to_python(object_id)
 
         signals.post_save.send(self.__class__, document=self, created=created, **signal_kwargs)
+        await signals.post_save_async.send_async(self.__class__, document=self, created=created, **signal_kwargs)
 
         self._clear_changed_fields()
         self._created = False
@@ -708,6 +711,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         signal_kwargs = signal_kwargs or {}
         signals.pre_delete.send(self.__class__, document=self, **signal_kwargs)
+        await signals.pre_delete_async.send_async(self.__class__, document=self, **signal_kwargs)
 
         try:
             await self._qs.filter(**self._object_key).delete(write_concern=write_concern, _from_doc_delete=True)
@@ -715,6 +719,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             message = f"Could not delete document ({err.args})"
             raise OperationError(message)
         signals.post_delete.send(self.__class__, document=self, **signal_kwargs)
+        await signals.post_delete_async.send_async(self.__class__, document=self, **signal_kwargs)
 
     async def switch_db(self, db_alias, keep_created=True):
         """

@@ -359,6 +359,7 @@ class BaseQuerySet:
             await _generate_async_fields(doc)
 
         signals.pre_bulk_insert.send(self._document, documents=docs, **signal_kwargs)
+        await signals.pre_bulk_insert_async.send_async(self._document, documents=docs, **signal_kwargs)
 
         raw = [doc.to_mongo() for doc in docs]
 
@@ -392,11 +393,13 @@ class BaseQuerySet:
 
         if not load_bulk:
             signals.post_bulk_insert.send(self._document, documents=docs, loaded=False, **signal_kwargs)
+            await signals.post_bulk_insert_async.send_async(self._document, documents=docs, loaded=False, **signal_kwargs)
             return ids[0] if return_one else ids
 
         documents = await self.in_bulk(ids)
         results = [documents.get(obj_id) for obj_id in ids]
         signals.post_bulk_insert.send(self._document, documents=results, loaded=True, **signal_kwargs)
+        await signals.post_bulk_insert_async.send_async(self._document, documents=results, loaded=True, **signal_kwargs)
         return results[0] if return_one else results
 
     async def count(self, with_limit_and_skip=False):
@@ -458,7 +461,10 @@ class BaseQuerySet:
         # Handle deletes where skips or limits have been applied or
         # there is an untriggered delete signal
         has_delete_signal = signals.signals_available and (
-            signals.pre_delete.has_receivers_for(doc) or signals.post_delete.has_receivers_for(doc)
+            signals.pre_delete.has_receivers_for(doc)
+            or signals.post_delete.has_receivers_for(doc)
+            or signals.pre_delete_async.has_receivers_for(doc)
+            or signals.post_delete_async.has_receivers_for(doc)
         )
 
         call_document_delete = (queryset._skip or queryset._limit or has_delete_signal) and not _from_doc_delete
