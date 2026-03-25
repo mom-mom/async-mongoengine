@@ -135,11 +135,6 @@ class TestDictField(MongoDBTestCase):
         }
         assert doc.field == expected
 
-        # _ = await Doc.objects.first()
-        # assert Doc.field._auto_dereference is False   # Fails, bug #2831
-        # doc = Doc(field=doc_dump_as_dict)
-        # assert isinstance(doc.field, dict) # Fails, bug #2831
-
     async def test_dictfield_dump_document_no_inheritance(self):
         """Ensure a DictField can handle another document's dump."""
 

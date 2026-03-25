@@ -753,7 +753,7 @@ class BaseDocument:
         return cls._meta.get("collection", None)
 
     @classmethod
-    def _from_son(cls, son, _auto_dereference=True, created=False):
+    def _from_son(cls, son, created=False):
         """Create an instance of a Document (subclass) from a PyMongo SON (dict)"""
         if son and not isinstance(son, dict):
             raise ValueError(f"The source SON object needs to be of type 'dict' but a '{type(son)}' was found")
