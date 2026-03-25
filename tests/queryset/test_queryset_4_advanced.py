@@ -12,7 +12,6 @@ from mongoengine import *
 from mongoengine.connection import get_db
 from mongoengine.context_managers import query_counter, switch_db
 from mongoengine.errors import InvalidQueryError
-from mongoengine.mongodb_support import MONGODB_36
 from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
     DoesNotExist,
@@ -25,19 +24,9 @@ from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
     db_ops_tracker,
     get_as_pymongo,
-    requires_mongodb_gte_42,
-    requires_mongodb_gte_44,
-    requires_mongodb_lt_42,
 )
 
 from tests.utils import MongoDBTestCase
-
-
-
-def get_key_compat(mongo_ver):
-    ORDER_BY_KEY = "sort"
-    CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
-    return ORDER_BY_KEY, CMD_QUERY_KEY
 
 
 class TestQueryset4(MongoDBTestCase):
@@ -89,10 +78,8 @@ class TestQueryset4(MongoDBTestCase):
             assert f["watch"] == 2
             assert f["film"] == 1
 
-        exec_js = await BlogPost.objects.item_frequencies("tags")
-        map_reduce = await BlogPost.objects.item_frequencies("tags", map_reduce=True)
-        test_assertions(exec_js)
-        test_assertions(map_reduce)
+        freq = await BlogPost.objects.item_frequencies("tags")
+        test_assertions(freq)
 
         # Ensure query is taken into account
         def test_assertions(f):
@@ -102,12 +89,8 @@ class TestQueryset4(MongoDBTestCase):
             assert f["actors"] == 1
             assert f["watch"] == 1
 
-        exec_js = await BlogPost.objects(hits__gt=1).item_frequencies("tags")
-        map_reduce = await BlogPost.objects(hits__gt=1).item_frequencies(
-            "tags", map_reduce=True
-        )
-        test_assertions(exec_js)
-        test_assertions(map_reduce)
+        freq = await BlogPost.objects(hits__gt=1).item_frequencies("tags")
+        test_assertions(freq)
 
         # Check that normalization works
         def test_assertions(f):
@@ -116,12 +99,8 @@ class TestQueryset4(MongoDBTestCase):
             assert round(abs(f["watch"] - 2.0 / 8.0), 7) == 0
             assert round(abs(f["film"] - 1.0 / 8.0), 7) == 0
 
-        exec_js = await BlogPost.objects.item_frequencies("tags", normalize=True)
-        map_reduce = await BlogPost.objects.item_frequencies(
-            "tags", normalize=True, map_reduce=True
-        )
-        test_assertions(exec_js)
-        test_assertions(map_reduce)
+        freq = await BlogPost.objects.item_frequencies("tags", normalize=True)
+        test_assertions(freq)
 
         # Check item_frequencies works for non-list fields
         def test_assertions(f):
@@ -129,10 +108,8 @@ class TestQueryset4(MongoDBTestCase):
             assert f[1] == 1
             assert f[2] == 2
 
-        exec_js = await BlogPost.objects.item_frequencies("hits")
-        map_reduce = await BlogPost.objects.item_frequencies("hits", map_reduce=True)
-        test_assertions(exec_js)
-        test_assertions(map_reduce)
+        freq = await BlogPost.objects.item_frequencies("hits")
+        test_assertions(freq)
 
         await BlogPost.drop_collection()
 
@@ -167,10 +144,8 @@ class TestQueryset4(MongoDBTestCase):
             assert f["62-3331-1656"] == 2
             assert f["62-3332-1656"] == 1
 
-        exec_js = await Person.objects.item_frequencies("phone.number")
-        map_reduce = await Person.objects.item_frequencies("phone.number", map_reduce=True)
-        test_assertions(exec_js)
-        test_assertions(map_reduce)
+        freq = await Person.objects.item_frequencies("phone.number")
+        test_assertions(freq)
 
         # Ensure query is taken into account
         def test_assertions(f):
@@ -178,26 +153,18 @@ class TestQueryset4(MongoDBTestCase):
             assert {"62-3331-1656"} == set(f.keys())
             assert f["62-3331-1656"] == 2
 
-        exec_js = await Person.objects(phone__number="62-3331-1656").item_frequencies(
+        freq = await Person.objects(phone__number="62-3331-1656").item_frequencies(
             "phone.number"
         )
-        map_reduce = await Person.objects(phone__number="62-3331-1656").item_frequencies(
-            "phone.number", map_reduce=True
-        )
-        test_assertions(exec_js)
-        test_assertions(map_reduce)
+        test_assertions(freq)
 
         # Check that normalization works
         def test_assertions(f):
             assert f["62-3331-1656"] == 2.0 / 3.0
             assert f["62-3332-1656"] == 1.0 / 3.0
 
-        exec_js = await Person.objects.item_frequencies("phone.number", normalize=True)
-        map_reduce = await Person.objects.item_frequencies(
-            "phone.number", normalize=True, map_reduce=True
-        )
-        test_assertions(exec_js)
-        test_assertions(map_reduce)
+        freq = await Person.objects.item_frequencies("phone.number", normalize=True)
+        test_assertions(freq)
 
 
     async def test_item_frequencies_null_values(self):
@@ -215,92 +182,6 @@ class TestQueryset4(MongoDBTestCase):
         freq = await Person.objects.item_frequencies("city", normalize=True)
         assert freq == {"CRB": 0.5, None: 0.5}
 
-        freq = await Person.objects.item_frequencies("city", map_reduce=True)
-        assert freq == {"CRB": 1.0, None: 1.0}
-        freq = await Person.objects.item_frequencies("city", normalize=True, map_reduce=True)
-        assert freq == {"CRB": 0.5, None: 0.5}
-
-
-    @requires_mongodb_lt_42
-    async def test_item_frequencies_with_null_embedded(self):
-        class Data(EmbeddedDocument):
-            name = StringField()
-
-        class Extra(EmbeddedDocument):
-            tag = StringField()
-
-        class Person(Document):
-            data = EmbeddedDocumentField(Data, required=True)
-            extra = EmbeddedDocumentField(Extra)
-
-        await Person.drop_collection()
-
-        p = Person()
-        p.data = Data(name="Wilson Jr")
-        await p.save()
-
-        p = Person()
-        p.data = Data(name="Wesley")
-        p.extra = Extra(tag="friend")
-        await p.save()
-
-        ot = await Person.objects.item_frequencies("extra.tag", map_reduce=False)
-        assert ot == {None: 1.0, "friend": 1.0}
-
-        ot = await Person.objects.item_frequencies("extra.tag", map_reduce=True)
-        assert ot == {None: 1.0, "friend": 1.0}
-
-
-    @requires_mongodb_lt_42
-    async def test_item_frequencies_with_0_values(self):
-        class Test(Document):
-            val = IntField()
-
-        await Test.drop_collection()
-        t = Test()
-        t.val = 0
-        await t.save()
-
-        ot = await Test.objects.item_frequencies("val", map_reduce=True)
-        assert ot == {0: 1}
-        ot = await Test.objects.item_frequencies("val", map_reduce=False)
-        assert ot == {0: 1}
-
-
-    @requires_mongodb_lt_42
-    async def test_item_frequencies_with_False_values(self):
-        class Test(Document):
-            val = BooleanField()
-
-        await Test.drop_collection()
-        t = Test()
-        t.val = False
-        await t.save()
-
-        ot = await Test.objects.item_frequencies("val", map_reduce=True)
-        assert ot == {False: 1}
-        ot = await Test.objects.item_frequencies("val", map_reduce=False)
-        assert ot == {False: 1}
-
-
-    @requires_mongodb_lt_42
-    async def test_item_frequencies_normalize(self):
-        class Test(Document):
-            val = IntField()
-
-        await Test.drop_collection()
-
-        for _ in range(50):
-            await Test(val=1).save()
-
-        for _ in range(20):
-            await Test(val=2).save()
-
-        freqs = await Test.objects.item_frequencies("val", map_reduce=False, normalize=True)
-        assert freqs == {1: 50.0 / 70, 2: 20.0 / 70}
-
-        freqs = await Test.objects.item_frequencies("val", map_reduce=True, normalize=True)
-        assert freqs == {1: 50.0 / 70, 2: 20.0 / 70}
 
 
     async def test_average(self):

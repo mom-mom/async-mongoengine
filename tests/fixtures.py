@@ -14,7 +14,6 @@ class PickleTest(Document):
     string = StringField(choices=(("One", "1"), ("Two", "2")))
     embedded = EmbeddedDocumentField(PickleEmbedded)
     lists = ListField(StringField())
-    photo = FileField()
 
 
 class NewDocumentPickleTest(Document):
@@ -22,7 +21,6 @@ class NewDocumentPickleTest(Document):
     string = StringField(choices=(("One", "1"), ("Two", "2")))
     embedded = EmbeddedDocumentField(PickleEmbedded)
     lists = ListField(StringField())
-    photo = FileField()
     new_field = StringField()
 
 

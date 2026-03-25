@@ -97,8 +97,6 @@ Fields
 .. autoclass:: mongoengine.fields.GenericLazyReferenceField
 .. autoclass:: mongoengine.fields.CachedReferenceField
 .. autoclass:: mongoengine.fields.BinaryField
-.. autoclass:: mongoengine.fields.FileField
-.. autoclass:: mongoengine.fields.ImageField
 .. autoclass:: mongoengine.fields.SequenceField
 .. autoclass:: mongoengine.fields.ObjectIdField
 .. autoclass:: mongoengine.fields.UUIDField
@@ -109,11 +107,6 @@ Fields
 .. autoclass:: mongoengine.fields.MultiPointField
 .. autoclass:: mongoengine.fields.MultiLineStringField
 .. autoclass:: mongoengine.fields.MultiPolygonField
-.. autoclass:: mongoengine.fields.GridFSError
-.. autoclass:: mongoengine.fields.GridFSProxy
-.. autoclass:: mongoengine.fields.ImageGridFsProxy
-.. autoclass:: mongoengine.fields.ImproperlyConfigured
-
 Embedded Document Querying
 ==========================
 

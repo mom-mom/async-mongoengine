@@ -12,7 +12,6 @@ from mongoengine import *
 from mongoengine.connection import get_db
 from mongoengine.context_managers import query_counter, switch_db
 from mongoengine.errors import InvalidQueryError
-from mongoengine.mongodb_support import MONGODB_36
 from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
     DoesNotExist,
@@ -25,19 +24,9 @@ from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
     db_ops_tracker,
     get_as_pymongo,
-    requires_mongodb_gte_42,
-    requires_mongodb_gte_44,
-    requires_mongodb_lt_42,
 )
 
 from tests.utils import MongoDBTestCase
-
-
-
-def get_key_compat(mongo_ver):
-    ORDER_BY_KEY = "sort"
-    CMD_QUERY_KEY = "command" if mongo_ver >= MONGODB_36 else "query"
-    return ORDER_BY_KEY, CMD_QUERY_KEY
 
 
 class TestQueryset2(MongoDBTestCase):
@@ -615,7 +604,7 @@ class TestQueryset2(MongoDBTestCase):
         """Ensure that the default ordering can be cleared by calling
             order_by() w/o any arguments.
             """
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat(self.mongodb_version)
+        ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class BlogPost(Document):
             title = StringField()
@@ -657,7 +646,7 @@ class TestQueryset2(MongoDBTestCase):
 
     async def test_no_ordering_for_get(self):
         """Ensure that Doc.objects.get doesn't use any ordering."""
-        ORDER_BY_KEY, CMD_QUERY_KEY = get_key_compat(self.mongodb_version)
+        ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class BlogPost(Document):
             title = StringField()
@@ -749,103 +738,6 @@ class TestQueryset2(MongoDBTestCase):
 
         post_obj = await BlogPost.objects(info__title="test").first()
         assert post_obj.id == post.id
-
-        await BlogPost.drop_collection()
-
-
-    @requires_mongodb_lt_42
-    async def test_exec_js_query(self):
-        """Ensure that queries are properly formed for use in exec_js."""
-
-        class BlogPost(Document):
-            hits = IntField()
-            published = BooleanField()
-
-        await BlogPost.drop_collection()
-
-        post1 = BlogPost(hits=1, published=False)
-        await post1.save()
-
-        post2 = BlogPost(hits=1, published=True)
-        await post2.save()
-
-        post3 = BlogPost(hits=1, published=True)
-        await post3.save()
-
-        js_func = """
-                function(hitsField) {
-                    var count = 0;
-                    db[collection].find(query).forEach(function(doc) {
-                        count += doc[hitsField];
-                    });
-                    return count;
-                }
-            """
-
-        # Ensure that normal queries work
-        c = await BlogPost.objects(published=True).exec_js(js_func, "hits")
-        assert c == 2
-
-        c = await BlogPost.objects(published=False).exec_js(js_func, "hits")
-        assert c == 1
-
-        await BlogPost.drop_collection()
-
-
-    @requires_mongodb_lt_42
-    async def test_exec_js_field_sub(self):
-        """Ensure that field substitutions occur properly in exec_js functions."""
-
-        class Comment(EmbeddedDocument):
-            content = StringField(db_field="body")
-
-        class BlogPost(Document):
-            name = StringField(db_field="doc-name")
-            comments = ListField(EmbeddedDocumentField(Comment), db_field="cmnts")
-
-        await BlogPost.drop_collection()
-
-        comments1 = [Comment(content="cool"), Comment(content="yay")]
-        post1 = BlogPost(name="post1", comments=comments1)
-        await post1.save()
-
-        comments2 = [Comment(content="nice stuff")]
-        post2 = BlogPost(name="post2", comments=comments2)
-        await post2.save()
-
-        code = """
-            function getComments() {
-                var comments = [];
-                db[collection].find(query).forEach(function(doc) {
-                    var docComments = doc[~comments];
-                    for (var i = 0; i < docComments.length; i++) {
-                        comments.push({
-                            'document': doc[~name],
-                            'comment': doc[~comments][i][~comments.content]
-                        });
-                    }
-                });
-                return comments;
-            }
-            """
-
-        sub_code = BlogPost.objects._sub_js_fields(code)
-        code_chunks = ['doc["cmnts"];', 'doc["doc-name"],', 'doc["cmnts"][i]["body"]']
-        for chunk in code_chunks:
-            assert chunk in sub_code
-
-        results = await BlogPost.objects.exec_js(code)
-        expected_results = [
-            {"comment": "cool", "document": "post1"},
-            {"comment": "yay", "document": "post1"},
-            {"comment": "nice stuff", "document": "post2"},
-        ]
-        assert results == expected_results
-
-        # Test template style
-        code = "{{~comments.content}}"
-        sub_code = BlogPost.objects._sub_js_fields(code)
-        assert "cmnts.body" == sub_code
 
         await BlogPost.drop_collection()
 

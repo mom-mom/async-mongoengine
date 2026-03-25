@@ -20,11 +20,7 @@ from mongoengine.context_managers import (
     switch_db,
 )
 from mongoengine.pymongo_support import count_documents
-from tests.utils import (
-    MongoDBTestCase,
-    requires_mongodb_gte_40,
-    requires_mongodb_gte_44,
-)
+from tests.utils import MongoDBTestCase
 
 
 class TestRollbackError(Exception):
@@ -514,7 +510,6 @@ class TestContextManagers(MongoDBTestCase):
             )  # queries on db.system.indexes are ignored as well
             assert await q.get_count() == 1
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_updating_a_document_within_a_transaction(self):
         class A(Document):
@@ -532,7 +527,6 @@ class TestContextManagers(MongoDBTestCase):
         assert await A.objects.count() == 1
         assert (await A.objects.get(id=a_doc.id)).name == "b"
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_updating_a_document_within_a_transaction_that_fails(self):
         class A(Document):
@@ -551,7 +545,6 @@ class TestContextManagers(MongoDBTestCase):
         assert await A.objects.count() == 1
         assert (await A.objects.get(id=a_doc.id)).name == "a"
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_creating_a_document_within_a_transaction(self):
 
@@ -560,7 +553,7 @@ class TestContextManagers(MongoDBTestCase):
 
         await A.drop_collection()
 
-        # ensure collection is created (needed for transaction with MongoDB <= 4.2)
+        # ensure collection is created
         await A.objects.create(name="test")
         await A.objects.delete()
 
@@ -575,7 +568,6 @@ class TestContextManagers(MongoDBTestCase):
         assert (await A.objects.get(id=a_doc.id)).name == "a"
         assert (await A.objects.get(id=another_doc.id)).name == "b"
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_creating_a_document_within_a_transaction_that_fails(self):
 
@@ -583,7 +575,7 @@ class TestContextManagers(MongoDBTestCase):
             name = StringField()
 
         await A.drop_collection()
-        # ensure collection is created (needed for transaction with MongoDB <= 4.2)
+        # ensure collection is created
         await A.objects.create(name="test")
         await A.objects.delete()
 
@@ -598,7 +590,6 @@ class TestContextManagers(MongoDBTestCase):
 
         assert await A.objects.count() == 0
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_transaction_updates_across_databases(self):
         connect("mongoenginetest")
@@ -624,7 +615,6 @@ class TestContextManagers(MongoDBTestCase):
         assert "a2" == (await A.objects.get(id=a_doc.id)).name
         assert "b2" == (await B.objects.get(id=b_doc.id)).name
 
-    @requires_mongodb_gte_44
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_collection_creation_via_upserts_across_databases_in_transaction(self):
         connect("mongoenginetest")
@@ -657,7 +647,6 @@ class TestContextManagers(MongoDBTestCase):
         async with switch_db(A, "test2"):
             assert "a4" == (await A.objects.get(id=a_doc.id)).name
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_an_exception_raised_in_transactions_across_databases_rolls_back_updates(
         self,
@@ -698,7 +687,6 @@ class TestContextManagers(MongoDBTestCase):
         async with switch_db(A, "test2"):
             assert 0 == await A.objects.all().count()
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_exception_in_child_of_a_nested_transaction_rolls_parent_back(self):
         class A(Document):
@@ -741,7 +729,6 @@ class TestContextManagers(MongoDBTestCase):
         assert (await A.objects.get(id=a_doc.id)).name == "a"
         assert (await B.objects.get(id=b_doc.id)).name == "b"
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_exception_in_parent_of_nested_transaction_after_child_completed_only_rolls_parent_back(
         self,
@@ -783,7 +770,6 @@ class TestContextManagers(MongoDBTestCase):
         assert "a" == (await A.objects.get(id=a_doc.id)).name
         assert "trx-child" == (await B.objects.get(id=b_doc.id)).name
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_nested_transactions_create_and_release_sessions_accordingly(self):
         async with run_in_transaction():
@@ -798,7 +784,6 @@ class TestContextManagers(MongoDBTestCase):
 
         assert _get_session() is None
 
-    @requires_mongodb_gte_40
     @pytest.mark.skip(reason="Requires replica set for transactions")
     async def test_thread_safety_of_transactions(self):
         """

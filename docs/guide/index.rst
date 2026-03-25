@@ -11,7 +11,6 @@ User Guide
    document-instances
    querying
    validation
-   gridfs
    signals
    text-indexes
    migration

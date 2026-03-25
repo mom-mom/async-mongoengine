@@ -1,12 +1,7 @@
 import pytest
-from bson import InvalidDocument
 
 from mongoengine import *
 from mongoengine.base import BaseDict
-from mongoengine.mongodb_support import (
-    MONGODB_36,
-    get_mongodb_version,
-)
 from tests.utils import MongoDBTestCase, get_as_pymongo
 
 
@@ -51,23 +46,10 @@ class TestDictField(MongoDBTestCase):
             post.validate()
 
         post.info = {"nested": {"the.title": "test"}}
-        if await get_mongodb_version() < MONGODB_36:
-            # MongoDB < 3.6 rejects dots
-            # To avoid checking the mongodb version from the DictField class
-            # we rely on MongoDB to reject the data during the save
-            post.validate()
-            with pytest.raises(InvalidDocument):
-                await post.save()
-        else:
-            post.validate()
+        post.validate()
 
         post.info = {"dollar_and_dot": {"te$st.test": "test"}}
-        if await get_mongodb_version() < MONGODB_36:
-            post.validate()
-            with pytest.raises(InvalidDocument):
-                await post.save()
-        else:
-            post.validate()
+        post.validate()
 
     async def test_general_things(self):
         """Ensure that dict types work as expected."""
