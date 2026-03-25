@@ -52,6 +52,12 @@ Optional:
 - `dateutil>=2.1.0` (for flexible `DateTimeField` parsing)
 - `blinker>=1.6` (for signals support — `send_async` requires 1.6+)
 
+```shell
+# Install with signals support
+pip install "async-mongoengine[signals] @ git+https://github.com/mom-mom/async-mongoengine.git"
+uv pip install "async-mongoengine[signals] @ git+https://github.com/mom-mom/async-mongoengine.git"
+```
+
 ## Examples
 
 ```python

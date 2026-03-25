@@ -8,6 +8,9 @@ setup(
     python_requires=">=3.13",
     install_requires=["pymongo>=4.10"],
     extras_require={
+        "signals": [
+            "blinker>=1.6",
+        ],
         "test": [
             "pytest",
             "pytest-asyncio",
