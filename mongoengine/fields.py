@@ -1161,10 +1161,10 @@ class ReferenceField(BaseField):
 
         id_ = id_field.to_mongo(id_)
         if self.document_type._meta.get("abstract"):
-            collection = cls._get_collection_name()
+            collection: str = cls._get_collection_name()  # type: ignore[assignment]
             return DBRef(collection, id_, cls=cls._class_name)
         elif self.dbref:
-            collection = cls._get_collection_name()
+            collection = cls._get_collection_name()  # type: ignore[assignment]
             return DBRef(collection, id_)
 
         return id_
@@ -1385,7 +1385,7 @@ class GenericReferenceField(BaseField):
             id_ = document
 
         id_ = id_field.to_mongo(id_)
-        collection = document._get_collection_name()
+        collection: str = document._get_collection_name()  # type: ignore[assignment]
         ref = DBRef(collection, id_)
         return SON((("_cls", document._class_name), ("_ref", ref)))
 

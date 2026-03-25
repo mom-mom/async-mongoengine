@@ -1,9 +1,11 @@
+from typing import Any
+
 from mongoengine.errors import NotRegistered
 
 __all__ = ("UPDATE_OPERATORS", "_DocumentRegistry")
 
 
-UPDATE_OPERATORS = {
+UPDATE_OPERATORS: set[str] = {
     "set",
     "unset",
     "inc",
@@ -23,12 +25,12 @@ UPDATE_OPERATORS = {
 
 
 # Primary index: module-qualified key -> DocCls (no collisions)
-_document_registry = {}
+_document_registry: dict[str, type[Any]] = {}
 # Secondary index: _class_name -> DocCls (last-write-wins, for DB _cls compat)
-_class_name_registry = {}
+_class_name_registry: dict[str, type[Any]] = {}
 
 
-def _registry_key(DocCls):
+def _registry_key(DocCls: type[Any]) -> str:
     """Build a module-qualified registry key, e.g. 'myapp.models.User'."""
     return f"{DocCls.__module__}.{DocCls._class_name}"
 
@@ -39,7 +41,7 @@ class _DocumentRegistry:
     """
 
     @staticmethod
-    def get(name):
+    def get(name: str) -> type[Any]:
         # 1. Exact match on primary (module-qualified) registry
         doc = _document_registry.get(name, None)
         if doc:
@@ -72,12 +74,12 @@ class _DocumentRegistry:
         return _class_name_registry[possible_match[-1]]
 
     @staticmethod
-    def register(DocCls):
+    def register(DocCls: type[Any]) -> None:
         _document_registry[_registry_key(DocCls)] = DocCls
         _class_name_registry[DocCls._class_name] = DocCls
 
     @staticmethod
-    def unregister(doc_cls_name):
+    def unregister(doc_cls_name: str) -> None:
         """Unregister by _class_name or module-qualified key."""
         # Remove from secondary index
         _class_name_registry.pop(doc_cls_name, None)
@@ -91,10 +93,10 @@ class _DocumentRegistry:
                 _document_registry.pop(key)
 
 
-def _get_documents_by_db(connection_alias, default_connection_alias):
+def _get_documents_by_db(connection_alias: str, default_connection_alias: str) -> list[type[Any]]:
     """Get all registered Documents class attached to a given database"""
 
-    def get_doc_alias(doc_cls):
+    def get_doc_alias(doc_cls: type[Any]) -> str:
         return doc_cls._meta.get("db_alias", default_connection_alias)
 
     return [doc_cls for doc_cls in _document_registry.values() if get_doc_alias(doc_cls) == connection_alias]
