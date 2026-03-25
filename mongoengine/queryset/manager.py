@@ -18,6 +18,24 @@ class QuerySetManager:
 
     The method function should return a :class:`~mongoengine.queryset.QuerySet`
     , probably the same one that was passed in, but modified in some way.
+
+    .. note:: **Typing limitation with custom queryset classes.**
+        When using ``meta = {"queryset_class": CustomQuerySet}``, the type
+        checker sees ``objects`` as ``QuerySet[MyDoc]`` and custom methods
+        on ``CustomQuerySet`` are not visible. To work around this, add a
+        ``TYPE_CHECKING`` annotation in your model::
+
+            from typing import TYPE_CHECKING, ClassVar
+
+            class CustomQuerySet[T](QuerySet[T]):
+                def published(self) -> "CustomQuerySet[T]": ...
+
+            class Post(Document):
+                if TYPE_CHECKING:
+                    objects: ClassVar[CustomQuerySet["Post"]]
+                meta = {"queryset_class": CustomQuerySet}
+
+            # Now Post.objects.published() is visible to the type checker.
     """
 
     get_queryset: Callable[..., Any] | None = None
