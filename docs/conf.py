@@ -41,7 +41,7 @@ source_suffix = ".rst"
 master_doc = "index"
 
 # General information about the project.
-project = "MongoEngine"
+project = "async-mongoengine"
 copyright = "2009, MongoEngine Authors"  # noqa: A001
 
 # The version info for the project you're documenting, acts as replacement for
@@ -166,7 +166,7 @@ html_sidebars = {
 # html_file_suffix = ''
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = "MongoEnginedoc"
+htmlhelp_basename = "async-mongoenginedoc"
 
 
 # -- Options for LaTeX output --------------------------------------------------
@@ -180,7 +180,7 @@ latex_paper_size = "a4"
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-    ("index", "MongoEngine.tex", "MongoEngine Documentation", "Ross Lawley", "manual")
+    ("index", "async-mongoengine.tex", "async-mongoengine Documentation", "Ross Lawley", "manual")
 ]
 
 # The name of an image file (relative to this directory) to place at the top of

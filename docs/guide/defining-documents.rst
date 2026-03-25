@@ -272,9 +272,8 @@ store; in this situation a :class:`~mongoengine.fields.DictField` is appropriate
         user = ReferenceField(User)
         answers = DictField()
 
-    survey_response = SurveyResponse(date=datetime.utcnow(), user=request.user)
-    response_form = ResponseForm(request.POST)
-    survey_response.answers = response_form.cleaned_data()
+    survey_response = SurveyResponse(date=datetime.utcnow(), user=some_user)
+    survey_response.answers = {"q1": "yes", "q2": "no", "q3": "maybe"}
     await survey_response.save()
 
 Dictionaries can store complex data, other dictionaries, lists, references to
@@ -302,7 +301,14 @@ field::
     await post.save()
 
 The :class:`User` object is automatically turned into a reference behind the
-scenes, and dereferenced when the :class:`Page` object is retrieved.
+scenes (stored as a DBRef or ObjectId). Note that auto-dereference is **not**
+supported in async-mongoengine. When you load a document that contains a
+:class:`~mongoengine.fields.ReferenceField`, the field value will be a raw
+DBRef or ObjectId rather than a resolved document instance. To fetch the
+referenced document, you need to explicitly query for it::
+
+    page = await Page.objects.first()
+    author = await User.objects.get(pk=page.author.id)
 
 To add a :class:`~mongoengine.fields.ReferenceField` that references the document
 being defined, use the string ``'self'`` in place of the document class as the
@@ -348,10 +354,10 @@ instance of the object to the query::
     Page.objects(authors__all=[bob, john])
 
     # Remove Bob from the authors for a page.
-    Page.objects(id='...').update_one(pull__authors=bob)
+    await Page.objects(id='...').update_one(pull__authors=bob)
 
     # Add John to the authors for a page.
-    Page.objects(id='...').update_one(push__authors=john)
+    await Page.objects(id='...').update_one(push__authors=john)
 
 
 Dealing with deletion of referred documents
@@ -404,9 +410,6 @@ Its value can take any of the following constants:
    app, it is extremely important that the :mod:`people` app is loaded
    before any employee is removed, because otherwise, MongoEngine could
    never know this relationship exists.
-
-   In Django, be sure to put all apps that have such delete rule declarations in
-   their :file:`models.py` in the :const:`INSTALLED_APPS` tuple.
 
 Generic reference fields
 ''''''''''''''''''''''''

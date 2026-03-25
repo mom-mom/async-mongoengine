@@ -69,8 +69,8 @@ as a standalone script:
     # Use mongoengine to set a default value for a given field
     await User.objects().update(enabled=True)
     # or use pymongo
-    user_coll = User._get_collection()
-    user_coll.update_many({}, {'$set': {'enabled': True}})
+    user_coll = await User._get_collection()
+    await user_coll.update_many({}, {'$set': {'enabled': True}})
 
 
 Example 2: Inheritance change
@@ -147,10 +147,10 @@ empty.
 
     # If we bypass MongoEngine and make use of underlying driver (PyMongo)
     # we can see that the documents are there
-    humans_coll = Human._get_collection()
-    assert humans_coll.count_documents({}) == 2
+    humans_coll = await Human._get_collection()
+    assert await humans_coll.count_documents({}) == 2
     # print first document
-    print(humans_coll.find_one())
+    print(await humans_coll.find_one())
     # {'_id': ObjectId('5fac4aaaf61d7fb06046e0f9'), '_cls': 'Human.Jedi', 'name': 'Darth Vader', 'dark_side': True, 'light_saber_color': 'red'}
 
 As you can see, first obvious problem is that we need to modify '_cls' values based on existing values of
@@ -158,12 +158,12 @@ As you can see, first obvious problem is that we need to modify '_cls' values ba
 
 .. code-block:: python
 
-    humans_coll = Human._get_collection()
+    humans_coll = await Human._get_collection()
     old_class = 'Human.Jedi'
     good_jedi_class = 'Human.GoodJedi'
     bad_sith_class = 'Human.BadSith'
-    humans_coll.update_many({'_cls': old_class, 'dark_side': False}, {'$set': {'_cls': good_jedi_class}})
-    humans_coll.update_many({'_cls': old_class, 'dark_side': True}, {'$set': {'_cls': bad_sith_class}})
+    await humans_coll.update_many({'_cls': old_class, 'dark_side': False}, {'$set': {'_cls': good_jedi_class}})
+    await humans_coll.update_many({'_cls': old_class, 'dark_side': True}, {'$set': {'_cls': bad_sith_class}})
 
 Let's now check if querying improved in MongoEngine:
 
@@ -183,13 +183,13 @@ Let's remove the field from the collections:
 
 .. code-block:: python
 
-    humans_coll = Human._get_collection()
-    humans_coll.update_many({}, {'$unset': {'dark_side': 1}})
+    humans_coll = await Human._get_collection()
+    await humans_coll.update_many({}, {'$unset': {'dark_side': 1}})
 
 .. note:: We did this migration in 2 different steps for the sake of example but it could have been combined
     with the migration of the _cls fields: ::
 
-        humans_coll.update_many(
+        await humans_coll.update_many(
             {'_cls': old_class, 'dark_side': False},
             {
                 '$set': {'_cls': good_jedi_class},
@@ -215,11 +215,11 @@ it is often useful for complex migrations of Document models.
 
 .. code-block:: python
 
-    for doc in humans_coll.find():
+    async for doc in humans_coll.find():
         if doc['_cls'] == 'Human.Jedi':
             doc['_cls'] =  'Human.BadSith' if doc['dark_side'] else 'Human.GoodJedi'
             doc.pop('dark_side')
-            humans_coll.replace_one({'_id': doc['_id']}, doc)
+            await humans_coll.replace_one({'_id': doc['_id']}, doc)
 
 .. warning:: Be aware of this `flaw <https://groups.google.com/g/mongodb-user/c/AFC1ia7MHzk>`_ if you modify documents while iterating
 
@@ -248,7 +248,8 @@ it would create the following indexes:
 
 .. code-block:: python
 
-    print(User._get_collection().index_information())
+    coll = await User._get_collection()
+    print(await coll.index_information())
     # {
     #  '_id_': {'key': [('_id', 1)], 'v': 2},
     #  'name_1': {'background': False, 'key': [('name', 1)], 'v': 2},
@@ -259,7 +260,8 @@ If you would remove the 'name' field or its index, you would have to call:
 
 .. code-block:: python
 
-    User._get_collection().drop_index('name_1')
+    coll = await User._get_collection()
+    await coll.drop_index('name_1')
 
 .. note:: When adding new fields or new indexes, MongoEngine will take care of creating them
     (unless `auto_create_index` is disabled)
@@ -281,17 +283,18 @@ on the first occurrence of an error but this is something that can be adapted ba
 
 .. code-block:: python
 
-    def get_random_oids(collection, sample_size):
+    async def get_random_oids(collection, sample_size):
         pipeline = [{"$project": {'_id': 1}}, {"$sample": {"size": sample_size}}]
-        return [s['_id'] for s in collection.aggregate(pipeline)]
+        return [s['_id'] async for s in collection.aggregate(pipeline)]
 
-    def get_random_documents(DocCls, sample_size):
-        doc_collection = DocCls._get_collection()
-        random_oids = get_random_oids(doc_collection, sample_size)
+    async def get_random_documents(DocCls, sample_size):
+        doc_collection = await DocCls._get_collection()
+        random_oids = await get_random_oids(doc_collection, sample_size)
         return DocCls.objects(id__in=random_oids)
 
-    def check_documents(DocCls, sample_size):
-        async for doc in get_random_documents(DocCls, sample_size):
+    async def check_documents(DocCls, sample_size):
+        qs = await get_random_documents(DocCls, sample_size)
+        async for doc in qs:
             # general validation (types and values)
             doc.validate()
 
@@ -305,4 +308,4 @@ on the first occurrence of an error but this is something that can be adapted ba
                     LOG.warning(f"Could not load field {field} in Document {doc.id}")
                     raise
 
-    check_documents(Human, sample_size=1000)
+    await check_documents(Human, sample_size=1000)

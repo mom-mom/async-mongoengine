@@ -299,10 +299,17 @@ is preferred for achieving this::
     # 5 users, starting from the 11th user found
     users = User.objects[10:15]
 
-You may also index the query to retrieve a single result. If an item at that
-index does not exists, an :class:`IndexError` will be raised. A shortcut for
-retrieving the first result and returning :attr:`None` if no result exists is
-provided (:meth:`~mongoengine.queryset.QuerySet.first`)::
+.. note::
+
+    Integer indexing (e.g. ``qs[0]``) is **not** supported in async-mongoengine
+    and will raise a ``TypeError``. Use ``await qs.first()`` to get the first
+    result, or ``await qs.get_item(index)`` to retrieve a result by position.
+    Slicing (e.g. ``qs[1:5]``) still works synchronously and returns a new
+    QuerySet.
+
+A shortcut for retrieving the first result and returning :attr:`None` if no
+result exists is provided
+(:meth:`~mongoengine.queryset.QuerySet.first`)::
 
     >>> # Make sure there are no users
     >>> await User.drop_collection()
