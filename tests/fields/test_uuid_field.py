@@ -11,19 +11,19 @@ class Person(Document):
 
 
 class TestUUIDField(MongoDBTestCase):
-    def test_storage(self):
+    async def test_storage(self):
         uid = uuid.uuid4()
-        person = Person(api_key=uid).save()
-        assert get_as_pymongo(person) == {"_id": person.id, "api_key": str(uid)}
+        person = await Person(api_key=uid).save()
+        assert await get_as_pymongo(person) == {"_id": person.id, "api_key": str(uid)}
 
-    def test_field_string(self):
+    async def test_field_string(self):
         """Test UUID fields storing as String"""
-        Person.drop_collection()
+        await Person.drop_collection()
 
         uu = uuid.uuid4()
-        Person(api_key=uu).save()
-        assert 1 == Person.objects(api_key=uu).count()
-        assert uu == Person.objects.first().api_key
+        await Person(api_key=uu).save()
+        assert 1 == await Person.objects(api_key=uu).count()
+        assert uu == (await Person.objects.first()).api_key
 
         person = Person()
         valid = (uuid.uuid4(), uuid.uuid1())
@@ -40,14 +40,14 @@ class TestUUIDField(MongoDBTestCase):
             with pytest.raises(ValidationError):
                 person.validate()
 
-    def test_field_binary(self):
+    async def test_field_binary(self):
         """Test UUID fields storing as Binary object."""
-        Person.drop_collection()
+        await Person.drop_collection()
 
         uu = uuid.uuid4()
-        Person(api_key=uu).save()
-        assert 1 == Person.objects(api_key=uu).count()
-        assert uu == Person.objects.first().api_key
+        await Person(api_key=uu).save()
+        assert 1 == await Person.objects(api_key=uu).count()
+        assert uu == (await Person.objects.first()).api_key
 
         person = Person()
         valid = (uuid.uuid4(), uuid.uuid1())

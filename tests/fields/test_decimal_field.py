@@ -7,12 +7,12 @@ from tests.utils import MongoDBTestCase
 
 
 class TestDecimalField(MongoDBTestCase):
-    def test_storage(self):
+    async def test_storage(self):
         class Person(Document):
             float_value = DecimalField(precision=4)
             string_value = DecimalField(precision=4, force_string=True)
 
-        Person.drop_collection()
+        await Person.drop_collection()
         values_to_store = [
             10,
             10.1,
@@ -25,12 +25,12 @@ class TestDecimalField(MongoDBTestCase):
             for value in values_to_store:
                 # to_python is called explicitly if values were sent in the kwargs of __init__
                 if store_at_creation:
-                    Person(float_value=value, string_value=value).save()
+                    await Person(float_value=value, string_value=value).save()
                 else:
-                    person = Person.objects.create()
+                    person = await Person.objects.create()
                     person.float_value = value
                     person.string_value = value
-                    person.save()
+                    await person.save()
 
         # How its stored
         expected = [
@@ -42,7 +42,7 @@ class TestDecimalField(MongoDBTestCase):
             {"float_value": 10.1111, "string_value": "10.1111"},
         ]
         expected.extend(expected)
-        actual = list(Person.objects.exclude("id").as_pymongo())
+        actual = [d async for d in Person.objects.exclude("id").as_pymongo()]
         assert expected == actual
 
         # How it comes out locally
@@ -56,37 +56,37 @@ class TestDecimalField(MongoDBTestCase):
         ]
         expected.extend(expected)
         for field_name in ["float_value", "string_value"]:
-            actual = list(Person.objects().scalar(field_name))
+            actual = [d async for d in Person.objects().scalar(field_name)]
             assert expected == actual
 
-    def test_save_none(self):
+    async def test_save_none(self):
         class Person(Document):
             value = DecimalField()
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
         person = Person(value=None)
         assert person.value is None
-        person.save()
-        fetched_person = Person.objects.first()
+        await person.save()
+        fetched_person = await Person.objects.first()
         fetched_person.value is None
 
-        assert Person.objects(value=None).first() is not None
+        assert await Person.objects(value=None).first() is not None
 
-    def test_validation(self):
+    async def test_validation(self):
         """Ensure that invalid values cannot be assigned to decimal fields."""
 
         class Person(Document):
             height = DecimalField(min_value=Decimal("0.1"), max_value=Decimal("3.5"))
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
-        Person(height=Decimal("1.89")).save()
-        person = Person.objects.first()
+        await Person(height=Decimal("1.89")).save()
+        person = await Person.objects.first()
         assert person.height == Decimal("1.89")
 
         person.height = "2.0"
-        person.save()
+        await person.save()
         person.height = 0.01
         with pytest.raises(ValidationError):
             person.validate()
@@ -104,39 +104,37 @@ class TestDecimalField(MongoDBTestCase):
         with pytest.raises(ValidationError):
             person_2.validate()
 
-    def test_comparison(self):
+    async def test_comparison(self):
         class Person(Document):
             money = DecimalField()
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
-        Person(money=6).save()
-        Person(money=7).save()
-        Person(money=8).save()
-        Person(money=10).save()
+        await Person(money=6).save()
+        await Person(money=7).save()
+        await Person(money=8).save()
+        await Person(money=10).save()
 
-        assert 2 == Person.objects(money__gt=Decimal("7")).count()
-        assert 2 == Person.objects(money__gt=7).count()
-        assert 2 == Person.objects(money__gt="7").count()
+        assert 2 == await Person.objects(money__gt=Decimal("7")).count()
+        assert 2 == await Person.objects(money__gt=7).count()
+        assert 2 == await Person.objects(money__gt="7").count()
 
-        assert 3 == Person.objects(money__gte="7").count()
+        assert 3 == await Person.objects(money__gte="7").count()
 
-    def test_precision_0(self):
+    async def test_precision_0(self):
         """prevent regression of a bug that was raising an exception when using precision=0"""
 
         class TestDoc(Document):
             d = DecimalField(precision=0)
 
-        TestDoc.drop_collection()
+        await TestDoc.drop_collection()
 
         td = TestDoc(d=Decimal("12.00032678131263"))
         assert td.d == Decimal("12")
 
     def test_precision_negative_raise(self):
         """prevent regression of a bug that was raising an exception when using precision=0"""
-        with pytest.raises(
-            ValidationError, match="precision must be a positive integer"
-        ):
+        with pytest.raises(ValidationError, match="precision must be a positive integer"):
 
             class TestDoc(Document):
                 dneg = DecimalField(precision=-1)

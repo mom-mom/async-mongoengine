@@ -15,9 +15,7 @@ class TestEmailField(MongoDBTestCase):
         user = User(email="ross@example.co.uk")
         user.validate()
 
-        user = User(
-            email=("Kofq@rhom0e4klgauOhpbpNdogawnyIKvQS0wk2mjqrgGQ5SaJIazqqWkm7.net")
-        )
+        user = User(email=("Kofq@rhom0e4klgauOhpbpNdogawnyIKvQS0wk2mjqrgGQ5SaJIazqqWkm7.net"))
         user.validate()
 
         user = User(email="new-tld@example.technology")
@@ -78,7 +76,7 @@ class TestEmailField(MongoDBTestCase):
             email = EmailField()
 
         invalid_idn = ".google.com"
-        user = User(email="me@%s" % invalid_idn)
+        user = User(email=f"me@{invalid_idn}")
 
         with pytest.raises(ValidationError) as exc_info:
             user.validate()

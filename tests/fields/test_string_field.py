@@ -5,14 +5,14 @@ from tests.utils import MongoDBTestCase, get_as_pymongo
 
 
 class TestStringField(MongoDBTestCase):
-    def test_storage(self):
+    async def test_storage(self):
         class Person(Document):
             name = StringField()
 
-        Person.drop_collection()
+        await Person.drop_collection()
         person = Person(name="test123")
-        person.save()
-        assert get_as_pymongo(person) == {"_id": person.id, "name": "test123"}
+        await person.save()
+        assert await get_as_pymongo(person) == {"_id": person.id, "name": "test123"}
 
     def test_validation(self):
         class Person(Document):

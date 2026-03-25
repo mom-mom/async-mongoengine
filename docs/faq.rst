@@ -2,11 +2,12 @@
 Frequently Asked Questions
 ==========================
 
-Does MongoEngine support asynchronous drivers (Motor, TxMongo)?
----------------------------------------------------------------
+Is PyMongo or Motor used under the hood?
+-----------------------------------------
 
-No, MongoEngine is exclusively based on PyMongo and isn't designed to support other driver.
-If this is a requirement for your project, check the alternative:  `uMongo`_ and `MotorEngine`_.
-
-.. _uMongo: https://umongo.readthedocs.io/en/latest/
-.. _MotorEngine: https://motorengine.readthedocs.io/en/latest/
+async-mongoengine uses **PyMongo's built-in async support** (``AsyncMongoClient``),
+available in PyMongo 4.0 and later. It does **not** use Motor. PyMongo natively
+supports ``async``/``await`` through ``AsyncMongoClient``, so there is no need
+for a separate async driver. All database operations --- saves, queries,
+deletes, updates, and more --- are ``async def`` methods that you call with
+``await``.

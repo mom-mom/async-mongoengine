@@ -34,16 +34,12 @@ class MongoMockConnectionTest(unittest.TestCase):
 
     @require_mongomock
     def test_connect_raise_if_mongomock_uri_provided(self):
-        with pytest.raises(
-            Exception, match="Use of mongomock:// URI or 'is_mock' were removed"
-        ):
+        with pytest.raises(Exception, match="Use of mongomock:// URI or 'is_mock' were removed"):
             connect("test", host="mongomock://localhost")
 
     @require_mongomock
     def test_connect_raise_if_is_mock_provided(self):
-        with pytest.raises(
-            Exception, match="Use of mongomock:// URI or 'is_mock' were removed"
-        ):
+        with pytest.raises(Exception, match="Use of mongomock:// URI or 'is_mock' were removed"):
             connect("test", host="mongodb://localhost", is_mock=True)
 
     @require_mongomock

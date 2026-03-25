@@ -149,7 +149,7 @@ connection globally::
             name = StringField()
             meta = {'db_alias': 'db1'}
 
-        disconnect(alias='db1')
+        await disconnect(alias='db1')
 
         connect('another_db', alias='db1')
 
@@ -183,8 +183,8 @@ access to the same User document across databases::
 
         meta = {'db_alias': 'user-db'}
 
-    with switch_db(User, 'archive-user-db') as User:
-        User(name='Ross').save()  # Saves the 'archive-user-db'
+    async with switch_db(User, 'archive-user-db') as User:
+        await User(name='Ross').save()  # Saves the 'archive-user-db'
 
 .. note:: :func:`~mongoengine.context_managers.switch_db` when used on
     a class that allow inheritance will change the database alias
@@ -202,10 +202,10 @@ access to the same Group document across collection::
         class Group(Document):
             name = StringField()
 
-        Group(name='test').save()  # Saves in the default db
+        await Group(name='test').save()  # Saves in the default db
 
-        with switch_collection(Group, 'group2000') as Group:
-            Group(name='hello Group 2000 collection!').save()  # Saves in group2000 collection
+        async with switch_collection(Group, 'group2000') as Group:
+            await Group(name='hello Group 2000 collection!').save()  # Saves in group2000 collection
 
 
 .. note:: Make sure any aliases have been registered with

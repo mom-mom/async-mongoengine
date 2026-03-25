@@ -28,18 +28,18 @@ Querying
 
 Saving a document::
 
-  News(title="Using mongodb text search",
-       content="Testing text search").save()
+  await News(title="Using mongodb text search",
+             content="Testing text search").save()
 
-  News(title="MongoEngine 0.9 released",
-       content="Various improvements").save()
+  await News(title="MongoEngine 0.9 released",
+             content="Various improvements").save()
 
 Next, start a text search using :attr:`QuerySet.search_text` method::
 
-  document = News.objects.search_text('testing').first()
+  document = await News.objects.search_text('testing').first()
   document.title # may be: "Using mongodb text search"
 
-  document = News.objects.search_text('released').first()
+  document = await News.objects.search_text('released').first()
   document.title # may be: "MongoEngine 0.9 released"
 
 

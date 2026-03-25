@@ -5,13 +5,13 @@ from tests.utils import MongoDBTestCase, get_as_pymongo
 
 
 class TestBooleanField(MongoDBTestCase):
-    def test_storage(self):
+    async def test_storage(self):
         class Person(Document):
             admin = BooleanField()
 
         person = Person(admin=True)
-        person.save()
-        assert get_as_pymongo(person) == {"_id": person.id, "admin": True}
+        await person.save()
+        assert await get_as_pymongo(person) == {"_id": person.id, "admin": True}
 
     def test_construction_does_not_fail_uncastable_value(self):
         class BoolFail:

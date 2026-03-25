@@ -7,9 +7,7 @@ class QueryFieldList:
     ONLY = 1
     EXCLUDE = 0
 
-    def __init__(
-        self, fields=None, value=ONLY, always_include=None, _only_called=False
-    ):
+    def __init__(self, fields=None, value=ONLY, always_include=None, _only_called=False):
         """The QueryFieldList builder
 
         :param fields: A list of fields used in `.only()` or `.exclude()`

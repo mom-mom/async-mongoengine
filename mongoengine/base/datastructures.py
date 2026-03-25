@@ -271,11 +271,9 @@ class EmbeddedDocumentList(BaseList):
         """
         values = self.__only_matches(self, kwargs)
         if len(values) == 0:
-            raise DoesNotExist("%s matching query does not exist." % self._name)
+            raise DoesNotExist(f"{self._name} matching query does not exist.")
         elif len(values) > 1:
-            raise MultipleObjectsReturned(
-                "%d items returned, instead of 1" % len(values)
-            )
+            raise MultipleObjectsReturned(f"{len(values)} items returned, instead of 1")
 
         return values[0]
 
@@ -303,7 +301,7 @@ class EmbeddedDocumentList(BaseList):
 
         return self._instance[self._name][-1]
 
-    def save(self, *args, **kwargs):
+    async def save(self, *args, **kwargs):
         """
         Saves the ancestor document.
 
@@ -312,7 +310,7 @@ class EmbeddedDocumentList(BaseList):
         :param kwargs: Keyword arguments passed up to the ancestor Document's
          save method.
         """
-        self._instance.save(*args, **kwargs)
+        await self._instance.save(*args, **kwargs)
 
     def delete(self):
         """
@@ -417,9 +415,7 @@ class StrictDict:
 
     @classmethod
     def create(cls, allowed_keys):
-        allowed_keys_tuple = tuple(
-            ("_reserved_" + k if k in cls._special_fields else k) for k in allowed_keys
-        )
+        allowed_keys_tuple = tuple(("_reserved_" + k if k in cls._special_fields else k) for k in allowed_keys)
         allowed_keys = frozenset(allowed_keys_tuple)
         if allowed_keys not in cls._classes:
 
@@ -427,9 +423,7 @@ class StrictDict:
                 __slots__ = allowed_keys_tuple
 
                 def __repr__(self):
-                    return "{%s}" % ", ".join(
-                        f'"{k!s}": {v!r}' for k, v in self.items()
-                    )
+                    return "{{{}}}".format(", ".join(f'"{k!s}": {v!r}' for k, v in self.items()))
 
             cls._classes[allowed_keys] = SpecificStrictDict
         return cls._classes[allowed_keys]
@@ -438,11 +432,11 @@ class StrictDict:
 class LazyReference(DBRef):
     __slots__ = ("_cached_doc", "passthrough", "document_type")
 
-    def fetch(self, force=False):
+    async def fetch(self, force=False):
         if not self._cached_doc or force:
-            self._cached_doc = self.document_type.objects.get(pk=self.pk)
+            self._cached_doc = await self.document_type.objects.get(pk=self.pk)
             if not self._cached_doc:
-                raise DoesNotExist("Trying to dereference unknown document %s" % (self))
+                raise DoesNotExist(f"Trying to dereference unknown document {self}")
         return self._cached_doc
 
     @property
@@ -458,17 +452,18 @@ class LazyReference(DBRef):
     def __getitem__(self, name):
         if not self.passthrough:
             raise KeyError()
-        document = self.fetch()
-        return document[name]
+        raise KeyError(
+            "LazyReference does not support synchronous passthrough. "
+            f"Use `doc = await lazy_ref.fetch()` first, then access `doc[{name!r}]`."
+        )
 
     def __getattr__(self, name):
         if not object.__getattribute__(self, "passthrough"):
             raise AttributeError()
-        document = self.fetch()
-        try:
-            return document[name]
-        except KeyError:
-            raise AttributeError()
+        raise AttributeError(
+            "LazyReference does not support synchronous passthrough. "
+            f"Use `doc = await lazy_ref.fetch()` first, then access `doc.{name}`."
+        )
 
     def __repr__(self):
         return f"<LazyReference({self.document_type}, {self.pk!r})>"

@@ -1,7 +1,7 @@
 import contextlib
+import contextvars
 import logging
-import threading
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 from pymongo.errors import ConnectionFailure, OperationFailure
 from pymongo.read_concern import ReadConcern
@@ -32,28 +32,33 @@ __all__ = (
 )
 
 
-class MyThreadLocals(threading.local):
-    def __init__(self):
-        # {DocCls: count} keeping track of classes with an active no_dereference context
-        self.no_dereferencing_class = {}
+# {cls: refcount} dict stored in a ContextVar for async task isolation.
+# Supports nested no_dereference() calls for the same class.
+_no_dereferencing_class: contextvars.ContextVar = contextvars.ContextVar("_no_dereferencing_class", default=None)
 
 
-thread_locals = MyThreadLocals()
+def _get_no_deref_map():
+    m = _no_dereferencing_class.get()
+    if m is None:
+        m = {}
+        _no_dereferencing_class.set(m)
+    return m
 
 
 def no_dereferencing_active_for_class(cls):
-    return cls in thread_locals.no_dereferencing_class
+    return _get_no_deref_map().get(cls, 0) > 0
 
 
 def _register_no_dereferencing_for_class(cls):
-    thread_locals.no_dereferencing_class.setdefault(cls, 0)
-    thread_locals.no_dereferencing_class[cls] += 1
+    m = _get_no_deref_map()
+    m[cls] = m.get(cls, 0) + 1
 
 
 def _unregister_no_dereferencing_for_class(cls):
-    thread_locals.no_dereferencing_class[cls] -= 1
-    if thread_locals.no_dereferencing_class[cls] == 0:
-        thread_locals.no_dereferencing_class.pop(cls)
+    m = _get_no_deref_map()
+    m[cls] = m.get(cls, 0) - 1
+    if m[cls] <= 0:
+        m.pop(cls, None)
 
 
 class switch_db:
@@ -81,17 +86,17 @@ class switch_db:
         :param db_alias: the name of the specific database to use
         """
         self.cls = cls
-        self.collection = cls._get_collection()
+        self.collection = cls._collection
         self.db_alias = db_alias
         self.ori_db_alias = cls._meta.get("db_alias", DEFAULT_CONNECTION_NAME)
 
-    def __enter__(self):
+    async def __aenter__(self):
         """Change the db_alias and clear the cached collection."""
         self.cls._meta["db_alias"] = self.db_alias
         self.cls._collection = None
         return self.cls
 
-    def __exit__(self, t, value, traceback):
+    async def __aexit__(self, t, value, traceback):
         """Reset the db_alias and collection."""
         self.cls._meta["db_alias"] = self.ori_db_alias
         self.cls._collection = self.collection
@@ -118,11 +123,11 @@ class switch_collection:
         :param collection_name: the name of the collection to use
         """
         self.cls = cls
-        self.ori_collection = cls._get_collection()
+        self.ori_collection = cls._collection
         self.ori_get_collection_name = cls._get_collection_name
         self.collection_name = collection_name
 
-    def __enter__(self):
+    async def __aenter__(self):
         """Change the _get_collection_name and clear the cached collection."""
 
         @classmethod
@@ -133,7 +138,7 @@ class switch_collection:
         self.cls._collection = None
         return self.cls
 
-    def __exit__(self, t, value, traceback):
+    async def __aexit__(self, t, value, traceback):
         """Reset the collection."""
         self.cls._collection = self.ori_collection
         self.cls._get_collection_name = self.ori_get_collection_name
@@ -159,9 +164,7 @@ def no_dereference(cls):
         deref_fields = [
             field
             for name, field in cls._fields.items()
-            if isinstance(
-                field, (ReferenceField, GenericReferenceField, ComplexBaseField)
-            )
+            if isinstance(field, (ReferenceField, GenericReferenceField, ComplexBaseField))
         ]
 
         _register_no_dereferencing_for_class(cls)
@@ -215,13 +218,13 @@ class query_counter:
         class User(Document):
             name = StringField()
 
-        with query_counter() as q:
+        async with query_counter() as q:
             user = User(name='Bob')
-            assert q == 0       # no query fired yet
-            user.save()
-            assert q == 1       # 1 query was fired, an 'insert'
-            user_bis = User.objects().first()
-            assert q == 2       # a 2nd query was fired, a 'find_one'
+            assert await q.get_count() == 0  # no query fired yet
+            await user.save()
+            assert await q.get_count() == 1  # 1 query was fired, an 'insert'
+            user_bis = await User.objects.first()
+            assert await q.get_count() == 2  # a 2nd query was fired
 
     Be aware that:
 
@@ -235,66 +238,45 @@ class query_counter:
         self._ctx_query_counter = 0  # number of queries issued by the context
 
         self._ignored_query = {
-            "ns": {"$ne": "%s.system.indexes" % self.db.name},
+            "ns": {"$ne": f"{self.db.name}.system.indexes"},
             "op": {"$ne": "killcursors"},  # MONGODB < 3.2
             "command.killCursors": {"$exists": False},  # MONGODB >= 3.2
         }
 
-    def _turn_on_profiling(self):
-        profile_update_res = self.db.command({"profile": 0}, session=_get_session())
+    async def _turn_on_profiling(self):
+        profile_update_res = await self.db.command({"profile": 0}, session=_get_session())
         self.initial_profiling_level = profile_update_res["was"]
 
-        self.db.system.profile.drop()
-        self.db.command({"profile": 2}, session=_get_session())
+        await self.db.system.profile.drop()
+        await self.db.command({"profile": 2}, session=_get_session())
 
-    def _resets_profiling(self):
-        self.db.command({"profile": self.initial_profiling_level})
+    async def _resets_profiling(self):
+        await self.db.command({"profile": self.initial_profiling_level})
 
-    def __enter__(self):
-        self._turn_on_profiling()
+    async def __aenter__(self):
+        await self._turn_on_profiling()
         return self
 
-    def __exit__(self, t, value, traceback):
-        self._resets_profiling()
-
-    def __eq__(self, value):
-        counter = self._get_count()
-        return value == counter
-
-    def __ne__(self, value):
-        return not self.__eq__(value)
-
-    def __lt__(self, value):
-        return self._get_count() < value
-
-    def __le__(self, value):
-        return self._get_count() <= value
-
-    def __gt__(self, value):
-        return self._get_count() > value
-
-    def __ge__(self, value):
-        return self._get_count() >= value
-
-    def __int__(self):
-        return self._get_count()
+    async def __aexit__(self, t, value, traceback):
+        await self._resets_profiling()
 
     def __repr__(self):
-        """repr query_counter as the number of queries."""
-        return "%s" % self._get_count()
+        return "query_counter()"
 
-    def _get_count(self):
-        """Get the number of queries by counting the current number of entries in db.system.profile
-        and substracting the queries issued by this context. In fact everytime this is called, 1 query is
-        issued so we need to balance that
+    async def get_count(self):
+        """Get the number of queries issued since the context was entered.
+
+        Usage::
+
+            async with query_counter() as q:
+                await user.save()
+                assert await q.get_count() == 1
+
+        Each call to ``get_count()`` itself issues one query to
+        ``db.system.profile``, which is accounted for automatically.
         """
-        count = (
-            count_documents(self.db.system.profile, self._ignored_query)
-            - self._ctx_query_counter
-        )
-        self._ctx_query_counter += (
-            1  # Account for the query we just issued to gather the information
-        )
+        count = await count_documents(self.db.system.profile, self._ignored_query) - self._ctx_query_counter
+        self._ctx_query_counter += 1  # Account for the query we just issued to gather the information
         return count
 
 
@@ -323,28 +305,24 @@ def set_read_write_concern(collection, write_concerns, read_concerns):
     )
 
 
-def _commit_with_retry(session):
+async def _commit_with_retry(session):
     while True:
         try:
             # Commit uses write concern set at transaction start.
-            session.commit_transaction()
+            await session.commit_transaction()
             break
         except (ConnectionFailure, OperationFailure) as exc:
             # Can retry commit
             if exc.has_error_label("UnknownTransactionCommitResult"):
-                logging.warning(
-                    "UnknownTransactionCommitResult, retrying commit operation ..."
-                )
+                logging.warning("UnknownTransactionCommitResult, retrying commit operation ...")
                 continue
             else:
                 # Error during commit
                 raise
 
 
-@contextmanager
-def run_in_transaction(
-    alias=DEFAULT_CONNECTION_NAME, session_kwargs=None, transaction_kwargs=None
-):
+@asynccontextmanager
+async def run_in_transaction(alias=DEFAULT_CONNECTION_NAME, session_kwargs=None, transaction_kwargs=None):
     """run_in_transaction context manager
     Execute queries within the context in a database transaction.
 
@@ -355,9 +333,9 @@ def run_in_transaction(
         class A(Document):
             name = StringField()
 
-        with run_in_transaction():
-            a_doc = A.objects.create(name="a")
-            a_doc.update(name="b")
+        async with run_in_transaction():
+            a_doc = await A.objects.create(name="a")
+            await a_doc.update(name="b")
 
     Be aware that:
     - Mongo transactions run inside a session which is bound to a connection. If you attempt to
@@ -369,12 +347,15 @@ def run_in_transaction(
     """
     conn = get_connection(alias)
     session_kwargs = session_kwargs or {}
-    with conn.start_session(**session_kwargs) as session:
+    async with conn.start_session(**session_kwargs) as session:
         transaction_kwargs = transaction_kwargs or {}
-        with session.start_transaction(**transaction_kwargs):
-            try:
-                _set_session(session)
-                yield
-                _commit_with_retry(session)
-            finally:
-                _clear_session()
+        await session.start_transaction(**transaction_kwargs)
+        try:
+            _set_session(session)
+            yield
+            await _commit_with_retry(session)
+        except Exception:
+            await session.abort_transaction()
+            raise
+        finally:
+            _clear_session()

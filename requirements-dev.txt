@@ -1,5 +1,5 @@
 pre-commit
+ruff
 ipdb
 ipython
-tox
 -e .[test]

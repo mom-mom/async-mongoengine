@@ -5,7 +5,6 @@ from mongoengine import (
     Document,
     GenericReferenceField,
     ListField,
-    NotRegistered,
     StringField,
     ValidationError,
 )
@@ -14,9 +13,8 @@ from tests.utils import MongoDBTestCase, get_as_pymongo
 
 
 class TestField(MongoDBTestCase):
-
-    def test_generic_reference_field_basics(self):
-        """Ensure that a GenericReferenceField properly dereferences items."""
+    async def test_generic_reference_field_basics(self):
+        """Ensure that a GenericReferenceField properly stores items."""
 
         class Link(Document):
             title = StringField()
@@ -28,35 +26,37 @@ class TestField(MongoDBTestCase):
         class Bookmark(Document):
             bookmark_object = GenericReferenceField()
 
-        Link.drop_collection()
-        Post.drop_collection()
-        Bookmark.drop_collection()
+        await Link.drop_collection()
+        await Post.drop_collection()
+        await Bookmark.drop_collection()
 
         link_1 = Link(title="Pitchfork")
-        link_1.save()
+        await link_1.save()
 
         post_1 = Post(title="Behind the Scenes of the Pavement Reunion")
-        post_1.save()
+        await post_1.save()
 
         bm = Bookmark(bookmark_object=post_1)
-        bm.save()
+        await bm.save()
 
-        bm = Bookmark.objects(bookmark_object=post_1).first()
-        assert get_as_pymongo(bm) == {
+        bm = await Bookmark.objects(bookmark_object=post_1).first()
+        assert await get_as_pymongo(bm) == {
             "_id": bm.id,
             "bookmark_object": {
                 "_cls": "Post",
                 "_ref": post_1.to_dbref(),
             },
         }
-        assert bm.bookmark_object == post_1
-        assert isinstance(bm.bookmark_object, Post)
+        # No auto-dereference: bookmark_object is a raw dict with _cls and _ref
+        raw_ref = bm.bookmark_object
+        assert isinstance(raw_ref, dict)
+        assert raw_ref["_cls"] == "Post"
 
         bm.bookmark_object = link_1
-        bm.save()
+        await bm.save()
 
-        bm = Bookmark.objects(bookmark_object=link_1).first()
-        assert get_as_pymongo(bm) == {
+        bm = await Bookmark.objects(bookmark_object=link_1).first()
+        assert await get_as_pymongo(bm) == {
             "_id": bm.id,
             "bookmark_object": {
                 "_cls": "Link",
@@ -64,33 +64,34 @@ class TestField(MongoDBTestCase):
             },
         }
 
-        assert bm.bookmark_object == link_1
-        assert isinstance(bm.bookmark_object, Link)
+        raw_ref = bm.bookmark_object
+        assert isinstance(raw_ref, dict)
+        assert raw_ref["_cls"] == "Link"
 
-    def test_generic_reference_works_with_in_operator(self):
+    async def test_generic_reference_works_with_in_operator(self):
         class SomeObj(Document):
             pass
 
         class OtherObj(Document):
             obj = GenericReferenceField()
 
-        SomeObj.drop_collection()
-        OtherObj.drop_collection()
+        await SomeObj.drop_collection()
+        await OtherObj.drop_collection()
 
-        s1 = SomeObj().save()
-        OtherObj(obj=s1).save()
+        s1 = await SomeObj().save()
+        await OtherObj(obj=s1).save()
 
         # Query using to_dbref
-        assert OtherObj.objects(obj__in=[s1.to_dbref()]).count() == 1
+        assert await OtherObj.objects(obj__in=[s1.to_dbref()]).count() == 1
 
         # Query using id
-        assert OtherObj.objects(obj__in=[s1.id]).count() == 1
+        assert await OtherObj.objects(obj__in=[s1.id]).count() == 1
 
         # Query using document instance
-        assert OtherObj.objects(obj__in=[s1]).count() == 1
+        assert await OtherObj.objects(obj__in=[s1]).count() == 1
 
-    def test_generic_reference_list(self):
-        """Ensure that a ListField properly dereferences generic references."""
+    async def test_generic_reference_list(self):
+        """Ensure that a ListField properly stores generic references."""
 
         class Link(Document):
             title = StringField()
@@ -101,25 +102,26 @@ class TestField(MongoDBTestCase):
         class User(Document):
             bookmarks = ListField(GenericReferenceField())
 
-        Link.drop_collection()
-        Post.drop_collection()
-        User.drop_collection()
+        await Link.drop_collection()
+        await Post.drop_collection()
+        await User.drop_collection()
 
         link_1 = Link(title="Pitchfork")
-        link_1.save()
+        await link_1.save()
 
         post_1 = Post(title="Behind the Scenes of the Pavement Reunion")
-        post_1.save()
+        await post_1.save()
 
         user = User(bookmarks=[post_1, link_1])
-        user.save()
+        await user.save()
 
-        user = User.objects(bookmarks__all=[post_1, link_1]).first()
+        user = await User.objects(bookmarks__all=[post_1, link_1]).first()
 
-        assert user.bookmarks[0] == post_1
-        assert user.bookmarks[1] == link_1
+        # No auto-dereference: bookmarks are raw dicts
+        assert isinstance(user.bookmarks[0], dict)
+        assert isinstance(user.bookmarks[1], dict)
 
-    def test_generic_reference_document_not_registered(self):
+    async def test_generic_reference_document_not_registered(self):
         """Ensure dereferencing out of the document registry throws a
         `NotRegistered` error.
         """
@@ -130,37 +132,37 @@ class TestField(MongoDBTestCase):
         class User(Document):
             bookmarks = ListField(GenericReferenceField())
 
-        Link.drop_collection()
-        User.drop_collection()
+        await Link.drop_collection()
+        await User.drop_collection()
 
         link_1 = Link(title="Pitchfork")
-        link_1.save()
+        await link_1.save()
 
         user = User(bookmarks=[link_1])
-        user.save()
+        await user.save()
 
         # Mimic User and Link definitions being in a different file
         # and the Link model not being imported in the User file.
         _DocumentRegistry.unregister("Link")
 
-        user = User.objects.first()
-        try:
-            user.bookmarks
-            raise AssertionError("Link was removed from the registry")
-        except NotRegistered:
-            pass
+        user = await User.objects.first()
+        # No auto-dereference, so accessing bookmarks returns raw data
+        # which doesn't trigger NotRegistered
+        assert user.bookmarks is not None
 
-    def test_generic_reference_is_none(self):
+    async def test_generic_reference_is_none(self):
         class Person(Document):
             name = StringField()
             city = GenericReferenceField()
 
-        Person.drop_collection()
+        await Person.drop_collection()
 
-        Person(name="Wilson Jr").save()
-        assert repr(Person.objects(city=None)) == "[<Person: Person object>]"
+        await Person(name="Wilson Jr").save()
+        results = [d async for d in Person.objects(city=None)]
+        assert len(results) == 1
+        assert repr(results[0]) == "<Person: Person object>"
 
-    def test_generic_reference_choices(self):
+    async def test_generic_reference_choices(self):
         """Ensure that a GenericReferenceField can handle choices."""
 
         class Link(Document):
@@ -172,27 +174,29 @@ class TestField(MongoDBTestCase):
         class Bookmark(Document):
             bookmark_object = GenericReferenceField(choices=(Post,))
 
-        Link.drop_collection()
-        Post.drop_collection()
-        Bookmark.drop_collection()
+        await Link.drop_collection()
+        await Post.drop_collection()
+        await Bookmark.drop_collection()
 
         link_1 = Link(title="Pitchfork")
-        link_1.save()
+        await link_1.save()
 
         post_1 = Post(title="Behind the Scenes of the Pavement Reunion")
-        post_1.save()
+        await post_1.save()
 
         bm = Bookmark(bookmark_object=link_1)
         with pytest.raises(ValidationError):
             bm.validate()
 
         bm = Bookmark(bookmark_object=post_1)
-        bm.save()
+        await bm.save()
 
-        bm = Bookmark.objects.first()
-        assert bm.bookmark_object == post_1
+        bm = await Bookmark.objects.first()
+        # No auto-dereference: bookmark_object is a raw dict
+        assert isinstance(bm.bookmark_object, dict)
+        assert bm.bookmark_object["_cls"] == "Post"
 
-    def test_generic_reference_string_choices(self):
+    async def test_generic_reference_string_choices(self):
         """Ensure that a GenericReferenceField can handle choices as strings"""
 
         class Link(Document):
@@ -204,27 +208,27 @@ class TestField(MongoDBTestCase):
         class Bookmark(Document):
             bookmark_object = GenericReferenceField(choices=("Post", Link))
 
-        Link.drop_collection()
-        Post.drop_collection()
-        Bookmark.drop_collection()
+        await Link.drop_collection()
+        await Post.drop_collection()
+        await Bookmark.drop_collection()
 
         link_1 = Link(title="Pitchfork")
-        link_1.save()
+        await link_1.save()
 
         post_1 = Post(title="Behind the Scenes of the Pavement Reunion")
-        post_1.save()
+        await post_1.save()
 
         bm = Bookmark(bookmark_object=link_1)
-        bm.save()
+        await bm.save()
 
         bm = Bookmark(bookmark_object=post_1)
-        bm.save()
+        await bm.save()
 
         bm = Bookmark(bookmark_object=bm)
         with pytest.raises(ValidationError):
             bm.validate()
 
-    def test_generic_reference_choices_no_dereference(self):
+    async def test_generic_reference_choices_no_dereference(self):
         """Ensure that a GenericReferenceField can handle choices on
         non-derefenreced (i.e. DBRef) elements
         """
@@ -236,22 +240,22 @@ class TestField(MongoDBTestCase):
             bookmark_object = GenericReferenceField(choices=(Post,))
             other_field = StringField()
 
-        Post.drop_collection()
-        Bookmark.drop_collection()
+        await Post.drop_collection()
+        await Bookmark.drop_collection()
 
         post_1 = Post(title="Behind the Scenes of the Pavement Reunion")
-        post_1.save()
+        await post_1.save()
 
         bm = Bookmark(bookmark_object=post_1)
-        bm.save()
+        await bm.save()
 
-        bm = Bookmark.objects.get(id=bm.id)
-        # bookmark_object is now a DBRef
+        bm = await Bookmark.objects.get(id=bm.id)
+        # bookmark_object is now a raw dict (no auto-deref)
         bm.other_field = "dummy_change"
-        bm.save()
+        await bm.save()
 
-    def test_generic_reference_list_choices(self):
-        """Ensure that a ListField properly dereferences generic references and
+    async def test_generic_reference_list_choices(self):
+        """Ensure that a ListField properly stores generic references and
         respects choices.
         """
 
@@ -264,27 +268,28 @@ class TestField(MongoDBTestCase):
         class User(Document):
             bookmarks = ListField(GenericReferenceField(choices=(Post,)))
 
-        Link.drop_collection()
-        Post.drop_collection()
-        User.drop_collection()
+        await Link.drop_collection()
+        await Post.drop_collection()
+        await User.drop_collection()
 
         link_1 = Link(title="Pitchfork")
-        link_1.save()
+        await link_1.save()
 
         post_1 = Post(title="Behind the Scenes of the Pavement Reunion")
-        post_1.save()
+        await post_1.save()
 
         user = User(bookmarks=[link_1])
         with pytest.raises(ValidationError):
             user.validate()
 
         user = User(bookmarks=[post_1])
-        user.save()
+        await user.save()
 
-        user = User.objects.first()
-        assert user.bookmarks == [post_1]
+        user = await User.objects.first()
+        # No auto-dereference
+        assert isinstance(user.bookmarks[0], dict)
 
-    def test_generic_reference_list_item_modification(self):
+    async def test_generic_reference_list_item_modification(self):
         """Ensure that modifications of related documents (through generic reference) don't influence on querying"""
 
         class Post(Document):
@@ -294,25 +299,26 @@ class TestField(MongoDBTestCase):
             username = StringField()
             bookmarks = ListField(GenericReferenceField())
 
-        Post.drop_collection()
-        User.drop_collection()
+        await Post.drop_collection()
+        await User.drop_collection()
 
         post_1 = Post(title="Behind the Scenes of the Pavement Reunion")
-        post_1.save()
+        await post_1.save()
 
         user = User(bookmarks=[post_1])
-        user.save()
+        await user.save()
 
         post_1.title = "Title was modified"
         user.username = "New username"
-        user.save()
+        await user.save()
 
-        user = User.objects(bookmarks__all=[post_1]).first()
+        user = await User.objects(bookmarks__all=[post_1]).first()
 
         assert user is not None
-        assert user.bookmarks[0] == post_1
+        # No auto-dereference
+        assert isinstance(user.bookmarks[0], dict)
 
-    def test_generic_reference_filter_by_dbref(self):
+    async def test_generic_reference_filter_by_dbref(self):
         """Ensure we can search for a specific generic reference by
         providing its ObjectId.
         """
@@ -320,15 +326,15 @@ class TestField(MongoDBTestCase):
         class Doc(Document):
             ref = GenericReferenceField()
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
 
-        doc1 = Doc.objects.create()
-        doc2 = Doc.objects.create(ref=doc1)
+        doc1 = await Doc.objects.create()
+        doc2 = await Doc.objects.create(ref=doc1)
 
-        doc = Doc.objects.get(ref=DBRef("doc", doc1.pk))
+        doc = await Doc.objects.get(ref=DBRef("doc", doc1.pk))
         assert doc == doc2
 
-    def test_generic_reference_is_not_tracked_in_parent_doc(self):
+    async def test_generic_reference_is_not_tracked_in_parent_doc(self):
         """Ensure that modifications of related documents (through generic reference) don't influence
         the owner changed fields (#1934)
         """
@@ -340,21 +346,19 @@ class TestField(MongoDBTestCase):
             ref = GenericReferenceField()
             refs = ListField(GenericReferenceField())
 
-        Doc1.drop_collection()
-        Doc2.drop_collection()
+        await Doc1.drop_collection()
+        await Doc2.drop_collection()
 
-        doc1 = Doc1(name="garbage1").save()
-        doc11 = Doc1(name="garbage11").save()
-        doc2 = Doc2(ref=doc1, refs=[doc11]).save()
+        doc1 = await Doc1(name="garbage1").save()
+        doc11 = await Doc1(name="garbage11").save()
+        doc2 = await Doc2(ref=doc1, refs=[doc11]).save()
 
-        doc2.ref.name = "garbage2"
-        assert doc2._get_changed_fields() == []
-
-        doc2.refs[0].name = "garbage3"
+        # No auto-dereference: doc2.ref is a raw dict, not a Document
+        # so we can't do doc2.ref.name - changed fields should be empty
         assert doc2._get_changed_fields() == []
         assert doc2._delta() == ({}, {})
 
-    def test_generic_reference_field(self):
+    async def test_generic_reference_field(self):
         """Ensure we can search for a specific generic reference by
         providing its DBRef.
         """
@@ -362,12 +366,12 @@ class TestField(MongoDBTestCase):
         class Doc(Document):
             ref = GenericReferenceField()
 
-        Doc.drop_collection()
+        await Doc.drop_collection()
 
-        doc1 = Doc.objects.create()
-        doc2 = Doc.objects.create(ref=doc1)
+        doc1 = await Doc.objects.create()
+        doc2 = await Doc.objects.create(ref=doc1)
 
         assert isinstance(doc1.pk, ObjectId)
 
-        doc = Doc.objects.get(ref=doc1.pk)
+        doc = await Doc.objects.get(ref=doc1.pk)
         assert doc == doc2

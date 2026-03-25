@@ -1,5 +1,3 @@
-import unittest
-
 import pytest
 
 from mongoengine import Document
@@ -28,9 +26,7 @@ class TestBaseDict:
         """Get a BaseList bound to a fake document instance"""
         fake_doc = DocumentStub()
         base_list = BaseDict(dict_items, instance=None, name="my_name")
-        base_list._instance = (
-            fake_doc  # hack to inject the mock, it does not work in the constructor
-        )
+        base_list._instance = fake_doc  # hack to inject the mock, it does not work in the constructor
         return base_list
 
     def test___init___(self):
@@ -164,9 +160,7 @@ class TestBaseList:
         """Get a BaseList bound to a fake document instance"""
         fake_doc = DocumentStub()
         base_list = BaseList(list_items, instance=None, name="my_name")
-        base_list._instance = (
-            fake_doc  # hack to inject the mock, it does not work in the constructor
-        )
+        base_list._instance = fake_doc  # hack to inject the mock, it does not work in the constructor
         return base_list
 
     def test___init___(self):
@@ -371,8 +365,8 @@ class TestBaseList:
         assert base_list._instance._changed_fields == ["my_name"]
 
 
-class TestStrictDict(unittest.TestCase):
-    def setUp(self):
+class TestStrictDict:
+    def setup_method(self, method=None):
         self.dtype = self.strict_dict_class(("a", "b", "c"))
 
     def strict_dict_class(self, *args, **kwargs):
@@ -457,7 +451,3 @@ class TestStrictDict(unittest.TestCase):
         d = self.dtype(a=1, b=2)
         assert dict(d) == {"a": 1, "b": 2}
         assert dict(**d) == {"a": 1, "b": 2}
-
-
-if __name__ == "__main__":
-    unittest.main()
