@@ -1,6 +1,0 @@
-include MANIFEST.in
-include README.rst
-include LICENSE
-include AUTHORS
-recursive-include docs *
-prune docs/_build

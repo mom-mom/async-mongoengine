@@ -1,67 +1,80 @@
 # async-mongoengine Migration Reference
 
-이 문서는 mongoengine(sync)을 async-mongoengine으로 변환하면서 발생한 **모든 API 변경사항**을 정리한다.
-테스트코드 변경, 기존 문서 갱신, 사용자 마이그레이션 가이드 작성 시 이 문서를 기준으로 한다.
+This document covers **all API changes** introduced when converting mongoengine (sync) to async-mongoengine.
+Use this as the authoritative reference when updating tests, documentation, or writing a user migration guide.
 
 ---
 
-## 1. 기반 인프라 변경
+## 1. Infrastructure Changes
 
-### 1.1 PyMongo 드라이버
+### 1.1 PyMongo Driver
 
-| 항목 | Before | After |
+| Item | Before | After |
 |---|---|---|
-| 클라이언트 | `pymongo.MongoClient` | `pymongo.AsyncMongoClient` |
-| pymongo 최소 버전 | `>=3.12, <5.0` | `>=4.0` |
-| Python 최소 버전 | `>=3.7` | `>=3.9` |
-| 패키지 이름 | `mongoengine` | `async-mongoengine` |
-| Motor 의존성 | 없음 | 없음 (PyMongo 네이티브 async 사용) |
+| Client | `pymongo.MongoClient` | `pymongo.AsyncMongoClient` |
+| Minimum pymongo | `>=3.12, <5.0` | `>=4.10` |
+| Minimum Python | `>=3.7` | `>=3.13` |
+| Minimum MongoDB | `4.4+` | `7.0+` |
+| Package name | `mongoengine` | `async-mongoengine` |
+| Motor dependency | None | None (uses PyMongo native async) |
 
-### 1.2 세션 관리
+### 1.2 Session Management
 
-| 항목 | Before | After |
+| Item | Before | After |
 |---|---|---|
-| 저장소 | `threading.local` (deque 기반 stack) | `contextvars.ContextVar` (tuple 기반 stack) |
-| 함수 | `_set_session()`, `_get_session()`, `_clear_session()` | 동일 (시그니처 변경 없음) |
-| 중첩 지원 | O (deque stack) | O (tuple stack) |
+| Storage | `threading.local` (deque-based stack) | `contextvars.ContextVar` (tuple-based stack) |
+| Functions | `_set_session()`, `_get_session()`, `_clear_session()` | Same (no signature change) |
+| Nesting support | Yes (deque stack) | Yes (tuple stack) |
 
-> `threading.local`은 asyncio 환경에서 모든 코루틴이 같은 스레드에서 동작하므로 격리 불가.
-> `ContextVar`는 각 async task마다 독립된 값을 가짐.
+> `threading.local` cannot isolate coroutines in asyncio since they all run on the same thread.
+> `ContextVar` provides independent values per async task.
+
+### 1.3 Removed Features
+
+| Feature | Reason |
+|---|---|
+| `FileField` / `ImageField` (GridFS) | Dropped entirely — unnecessary dependency |
+| `exec_js()` | MongoDB `$eval` command removed in MongoDB 4.2 |
+| `snapshot()` | No-op since PyMongo 3+, fully removed |
+| `_item_frequencies_exec_js()` | Depended on `exec_js` |
+| Pillow dependency | Only needed for `ImageField` |
 
 ---
 
 ## 2. Connection (`mongoengine/connection.py`)
 
-### 변경된 함수
+### Async Methods
 
-| 함수 | Before | After | 비고 |
+| Function | Before | After | Notes |
 |---|---|---|---|
-| `disconnect(alias)` | `def` | `async def` | `await connection.close()` 필요 |
-| `disconnect_all()` | `def` | `async def` | 내부에서 `await disconnect()` |
+| `disconnect(alias)` | `def` | `async def` | Requires `await connection.close()` |
+| `disconnect_all()` | `def` | `async def` | Calls `await disconnect()` internally |
 
-### 변경 없는 함수 (sync 유지)
+### Unchanged (remain sync)
 
 `connect()`, `register_connection()`, `get_connection()`, `get_db()`, `_get_connection_settings()`
 
-> `get_connection()`과 `get_db()`의 `reconnect=True`는 deprecated 경고를 발생시킨다.
-> async에서는 `await disconnect(alias)` 후 `get_connection(alias)`을 호출해야 한다.
+> `get_connection()` and `get_db()` with `reconnect=True` emit a deprecation warning.
+> In async code, call `await disconnect(alias)` then `get_connection(alias)`.
 
-### 제거된 코드
+### Removed Code
 
-- pymongo < 4.0 호환 코드 (`PYMONGO_VERSION < (4,)` 분기)
-- `get_db()` 내 `db.authenticate()` 호출 (pymongo 4+에서 불필요)
+- pymongo < 4.0 compat code (`PYMONGO_VERSION < (4,)` branches)
+- `get_db()` internal `db.authenticate()` call (unnecessary in pymongo 4+)
 - UUID representation deprecation warning
+- MongoDB version constants `MONGODB_36` through `MONGODB_60`
+- All version-gate decorators (`requires_mongodb_lt_42`, `requires_mongodb_gte_*`)
 
 ---
 
 ## 3. Document (`mongoengine/document.py`)
 
-### `def` → `async def` 변환된 메서드
+### `def` → `async def` Conversions
 
-#### Document 인스턴스 메서드
+#### Document Instance Methods
 
 ```python
-# 모두 await 필요
+# All require await
 await doc.save(...)
 await doc.delete(...)
 await doc.modify(query, **update)
@@ -73,7 +86,7 @@ await doc.switch_collection(collection_name)
 await doc.cascade_save(**kwargs)
 ```
 
-#### Document 클래스 메서드
+#### Document Class Methods
 
 ```python
 await MyDoc._get_collection()
@@ -86,43 +99,43 @@ await MyDoc.list_indexes()
 await MyDoc.compare_indexes()
 ```
 
-#### Document 내부 메서드
+#### Internal Methods
 
 ```python
 await doc._save_create(doc, force_insert, write_concern)
 await doc._save_update(doc, save_condition, write_concern)
 ```
 
-### 변경 없는 메서드 (sync 유지)
+### Unchanged (remain sync)
 
 `_get_db()`, `_disconnect()`, `to_mongo()`, `to_dbref()`, `_get_update_doc()`, `_integrate_shard_key()`, `_reload()`, `validate()`, `clean()`
 
-### 동작 변경사항
+### Behavioral Changes
 
-#### `save()` 내부 순서 변경
+#### `save()` Internal Ordering
 
 ```
 Before: pre_save → validate → to_mongo(id) → to_mongo() → init_collection → DB write
-After:  pre_save → _generate_async_fields (재귀) → validate → to_mongo(id) → to_mongo() → init_collection → DB write
+After:  pre_save → _generate_async_fields (recursive) → validate → to_mongo(id) → to_mongo() → init_collection → DB write
 ```
 
-- **`_generate_async_fields(doc)`**: 모듈 레벨 async 함수. document와 모든 embedded sub-document를 재귀 순회하며 SequenceField 값 생성.
-- **SequenceField**: `_auto_gen = True` 유지 (validation required-field 면제). `to_mongo()`의 sync `_auto_gen` 경로는 `inspect.iscoroutinefunction(field.generate)` 가드로 건너뜀. 실제 생성은 `_generate_async_fields()`에서 수행.
-- 이 단계가 `validate()` 보다 **앞**에 위치하여 SequenceField(primary_key=True) 필드도 validation 전에 값이 채워짐.
-- embedded document 안의 SequenceField도 재귀적으로 처리.
+- **`_generate_async_fields(doc)`**: Module-level async function. Recursively traverses the document and all embedded sub-documents to generate SequenceField values.
+- **SequenceField**: `_auto_gen = True` is retained (exempts required-field validation). The sync `_auto_gen` path in `to_mongo()` is skipped via an `inspect.iscoroutinefunction(field.generate)` guard. Actual generation happens in `_generate_async_fields()`.
+- This step runs **before** `validate()` so that `SequenceField(primary_key=True)` fields are populated before validation.
+- SequenceFields inside embedded documents are processed recursively.
 
-#### `_save_create()` / `_save_update()` 컬렉션 해석
+#### `_save_create()` / `_save_update()` Collection Resolution
 
 ```python
 # Before
-collection = self._get_collection()  # 항상 클래스 기준
+collection = self._get_collection()  # Always class-based
 
 # After
-collection = self._collection or await self.__class__._get_collection()
-# 인스턴스에 _collection이 설정되어 있으면 (switch_db 등) 그것을 우선 사용
+collection = self._collection if self._collection is not None else await self.__class__._get_collection()
+# Uses instance _collection if set (e.g. via switch_db), otherwise resolves lazily
 ```
 
-#### `_qs` property
+#### `_qs` Property
 
 ```python
 # Before
@@ -130,10 +143,10 @@ self.__objects = queryset_class(self.__class__, self._get_collection())
 
 # After
 self.__objects = queryset_class(self.__class__, self.__class__._collection)
-# _collection이 None일 수 있음. QuerySet 내부에서 _ensure_collection()으로 lazy resolve
+# _collection may be None. QuerySet resolves lazily via _ensure_collection()
 ```
 
-#### `reload()` 변경
+#### `reload()` Changes
 
 ```python
 # Before
@@ -143,37 +156,37 @@ if obj:
 
 # After
 obj = await self._qs.filter(...).limit(1).first()
-# select_related() 체이닝 제거 (async에서 체이닝 불가)
-# if obj: 대신 if obj is None: (QuerySet.__bool__ 사용 불가)
+# select_related() chaining removed (cannot chain async calls)
+# Uses `if obj is None:` instead of `if obj:` (QuerySet.__bool__ not supported)
 ```
 
-#### `switch_db()` / `switch_collection()` 변경
+#### `switch_db()` / `switch_collection()` Changes
 
 ```python
 # Before (sync context manager)
 with switch_db(cls, alias) as cls: ...
-self._get_collection = lambda: collection  # 인스턴스에 sync override
+self._get_collection = lambda: collection  # Sync override on instance
 
 # After (async context manager)
 async with switch_db(cls, alias) as cls: ...
-self._collection = collection  # lambda override 제거
+self._collection = collection  # Lambda override removed
 ```
 
-#### `MapReduceDocument.object` property 제거
+#### `MapReduceDocument.object` Property Removed
 
 ```python
 # Before
-doc.object  # sync property, 내부에서 with_id() 호출
+doc.object  # sync property, calls with_id() internally
 
-# After - 제거됨
-await doc.get_object()  # async 메서드만 존재
+# After — removed
+await doc.get_object()  # async method only
 ```
 
 ---
 
 ## 4. QuerySet (`mongoengine/queryset/base.py`, `queryset.py`)
 
-### `def` → `async def` 변환된 메서드
+### `def` → `async def` Conversions
 
 ```python
 await qs.get(*q_objs, **query)
@@ -197,38 +210,38 @@ await qs.aggregate(pipeline, **kwargs)
 await qs.map_reduce(map_f, reduce_f, output, ...)
 await qs.sum(field)
 await qs.average(field)
-await qs.item_frequencies(field, normalize=False, map_reduce=True)
-await qs.is_empty()          # 신규
-await qs.get_item(index)     # 신규
+await qs.item_frequencies(field, normalize=False)
+await qs.is_empty()          # New
+await qs.get_item(index)     # New
 ```
 
-### 변경 없는 메서드 (sync 유지, QuerySet 반환하는 체이닝 메서드)
+### Unchanged (remain sync — chaining methods that return QuerySet)
 
 `filter()`, `__call__()`, `all()`, `order_by()`, `limit()`, `skip()`, `hint()`, `collation()`, `batch_size()`, `only()`, `exclude()`, `fields()`, `all_fields()`, `search_text()`, `scalar()`, `values_list()`, `as_pymongo()`, `max_time_ms()`, `comment()`, `no_dereference()`, `no_sub_classes()`, `clear_cls_query()`, `none()`, `timeout()`, `allow_disk_use()`, `read_preference()`, `read_concern()`, `where()`, `clone()`, `no_cache()`, `cache()`
 
-### 매직 메서드 변경
+### Magic Method Changes
 
-| Before | After | 비고 |
+| Before | After | Notes |
 |---|---|---|
 | `__iter__()` | `__aiter__()` | `for doc in qs` → `async for doc in qs` |
 | `__next__()` | `__anext__()` | `next(qs)` → `await qs.__anext__()` |
-| `__len__()` | **제거** | `len(qs)` → `await qs.count()` |
-| `__bool__()` | **TypeError** 발생 | `if qs:` → `if not await qs.is_empty():` |
-| `__getitem__(int)` | **TypeError** 발생 | `qs[0]` → `await qs.get_item(0)` |
-| `__getitem__(slice)` | 동일 (sync) | `qs[1:3]` 그대로 사용 가능 |
-| `rewind()` | sync 유지 | cursor_obj가 None이면 no-op |
+| `__len__()` | **Removed** | `len(qs)` → `await qs.count()` |
+| `__bool__()` | **Raises TypeError** | `if qs:` → `if not await qs.is_empty():` |
+| `__getitem__(int)` | **Raises TypeError** | `qs[0]` → `await qs.get_item(0)` |
+| `__getitem__(slice)` | Same (sync) | `qs[1:3]` works as before |
+| `rewind()` | Remains sync | No-op when cursor_obj is None |
 
-### 신규 메서드
+### New Methods
 
-| 메서드 | 설명 |
+| Method | Description |
 |---|---|
-| `async _ensure_collection()` | `_collection_obj`가 None이면 `await _get_collection()` 호출 |
-| `async is_empty()` | `__bool__` 대체. 결과가 없으면 True |
-| `async get_item(index)` | `__getitem__(int)` 대체. 인덱스로 문서 조회 |
+| `async _ensure_collection()` | Calls `await _get_collection()` if `_collection_obj` is None |
+| `async is_empty()` | Replaces `__bool__`. Returns True if no results |
+| `async get_item(index)` | Replaces `__getitem__(int)`. Retrieves document by index |
 
-### QuerySet 클래스별 변경
+### QuerySet Class Changes
 
-#### `QuerySet` (캐싱)
+#### `QuerySet` (caching)
 
 ```python
 # Before
@@ -238,13 +251,13 @@ def _iter_results(self): ...     # sync generator
 def _populate_cache(self): ...
 
 # After
-async def __aiter__(self): ...   # _ensure_collection() 호출 포함
-async def _iter_results(self):   # async generator (yield 사용)
+async def __aiter__(self): ...   # Includes _ensure_collection() call
+async def _iter_results(self):   # async generator (uses yield)
 async def _populate_cache(self):
-# __len__ 제거
+# __len__ removed
 ```
 
-#### `QuerySetNoCache` (비캐싱)
+#### `QuerySetNoCache` (non-caching)
 
 ```python
 # Before
@@ -252,29 +265,29 @@ def __iter__(self): ...
 
 # After
 async def __aiter__(self): ...
-async def _get_async_cursor(self): ...  # 신규 helper
+async def _get_async_cursor(self): ...  # New helper
 ```
 
-#### `__repr__()` 변경
+#### `__repr__()` Changes
 
 ```python
-# Before: DB에 접근하여 데이터 fetch 후 표시
-# After: 캐시된 데이터만 표시, 없으면 placeholder 문자열 반환
+# Before: Accesses DB to fetch and display data
+# After: Displays cached data only; returns placeholder string if cache is empty
 ```
 
-### `map_reduce()` 반환 타입 변경
+### `map_reduce()` Return Type Change
 
 ```python
 # Before: generator (yield MapReduceDocument)
 # After: list (return [MapReduceDocument, ...])
 ```
 
-### `aggregate()` 반환 타입
+### `aggregate()` Return Type
 
 ```python
 # Before: pymongo CommandCursor (sync iterable)
 # After: pymongo AsyncCommandCursor (async iterable)
-# 사용: async for doc in await qs.aggregate(pipeline): ...
+# Usage: async for doc in await qs.aggregate(pipeline): ...
 ```
 
 ### QuerySetManager (`mongoengine/queryset/manager.py`)
@@ -285,109 +298,130 @@ queryset = queryset_class(owner, owner._get_collection())
 
 # After
 queryset = queryset_class(owner, owner._collection)
-# _collection이 None일 수 있음 → QuerySet._ensure_collection()에서 lazy resolve
+# _collection may be None → QuerySet._ensure_collection() resolves lazily
 ```
+
+### Removed Methods
+
+| Method | Reason |
+|---|---|
+| `exec_js()` | MongoDB `$eval` removed in 4.2 |
+| `snapshot()` | No-op since PyMongo 3+ |
+| `_item_frequencies_exec_js()` | Depended on `exec_js` |
+
+`item_frequencies()` no longer accepts a `map_reduce` parameter — it always uses the map_reduce implementation.
 
 ---
 
 ## 5. Fields (`mongoengine/fields.py`)
 
-### 5.1 ReferenceField — auto-dereference 제거
+### 5.1 ReferenceField — Auto-dereference Removed
 
 ```python
-# Before: __get__에서 DBRef를 자동으로 dereference하여 Document 반환
+# Before: __get__ automatically dereferences DBRef to Document
 ref_value = instance._data.get(self.name)
 if auto_dereference and isinstance(ref_value, DBRef):
     instance._data[self.name] = self._lazy_load_ref(cls, ref_value)
 
-# After: raw value (DBRef 또는 ObjectId) 그대로 반환
+# After: Returns raw value (DBRef or ObjectId) as-is
 return super().__get__(instance, owner)
 ```
 
-**제거된 메서드**: `_lazy_load_ref()` (static method)
+**Removed method**: `_lazy_load_ref()` (static method)
 
-**영향**:
-- `doc.author` 접근 시 `Document` 대신 `DBRef` 또는 `ObjectId` 반환
-- 명시적 역참조 필요: `author = await Author.objects.get(pk=doc.author.id)`
+**Impact**:
+- Accessing `doc.author` returns `DBRef` or `ObjectId` instead of a `Document`
+- Explicit dereference required: `author = await Author.objects.get(pk=doc.author.id)`
 
-### 5.2 GenericReferenceField — auto-dereference 제거
+### 5.2 GenericReferenceField — Auto-dereference Removed
 
-`ReferenceField`와 동일. `_lazy_load_ref()` 제거, `__get__`에서 dict 그대로 반환.
+Same as ReferenceField. `_lazy_load_ref()` removed, `__get__` returns raw dict.
 
 ```python
-# Before: doc.ref → Document 인스턴스
+# Before: doc.ref → Document instance
 # After:  doc.ref → {"_cls": "ClassName", "_ref": DBRef(...)}
 ```
 
 ### 5.3 CachedReferenceField
 
-| 항목 | Before | After |
+| Item | Before | After |
 |---|---|---|
-| `__get__` | auto-dereference | raw value 반환 |
-| `_lazy_load_ref()` | 존재 | **제거** |
-| `to_python(value)` | dict → `db.dereference()` → Document | raw value 그대로 반환 |
-| `start_listener()` | signal 등록 (auto_sync) | **no-op** (pass) |
-| `sync_all()` | 전체 캐시 동기화 | **제거** |
-| `on_document_pre_save()` | signal handler | **제거** |
+| `__get__` | auto-dereference | Returns raw value |
+| `_lazy_load_ref()` | Exists | **Removed** |
+| `to_python(value)` | dict → `db.dereference()` → Document | Returns raw value as-is |
+| `start_listener()` | Registers signal (auto_sync) | **No-op** (pass) |
+| `sync_all()` | Full cache synchronization | **Removed** |
+| `on_document_pre_save()` | Signal handler | **Removed** |
 
 ### 5.4 LazyReferenceField / GenericLazyReferenceField
 
-시그니처 변경 없음. 이들은 원래 `LazyReference` 객체를 반환하므로 async 전환에 적합.
+No signature changes. These already return `LazyReference` objects, making them suitable for async.
 
 ### 5.5 LazyReference (`mongoengine/base/datastructures.py`)
 
-| 항목 | Before | After |
+| Item | Before | After |
 |---|---|---|
 | `fetch()` | `def fetch()` | `async def fetch()` |
-| `__getattr__` (passthrough) | `self.fetch().attr` 자동 위임 | **AttributeError** 발생 (`await lazy_ref.fetch()` 사용 안내) |
-| `__getitem__` (passthrough) | `self.fetch()[key]` 자동 위임 | **KeyError** 발생 (`await lazy_ref.fetch()` 사용 안내) |
+| `__getattr__` (passthrough) | `self.fetch().attr` auto-delegates | **Raises AttributeError** (use `await lazy_ref.fetch()`) |
+| `__getitem__` (passthrough) | `self.fetch()[key]` auto-delegates | **Raises KeyError** (use `await lazy_ref.fetch()`) |
 
 ```python
 # Before
 lazy_ref = doc.author  # LazyReference
-lazy_ref.name           # passthrough=True면 자동 fetch + attribute 접근
+lazy_ref.name           # passthrough=True auto-fetches and accesses attribute
 
 # After
 lazy_ref = doc.author   # LazyReference
 doc = await lazy_ref.fetch()
-doc.name                # 명시적 fetch 후 접근
+doc.name                # Explicit fetch before access
 ```
 
 ### 5.6 SequenceField
 
-| 항목 | Before | After |
+| Item | Before | After |
 |---|---|---|
-| `_auto_gen` | `True` | `True` 유지 — validation 면제용. `to_mongo()`의 sync 경로는 `iscoroutinefunction` 가드로 건너뜀 |
-| `generate()` | `def` (sync DB 호출) | `async def` |
-| `set_next_value(value)` | `def` (sync DB 호출) | `async def` |
-| `get_next_value()` | `def` (sync DB 호출) | `async def` |
-| `__get__` | None이면 `self.generate()` 자동 호출 | **자동 생성 안 함**. `save()` 시 자동 생성 |
-| `__set__` | None이면 `self.generate()` 자동 호출 | **자동 생성 안 함** |
-| `to_python(value)` | None이면 `self.generate()` | value 그대로 반환 |
+| `_auto_gen` | `True` | `True` retained — exempts required-field validation. `to_mongo()` sync path skipped via `iscoroutinefunction` guard |
+| `generate()` | `def` (sync DB call) | `async def` |
+| `set_next_value(value)` | `def` (sync DB call) | `async def` |
+| `get_next_value()` | `def` (sync DB call) | `async def` |
+| `__get__` | Auto-calls `self.generate()` when None | **No auto-generation**. Generated at `save()` time |
+| `__set__` | Auto-calls `self.generate()` when None | **No auto-generation** |
+| `to_python(value)` | Calls `self.generate()` when None | Returns value as-is |
 
 ```python
 # Before
 doc = MyDoc()
-print(doc.seq)  # 자동으로 시퀀스 생성, 예: 1
+print(doc.seq)  # Auto-generates sequence, e.g.: 1
 
 # After
 doc = MyDoc()
 print(doc.seq)  # None
-await doc.save()  # save() 시점에 자동 생성
+await doc.save()  # Auto-generated at save() time
 print(doc.seq)  # 1
 
-# 명시적 생성도 가능
+# Explicit generation also works
 doc.seq = await MyDoc.seq.generate()
 ```
 
 ### 5.7 DynamicField
 
 ```python
-# Before: to_python()에서 _ref가 있으면 db.dereference() 호출
-# After: _ref가 있으면 raw dict 그대로 반환 (dereference 안 함)
+# Before: to_python() calls db.dereference() when _ref is present
+# After: Returns raw dict as-is when _ref is present (no dereference)
 ```
 
-### 5.8 EmbeddedDocumentList (`mongoengine/base/datastructures.py`)
+### 5.8 Removed Fields
+
+| Field | Reason |
+|---|---|
+| `FileField` | GridFS support dropped |
+| `ImageField` | GridFS support dropped |
+| `GridFSProxy` | GridFS support dropped |
+| `ImageGridFsProxy` | GridFS support dropped |
+| `GridFSError` | GridFS support dropped |
+| `ImproperlyConfigured` | Only used for PIL/ImageField check |
+
+### 5.9 EmbeddedDocumentList (`mongoengine/base/datastructures.py`)
 
 ```python
 # Before
@@ -397,13 +431,13 @@ embedded_list.save()   # def save(): self._instance.save(...)
 await embedded_list.save()  # async def save(): await self._instance.save(...)
 ```
 
-> `EmbeddedDocumentList`의 `filter()`, `exclude()`, `count()`, `get()`, `first()`, `create()`, `delete()`, `update()`는 in-memory 연산이므로 sync 유지.
+> `EmbeddedDocumentList`'s `filter()`, `exclude()`, `count()`, `get()`, `first()`, `create()`, `delete()`, `update()` are in-memory operations and remain sync.
 
 ---
 
 ## 6. Context Managers (`mongoengine/context_managers.py`)
 
-### `with` → `async with` 변환
+### `with` → `async with` Conversions
 
 | Context Manager | Before | After |
 |---|---|---|
@@ -412,11 +446,11 @@ await embedded_list.save()  # async def save(): await self._instance.save(...)
 | `query_counter(alias)` | `with query_counter() as q:` | `async with query_counter() as q:` |
 | `run_in_transaction(...)` | `with run_in_transaction():` | `async with run_in_transaction():` |
 
-### sync 유지
+### Unchanged (remain sync)
 
 `no_dereference(cls)`, `no_sub_classes(cls)`, `set_write_concern(...)`, `set_read_write_concern(...)`
 
-### query_counter 비교 매직 메서드 제거
+### query_counter Comparison Magic Methods Removed
 
 ```python
 # Before
@@ -431,10 +465,10 @@ async with query_counter() as q:
     assert await q.get_count() == 1
 ```
 
-**제거된 메서드**: `__eq__`, `__ne__`, `__lt__`, `__le__`, `__gt__`, `__ge__`, `__int__`
-**추가된 메서드**: `async def get_count()`
+**Removed methods**: `__eq__`, `__ne__`, `__lt__`, `__le__`, `__gt__`, `__ge__`, `__int__`
+**Added method**: `async def get_count()`
 
-### run_in_transaction 내부 변경
+### run_in_transaction Internal Changes
 
 ```python
 # Before
@@ -443,14 +477,20 @@ with conn.start_session(**kwargs) as session:
 
 # After
 async with conn.start_session(**kwargs) as session:
-    async with session.start_transaction(**kwargs):
+    await session.start_transaction(**kwargs)
+    try:
+        yield
+        await _commit_with_retry(session)
+    except Exception:
+        await session.abort_transaction()
+        raise
 ```
 
-### no_dereference 내부 구현
+### no_dereference Internal Implementation
 
 ```python
-# Before: threading.local 기반 dict
-# After: contextvars.ContextVar 기반 frozenset
+# Before: threading.local based dict
+# After: contextvars.ContextVar based frozenset
 ```
 
 ---
@@ -465,93 +505,98 @@ DeReference()(items, max_depth=1, instance=None, name=None)  # sync
 await DeReference()(items, max_depth=1, instance=None, name=None)  # async
 ```
 
-내부 변경:
+Internal changes:
 - `__call__`: QuerySet → `[i async for i in items]`, `await self._fetch_objects()`
 - `_fetch_objects`: `await collection.objects.in_bulk(refs)`, `async for ref in references`
-- `_find_references`: sync 유지 (데이터 순회만)
-- `_attach_objects`: sync 유지 (데이터 순회만)
+- `_find_references`: Remains sync (data traversal only)
+- `_attach_objects`: Remains sync (data traversal only)
 
 ---
 
 ## 8. PyMongo Support (`mongoengine/pymongo_support.py`)
 
-| 함수 | Before | After |
+| Function | Before | After |
 |---|---|---|
 | `count_documents(...)` | `def` | `async def` |
 | `list_collection_names(...)` | `def` | `async def` |
 
-- pymongo < 3.7 호환 코드 전부 제거
-- `cursor.count()` fallback 제거
+- All pymongo < 3.7 compat code removed
+- `cursor.count()` fallback removed
 
 ---
 
-## 9. 미지원 기능 정리
+## 9. Unsupported Features
 
-### 의도적으로 제거/미지원
+### Intentionally Removed / Unsupported
 
-| 기능 | 이유 |
+| Feature | Reason |
 |---|---|
-| ReferenceField auto-dereference | `__get__` descriptor에서 async DB 호출 불가 |
-| GenericReferenceField auto-dereference | 동일 |
-| CachedReferenceField auto-sync (signal) | signal handler에서 async 호출 불가 |
-| CachedReferenceField.sync_all() | 제거됨 (async 버전 미구현) |
-| SequenceField auto-generate in `__get__`/`__set__` | descriptor에서 async 호출 불가, save() 시 자동 생성 |
-| LazyReference passthrough | `__getattr__`에서 async fetch 불가 |
-| `QuerySet.__bool__()` | async 불가, TypeError 발생으로 변경 |
-| `QuerySet.__getitem__(int)` | async 불가, TypeError 발생으로 변경 |
-| `QuerySet.__len__()` | async 불가, 제거 |
-| `MapReduceDocument.object` property | async 불가, 제거 (`get_object()` 사용) |
-| pymongo < 4.0 지원 | AsyncMongoClient가 pymongo 4+ 전용 |
-| `get_connection(reconnect=True)` | deprecated (connection leak 방지) |
+| ReferenceField auto-dereference | Cannot call async DB from `__get__` descriptor |
+| GenericReferenceField auto-dereference | Same |
+| CachedReferenceField auto-sync (signal) | Cannot call async from signal handler |
+| CachedReferenceField.sync_all() | Removed (no async version implemented) |
+| SequenceField auto-generate in `__get__`/`__set__` | Cannot call async from descriptor; auto-generated at `save()` |
+| LazyReference passthrough | Cannot call async `fetch()` from `__getattr__` |
+| `QuerySet.__bool__()` | Cannot be async; raises TypeError |
+| `QuerySet.__getitem__(int)` | Cannot be async; raises TypeError |
+| `QuerySet.__len__()` | Cannot be async; removed |
+| `MapReduceDocument.object` property | Cannot be async; removed (use `get_object()`) |
+| `FileField` / `ImageField` | Dropped entirely |
+| `exec_js()` | MongoDB `$eval` removed in 4.2 |
+| `snapshot()` | No-op since PyMongo 3+ |
+| pymongo < 4.10 support | `AsyncMongoClient` requires recent pymongo |
+| Python < 3.13 support | Minimum version requirement |
+| MongoDB < 7.0 support | Minimum version requirement |
+| `get_connection(reconnect=True)` | Deprecated (prevents connection leaks) |
 
 ---
 
-## 10. 테스트 마이그레이션 체크리스트
+## 10. Migration Checklist
 
-테스트코드 변환 시 확인해야 할 패턴:
+Patterns to check when converting sync mongoengine code to async-mongoengine:
 
-### 필수 변환 패턴
+### Required Conversions
 
 ```python
-# 1. 모든 테스트 함수를 async로
+# 1. Make all test/handler functions async
 def test_save(self):  →  async def test_save(self):
 
-# 2. DB 조작 메서드에 await 추가
+# 2. Add await to DB methods
 doc.save()            →  await doc.save()
 doc.delete()          →  await doc.delete()
 doc.update(...)       →  await doc.update(...)
 doc.reload()          →  await doc.reload()
-MyDoc.objects.get(...) →  await MyDoc.objects.get(...)
-MyDoc.objects.first()  →  await MyDoc.objects.first()
-MyDoc.objects.count()  →  await MyDoc.objects.count()
+MyDoc.objects.get(...)→  await MyDoc.objects.get(...)
+MyDoc.objects.first() →  await MyDoc.objects.first()
+MyDoc.objects.count() →  await MyDoc.objects.count()
 MyDoc.drop_collection() → await MyDoc.drop_collection()
 
-# 3. 이터레이션
+# 3. Iteration
 for doc in MyDoc.objects:     →  async for doc in MyDoc.objects:
 list(MyDoc.objects)           →  [doc async for doc in MyDoc.objects]
 
-# 4. 인덱싱
+# 4. Indexing
 qs[0]                         →  await qs.get_item(0)
-qs[1:3]                       →  qs[1:3]  (변경 없음)
+qs[1:3]                       →  qs[1:3]  (unchanged)
 
-# 5. truthiness 검사
+# 5. Truthiness checks
 if qs:                        →  if not await qs.is_empty():
 assert qs                     →  assert not await qs.is_empty()
 
-# 6. 길이
+# 6. Length
 len(qs)                       →  await qs.count()
 
-# 7. context manager
+# 7. Context managers
 with switch_db(Cls, alias):   →  async with switch_db(Cls, alias):
 with query_counter() as q:    →  async with query_counter() as q:
     assert q == 1             →      assert await q.get_count() == 1
 with run_in_transaction():    →  async with run_in_transaction():
 
-# 8. disconnect
+# 8. Disconnect
 disconnect()                  →  await disconnect()
 disconnect_all()              →  await disconnect_all()
 
-# 9. ReferenceField 접근
+# 9. ReferenceField access
 doc.author.name               →  author = await Author.objects.get(pk=doc.author.id)
                                   author.name
 
@@ -569,24 +614,20 @@ assert doc.seq == 1           →  doc = MyDoc()
 # 12. MapReduceDocument
 doc.object                    →  await doc.get_object()
 
-# 14. map_reduce (반환 타입)
-for doc in qs.map_reduce(...):  →  for doc in await qs.map_reduce(...):
+# 13. map_reduce (return type)
+for doc in qs.map_reduce(...):→  for doc in await qs.map_reduce(...):
 # generator → list
 ```
 
-### pytest 설정
+### pytest Configuration
 
-```python
-import pytest
-
-# pytest-asyncio 사용
-@pytest.mark.asyncio
-async def test_example():
-    connect("testdb")
-    try:
-        doc = MyDoc(name="test")
-        await doc.save()
-        ...
-    finally:
-        await disconnect_all()
+```ini
+# setup.cfg
+[tool:pytest]
+testpaths = tests
+asyncio_mode = auto
+asyncio_default_fixture_loop_scope = session
+asyncio_default_test_loop_scope = session
 ```
+
+All async test functions are automatically detected and run with a session-scoped event loop. No need for `@pytest.mark.asyncio` decorators.

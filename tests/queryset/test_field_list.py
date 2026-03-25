@@ -15,9 +15,7 @@ class TestQueryFieldList:
 
     def test_include_include(self):
         q = QueryFieldList()
-        q += QueryFieldList(
-            fields=["a", "b"], value=QueryFieldList.ONLY, _only_called=True
-        )
+        q += QueryFieldList(fields=["a", "b"], value=QueryFieldList.ONLY, _only_called=True)
         assert q.as_dict() == {"a": 1, "b": 1}
         q += QueryFieldList(fields=["b", "c"], value=QueryFieldList.ONLY)
         assert q.as_dict() == {"a": 1, "b": 1, "c": 1}
@@ -310,12 +308,7 @@ class TestOnlyExcludeAll(MongoDBTestCase):
         assert obj.body is None
         assert obj.content_type is None
 
-        obj = await (
-            Email.objects.exclude("attachments.content")
-            .exclude("body")
-            .only("to", "attachments.name")
-            .get()
-        )
+        obj = await Email.objects.exclude("attachments.content").exclude("body").only("to", "attachments.name").get()
         assert obj.attachments[0].name == "file1.doc"
         assert obj.attachments[0].content is None
         assert obj.sender is None
@@ -345,12 +338,7 @@ class TestOnlyExcludeAll(MongoDBTestCase):
         )
         await email.save()
 
-        obj = await (
-            Email.objects.exclude("content_type", "body")
-            .only("to", "body")
-            .all_fields()
-            .get()
-        )
+        obj = await Email.objects.exclude("content_type", "body").only("to", "body").all_fields().get()
         assert obj.sender == "me"
         assert obj.to == "you"
         assert obj.subject == "From Russia with Love"

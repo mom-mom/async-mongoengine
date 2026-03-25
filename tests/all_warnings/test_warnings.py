@@ -7,7 +7,6 @@ top level and called first by the test suite.
 import warnings
 
 from mongoengine import *
-
 from tests.utils import MongoDBTestCase
 
 
@@ -32,5 +31,5 @@ class TestAllWarnings(MongoDBTestCase):
             meta = {"collection": "fail"}
 
         warning = self.warning_list[0]
-        assert SyntaxWarning == warning["category"]
+        assert warning["category"] is SyntaxWarning
         assert "non_abstract_base" == InheritedDocumentFailTest._get_collection_name()

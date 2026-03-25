@@ -1,32 +1,19 @@
 import datetime
-import uuid
-from decimal import Decimal
 
-import pymongo
 import pytest
-from bson import DBRef, ObjectId
-from pymongo.read_preferences import ReadPreference
-from pymongo.results import UpdateResult
+from bson import ObjectId
 
 from mongoengine import *
-from mongoengine.connection import get_db
-from mongoengine.context_managers import query_counter, switch_db
+from mongoengine.context_managers import query_counter
 from mongoengine.errors import InvalidQueryError
-from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
     DoesNotExist,
-    MultipleObjectsReturned,
-    QuerySet,
-    QuerySetManager,
     queryset_manager,
 )
-from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
+    MongoDBTestCase,
     db_ops_tracker,
-    get_as_pymongo,
 )
-
-from tests.utils import MongoDBTestCase
 
 
 class TestQueryset2(MongoDBTestCase):
@@ -43,16 +30,12 @@ class TestQueryset2(MongoDBTestCase):
         self.PersonMeta = PersonMeta
         self.Person = Person
 
-
-
     async def assertSequence(self, qs, expected):
         qs = [d async for d in qs]
         expected = list(expected)
         assert len(qs) == len(expected)
         for i in range(len(qs)):
             assert qs[i] == expected[i]
-
-
 
     async def test_save_and_only_on_fields_with_default(self):
         class Embed(EmbeddedDocument):
@@ -91,7 +74,6 @@ class TestQueryset2(MongoDBTestCase):
         assert record.embed_no_default.field == 2
         assert record.embed.field == 2
 
-
     async def test_bulk_insert(self):
         """Ensure that bulk insert works"""
 
@@ -117,7 +99,7 @@ class TestQueryset2(MongoDBTestCase):
         post2 = Post(comments=[comment2, comment2])
 
         # Check bulk insert using load_bulk=False
-        blogs = [Blog(title="%s" % i, posts=[post1, post2]) for i in range(99)]
+        blogs = [Blog(title=f"{i}", posts=[post1, post2]) for i in range(99)]
         await Blog.objects.insert(blogs, load_bulk=False)
 
         assert await Blog.objects.count() == len(blogs)
@@ -126,7 +108,7 @@ class TestQueryset2(MongoDBTestCase):
         await Blog.ensure_indexes()
 
         # Check bulk insert using load_bulk=True
-        blogs = [Blog(title="%s" % i, posts=[post1, post2]) for i in range(99)]
+        blogs = [Blog(title=f"{i}", posts=[post1, post2]) for i in range(99)]
         result = await Blog.objects.insert(blogs)
         assert len(result) == len(blogs)
 
@@ -148,19 +130,13 @@ class TestQueryset2(MongoDBTestCase):
         with pytest.raises(OperationError) as exc_info:
             blog = await Blog.objects.first()
             await Blog.objects.insert(blog)
-        assert (
-            str(exc_info.value)
-            == "Some documents have ObjectIds, use doc.update() instead"
-        )
+        assert str(exc_info.value) == "Some documents have ObjectIds, use doc.update() instead"
 
         # test inserting a query set
         with pytest.raises(OperationError) as exc_info:
             blogs_qs = [b async for b in Blog.objects]
             await Blog.objects.insert(blogs_qs)
-        assert (
-            str(exc_info.value)
-            == "Some documents have ObjectIds, use doc.update() instead"
-        )
+        assert str(exc_info.value) == "Some documents have ObjectIds, use doc.update() instead"
 
         # insert 1 new doc
         new_post = Blog(title="code123", id=ObjectId())
@@ -190,7 +166,6 @@ class TestQueryset2(MongoDBTestCase):
 
         assert await Blog.objects.count() == 2
 
-
     async def test_bulk_insert_different_class_fails(self):
         class Blog(Document):
             pass
@@ -201,7 +176,6 @@ class TestQueryset2(MongoDBTestCase):
         # try inserting a different document class
         with pytest.raises(OperationError):
             await Blog.objects.insert(Author())
-
 
     async def test_bulk_insert_with_wrong_type(self):
         class Blog(Document):
@@ -215,7 +189,6 @@ class TestQueryset2(MongoDBTestCase):
 
         with pytest.raises(OperationError):
             await Blog.objects.insert({"name": "garbage"})
-
 
     async def test_bulk_insert_update_input_document_ids(self):
         class Comment(Document):
@@ -244,7 +217,6 @@ class TestQueryset2(MongoDBTestCase):
         inserted_comment_id = await Comment.objects.insert(comment, load_bulk=False)
         assert comment.id == inserted_comment_id
 
-
     async def test_bulk_insert_accepts_doc_with_ids(self):
         class Comment(Document):
             id = IntField(primary_key=True)
@@ -254,7 +226,6 @@ class TestQueryset2(MongoDBTestCase):
         com1 = Comment(id=0)
         com2 = Comment(id=1)
         await Comment.objects.insert([com1, com2])
-
 
     async def test_insert_raise_if_duplicate_in_constraint(self):
         class Comment(Document):
@@ -269,11 +240,10 @@ class TestQueryset2(MongoDBTestCase):
         with pytest.raises(NotUniqueError):
             await Comment.objects.insert(com1)
 
-
     async def test_get_changed_fields_query_count(self):
         """Make sure we don't perform unnecessary db operations when
-            none of document's fields were updated.
-            """
+        none of document's fields were updated.
+        """
 
         class Person(Document):
             name = StringField()
@@ -332,7 +302,6 @@ class TestQueryset2(MongoDBTestCase):
             await org.save()  # saves the org
             assert await q.get_count() == 1
 
-
     async def test_repeated_iteration(self):
         """Ensure that QuerySet rewinds itself one iteration finishes."""
         await self.Person(name="Person 1").save()
@@ -350,7 +319,6 @@ class TestQueryset2(MongoDBTestCase):
         assert people1 == people2
         assert people1 == people3
 
-
     async def test_repr(self):
         """Test repr behavior isnt destructive"""
 
@@ -358,7 +326,7 @@ class TestQueryset2(MongoDBTestCase):
             number = IntField()
 
             def __repr__(self):
-                return "<Doc: %s>" % self.number
+                return f"<Doc: {self.number}>"
 
         await Doc.drop_collection()
 
@@ -370,28 +338,27 @@ class TestQueryset2(MongoDBTestCase):
         assert await docs.count() == 1000
 
         # In async, repr can't lazily evaluate; before iteration it shows class name
-        docs_string = "%s" % docs
+        docs_string = f"{docs}"
         assert "Doc async queryset" in docs_string
 
         # Trigger iteration to populate cache
         _ = [d async for d in docs]
         docs.rewind()
-        docs_string = "%s" % docs
+        docs_string = f"{docs}"
         assert "Doc: 0" in docs_string
 
         assert await docs.count() == 1000
-        assert "(remaining elements truncated)" in "%s" % docs
+        assert "(remaining elements truncated)" in f"{docs}"
 
         # Limit and skip
         docs = Doc.objects.order_by("number")[1:4]
         _ = [d async for d in docs]
         docs.rewind()
-        assert "[<Doc: 1>, <Doc: 2>, <Doc: 3>]" == "%s" % docs
+        assert "[<Doc: 1>, <Doc: 2>, <Doc: 3>]" == f"{docs}"
 
         assert await docs.count(with_limit_and_skip=True) == 3
         async for _ in docs:
             assert ".. queryset mid-iteration .." == repr(docs)
-
 
     async def test_regex_query_shortcuts(self):
         """Ensure that contains, startswith, endswith, etc work."""
@@ -477,7 +444,6 @@ class TestQueryset2(MongoDBTestCase):
         obj = await self.Person.objects(name__icontains="[.'Geek").first()
         assert obj == person
 
-
     async def test_not(self):
         """Ensure that the __not operator works as expected."""
         alice = self.Person(name="Alice", age=25)
@@ -488,7 +454,6 @@ class TestQueryset2(MongoDBTestCase):
 
         obj = await self.Person.objects(name__not__iexact="alice").first()
         assert obj is None
-
 
     async def test_filter_chaining(self):
         """Ensure filters can be chained together."""
@@ -538,9 +503,7 @@ class TestQueryset2(MongoDBTestCase):
 
         # find all published blog posts before 2010-01-07
         published_posts = BlogPost.published()
-        published_posts = published_posts.filter(
-            published_date__lt=datetime.datetime(2010, 1, 7, 0, 0, 0)
-        )
+        published_posts = published_posts.filter(published_date__lt=datetime.datetime(2010, 1, 7, 0, 0, 0))
         assert await published_posts.count() == 2
 
         blog_posts = BlogPost.objects
@@ -550,7 +513,6 @@ class TestQueryset2(MongoDBTestCase):
 
         await BlogPost.drop_collection()
         await Blog.drop_collection()
-
 
     async def test_filter_chaining_with_regex(self):
         person = self.Person(name="Guido van Rossum")
@@ -566,7 +528,6 @@ class TestQueryset2(MongoDBTestCase):
             .filter(name__wholeword="van")
         )
         assert await people.count() == 1
-
 
     async def test_ordering(self):
         """Ensure default ordering is applied and can be overridden."""
@@ -599,11 +560,10 @@ class TestQueryset2(MongoDBTestCase):
         expected = [blog_post_1, blog_post_2, blog_post_3]
         await self.assertSequence(qs, expected)
 
-
     async def test_clear_ordering(self):
         """Ensure that the default ordering can be cleared by calling
-            order_by() w/o any arguments.
-            """
+        order_by() w/o any arguments.
+        """
         ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class BlogPost(Document):
@@ -643,7 +603,6 @@ class TestQueryset2(MongoDBTestCase):
             assert len(ops) == 1
             assert ORDER_BY_KEY not in ops[0][CMD_QUERY_KEY]
 
-
     async def test_no_ordering_for_get(self):
         """Ensure that Doc.objects.get doesn't use any ordering."""
         ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
@@ -654,9 +613,7 @@ class TestQueryset2(MongoDBTestCase):
 
             meta = {"ordering": ["-published_date"]}
 
-        await BlogPost.objects.create(
-            title="whatever", published_date=datetime.datetime.utcnow()
-        )
+        await BlogPost.objects.create(title="whatever", published_date=datetime.datetime.utcnow())
 
         async with db_ops_tracker() as q:
             await BlogPost.objects.get(title="whatever")
@@ -671,11 +628,10 @@ class TestQueryset2(MongoDBTestCase):
             assert len(ops) == 1
             assert ORDER_BY_KEY not in ops[0][CMD_QUERY_KEY]
 
-
     async def test_find_embedded(self):
         """Ensure that an embedded document is properly returned from
-            different manners of querying.
-            """
+        different manners of querying.
+        """
 
         class User(EmbeddedDocument):
             name = StringField()
@@ -706,7 +662,6 @@ class TestQueryset2(MongoDBTestCase):
         with pytest.raises(InvalidQueryError):
             await BlogPost.objects.get(author=user.name)
 
-
     async def test_find_empty_embedded(self):
         """Ensure that you can save and find an empty embedded document."""
 
@@ -724,7 +679,6 @@ class TestQueryset2(MongoDBTestCase):
         result = await BlogPost.objects.get(author=None)
         assert result.author is None
 
-
     async def test_find_dict_item(self):
         """Ensure that DictField items may be found."""
 
@@ -741,7 +695,6 @@ class TestQueryset2(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_delete(self):
         """Ensure that documents are properly deleted from the database."""
         await self.Person(name="User A", age=20).save()
@@ -755,7 +708,6 @@ class TestQueryset2(MongoDBTestCase):
 
         await self.Person.objects.delete()
         assert await self.Person.objects.count() == 0
-
 
     async def test_reverse_delete_rule_cascade(self):
         """Ensure cascading deletion of referring documents from the database."""
@@ -779,11 +731,10 @@ class TestQueryset2(MongoDBTestCase):
         await self.Person.objects(name="Test User").delete()
         assert 1 == await BlogPost.objects.count()
 
-
     async def test_reverse_delete_rule_cascade_on_abstract_document(self):
         """Ensure cascading deletion of referring documents from the database
-            does not fail on abstract document.
-            """
+        does not fail on abstract document.
+        """
 
         class AbstractBlogPost(Document):
             meta = {"abstract": True}
@@ -807,11 +758,10 @@ class TestQueryset2(MongoDBTestCase):
         await self.Person.objects(name="Test User").delete()
         assert 1 == await BlogPost.objects.count()
 
-
     async def test_reverse_delete_rule_cascade_cycle(self):
         """Ensure reference cascading doesn't loop if reference graph isn't
-            a tree
-            """
+        a tree
+        """
 
         class Dummy(Document):
             reference = ReferenceField("self", reverse_delete_rule=CASCADE)
@@ -828,11 +778,10 @@ class TestQueryset2(MongoDBTestCase):
         with pytest.raises(DoesNotExist):
             await other.reload()
 
-
     async def test_reverse_delete_rule_cascade_complex_cycle(self):
         """Ensure reference cascading doesn't loop if reference graph isn't
-            a tree
-            """
+        a tree
+        """
 
         class Category(Document):
             name = StringField()
@@ -857,11 +806,10 @@ class TestQueryset2(MongoDBTestCase):
         with pytest.raises(DoesNotExist):
             await other2.reload()
 
-
     async def test_reverse_delete_rule_cascade_self_referencing(self):
         """Ensure self-referencing CASCADE deletes do not result in infinite
-            loop
-            """
+        loop
+        """
 
         class Category(Document):
             name = StringField()
@@ -875,12 +823,12 @@ class TestQueryset2(MongoDBTestCase):
 
         # Create a simple parent-child tree
         for i in range(num_children):
-            child_name = "Child-%i" % i
+            child_name = f"Child-{i}"
             child = Category(name=child_name, parent=base)
             await child.save()
 
             for i in range(num_children):
-                child_child_name = "Child-Child-%i" % i
+                child_child_name = f"Child-Child-{i}"
                 child_child = Category(name=child_child_name, parent=child)
                 await child_child.save()
 
@@ -892,7 +840,6 @@ class TestQueryset2(MongoDBTestCase):
         # without resulting in infinite parent-child cascade recursion
         await base.delete()
         assert 0 == await Category.objects.count()
-
 
     async def test_reverse_delete_rule_nullify(self):
         """Ensure nullification of references to deleted documents."""
@@ -919,11 +866,10 @@ class TestQueryset2(MongoDBTestCase):
         assert await BlogPost.objects.count() == 1
         assert (await BlogPost.objects.first()).category is None
 
-
     async def test_reverse_delete_rule_nullify_on_abstract_document(self):
         """Ensure nullification of references to deleted documents when
-            reference is on an abstract document.
-            """
+        reference is on an abstract document.
+        """
 
         class AbstractBlogPost(Document):
             meta = {"abstract": True}
@@ -947,11 +893,10 @@ class TestQueryset2(MongoDBTestCase):
         assert await BlogPost.objects.count() == 1
         assert (await BlogPost.objects.first()).author is None
 
-
     async def test_reverse_delete_rule_deny(self):
         """Ensure deletion gets denied on documents that still have references
-            to them.
-            """
+        to them.
+        """
 
         class BlogPost(Document):
             content = StringField()
@@ -969,11 +914,10 @@ class TestQueryset2(MongoDBTestCase):
         with pytest.raises(OperationError):
             await self.Person.objects.delete()
 
-
     async def test_reverse_delete_rule_deny_on_abstract_document(self):
         """Ensure deletion gets denied on documents that still have references
-            to them, when reference is on an abstract document.
-            """
+        to them, when reference is on an abstract document.
+        """
 
         class AbstractBlogPost(Document):
             meta = {"abstract": True}
@@ -992,7 +936,6 @@ class TestQueryset2(MongoDBTestCase):
         assert 1 == await BlogPost.objects.count()
         with pytest.raises(OperationError):
             await self.Person.objects.delete()
-
 
     async def test_reverse_delete_rule_pull(self):
         """Ensure pulling of references to deleted documents."""
@@ -1023,11 +966,10 @@ class TestQueryset2(MongoDBTestCase):
         assert post.authors == [me]
         assert another.authors == []
 
-
     async def test_reverse_delete_rule_pull_on_abstract_documents(self):
         """Ensure pulling of references to deleted documents when reference
-            is defined on an abstract document..
-            """
+        is defined on an abstract document..
+        """
 
         class AbstractBlogPost(Document):
             meta = {"abstract": True}
@@ -1058,7 +1000,6 @@ class TestQueryset2(MongoDBTestCase):
         assert post.authors == [me]
         assert another.authors == []
 
-
     async def test_delete_with_limits(self):
         class Log(Document):
             pass
@@ -1070,7 +1011,6 @@ class TestQueryset2(MongoDBTestCase):
 
         await Log.objects()[3:5].delete()
         assert 8 == await Log.objects.count()
-
 
     async def test_delete_with_limit_handles_delete_rules(self):
         """Ensure cascading deletion of referring documents from the database."""
@@ -1094,14 +1034,12 @@ class TestQueryset2(MongoDBTestCase):
         await self.Person.objects()[:1].delete()
         assert 1 == await BlogPost.objects.count()
 
-
     async def test_delete_edge_case_with_write_concern_0_return_None(self):
         """Return None if the delete operation is unacknowledged.
 
-            If we use an unack'd write concern, we don't really know how many
-            documents have been deleted.
-            """
+        If we use an unack'd write concern, we don't really know how many
+        documents have been deleted.
+        """
         p1 = await self.Person(name="User Z", age=20).save()
         del_result = await p1.delete(w=0)
         assert del_result is None
-

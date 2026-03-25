@@ -1,32 +1,18 @@
 import datetime
-import uuid
 from decimal import Decimal
 
 import pymongo
 import pytest
-from bson import DBRef, ObjectId
-from pymongo.read_preferences import ReadPreference
 from pymongo.results import UpdateResult
 
 from mongoengine import *
 from mongoengine.connection import get_db
-from mongoengine.context_managers import query_counter, switch_db
 from mongoengine.errors import InvalidQueryError
 from mongoengine.pymongo_support import PYMONGO_VERSION
-from mongoengine.queryset import (
-    DoesNotExist,
-    MultipleObjectsReturned,
-    QuerySet,
-    QuerySetManager,
-    queryset_manager,
-)
-from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
+    MongoDBTestCase,
     db_ops_tracker,
-    get_as_pymongo,
 )
-
-from tests.utils import MongoDBTestCase
 
 
 class TestQueryset3(MongoDBTestCase):
@@ -43,16 +29,12 @@ class TestQueryset3(MongoDBTestCase):
         self.PersonMeta = PersonMeta
         self.Person = Person
 
-
-
     async def assertSequence(self, qs, expected):
         qs = [d async for d in qs]
         expected = list(expected)
         assert len(qs) == len(expected)
         for i in range(len(qs)):
             assert qs[i] == expected[i]
-
-
 
     async def test_reference_field_find(self):
         """Ensure cascading deletion of referring documents from the database."""
@@ -69,12 +51,11 @@ class TestQueryset3(MongoDBTestCase):
 
         assert 1 == await BlogPost.objects(author=me).count()
         assert 1 == await BlogPost.objects(author=me.pk).count()
-        assert 1 == await BlogPost.objects(author="%s" % me.pk).count()
+        assert 1 == await BlogPost.objects(author=f"{me.pk}").count()
 
         assert 1 == await BlogPost.objects(author__in=[me]).count()
         assert 1 == await BlogPost.objects(author__in=[me.pk]).count()
-        assert 1 == await BlogPost.objects(author__in=["%s" % me.pk]).count()
-
+        assert 1 == await BlogPost.objects(author__in=[f"{me.pk}"]).count()
 
     async def test_reference_field_find_dbref(self):
         """Ensure cascading deletion of referring documents from the database."""
@@ -91,12 +72,11 @@ class TestQueryset3(MongoDBTestCase):
 
         assert 1 == await BlogPost.objects(author=me).count()
         assert 1 == await BlogPost.objects(author=me.pk).count()
-        assert 1 == await BlogPost.objects(author="%s" % me.pk).count()
+        assert 1 == await BlogPost.objects(author=f"{me.pk}").count()
 
         assert 1 == await BlogPost.objects(author__in=[me]).count()
         assert 1 == await BlogPost.objects(author__in=[me.pk]).count()
-        assert 1 == await BlogPost.objects(author__in=["%s" % me.pk]).count()
-
+        assert 1 == await BlogPost.objects(author__in=[f"{me.pk}"]).count()
 
     async def test_update_intfield_operator(self):
         class BlogPost(Document):
@@ -124,7 +104,6 @@ class TestQueryset3(MongoDBTestCase):
         await post.reload()
         assert post.hits == 11
 
-
     async def test_update_decimalfield_operator(self):
         class BlogPost(Document):
             review = DecimalField()
@@ -150,7 +129,6 @@ class TestQueryset3(MongoDBTestCase):
         await post.reload()
         assert float(post.review) == 3.5
 
-
     async def test_update_decimalfield_operator_not_working_with_force_string(self):
         class BlogPost(Document):
             review = DecimalField(force_string=True)
@@ -162,7 +140,6 @@ class TestQueryset3(MongoDBTestCase):
 
         with pytest.raises(OperationError):
             await BlogPost.objects.update_one(inc__review=0.1)  # test with floats
-
 
     async def test_update_listfield_operator(self):
         """Ensure that atomic updates work properly."""
@@ -197,7 +174,6 @@ class TestQueryset3(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_update_unset(self):
         class BlogPost(Document):
             title = StringField()
@@ -212,7 +188,6 @@ class TestQueryset3(MongoDBTestCase):
         assert post.title is None
         pymongo_doc = await BlogPost.objects.as_pymongo().first()
         assert "title" not in pymongo_doc
-
 
     async def test_update_push_with_position(self):
         """Ensure that the 'push' update with position works properly."""
@@ -239,7 +214,6 @@ class TestQueryset3(MongoDBTestCase):
         await post.reload()
         assert post.tags == ["scala", "mongodb", "python", "java"]
 
-
     async def test_update_push_list_of_list(self):
         """Ensure that the 'push' update operation works in the list of list"""
 
@@ -254,7 +228,6 @@ class TestQueryset3(MongoDBTestCase):
         await BlogPost.objects.filter(slug="test").update(push__tags=["value1", 123])
         await post.reload()
         assert post.tags == [["value1", 123]]
-
 
     async def test_update_push_and_pull_add_to_set(self):
         """Ensure that the 'pull' update operation works correctly."""
@@ -290,7 +263,6 @@ class TestQueryset3(MongoDBTestCase):
         await post.reload()
         assert post.tags == ["code", "mongodb"]
 
-
     async def test_aggregation_update(self):
         """Ensure that the 'aggregation_update' update works correctly."""
 
@@ -312,14 +284,11 @@ class TestQueryset3(MongoDBTestCase):
         await BlogPost.objects(slug="test test").update(
             __raw__=[
                 {"$set": {"slug": {"$concat": ["$slug", " ", "it"]}}},  # test test it
-                {
-                    "$set": {"slug": {"$concat": ["When", " ", "$slug"]}}
-                },  # When test test it
+                {"$set": {"slug": {"$concat": ["When", " ", "$slug"]}}},  # When test test it
             ],
         )
         await post.reload()
         assert post.slug == "When test test it"
-
 
     async def test_combination_of_mongoengine_and__raw__(self):
         """Ensure that the '__raw__' update/query works in combination with mongoengine syntax correctly."""
@@ -343,24 +312,10 @@ class TestQueryset3(MongoDBTestCase):
         assert post.foo == "baz"
 
         assert await BlogPost.objects(foo="baz", __raw__={"slug": "test test"}).count() == 1
-        assert (
-            await BlogPost.objects(foo__ne="bar", __raw__={"slug": {"$ne": "test"}}).count()
-            == 1
-        )
-        assert (
-            await BlogPost.objects(foo="baz", __raw__={"slug": {"$ne": "test test"}}).count()
-            == 0
-        )
-        assert (
-            await BlogPost.objects(foo__ne="baz", __raw__={"slug": "test test"}).count() == 0
-        )
-        assert (
-            await BlogPost.objects(
-                foo__ne="baz", __raw__={"slug": {"$ne": "test test"}}
-            ).count()
-            == 0
-        )
-
+        assert await BlogPost.objects(foo__ne="bar", __raw__={"slug": {"$ne": "test"}}).count() == 1
+        assert await BlogPost.objects(foo="baz", __raw__={"slug": {"$ne": "test test"}}).count() == 0
+        assert await BlogPost.objects(foo__ne="baz", __raw__={"slug": "test test"}).count() == 0
+        assert await BlogPost.objects(foo__ne="baz", __raw__={"slug": {"$ne": "test test"}}).count() == 0
 
     async def test_add_to_set_each(self):
         class Item(Document):
@@ -379,13 +334,12 @@ class TestQueryset3(MongoDBTestCase):
 
         assert [parent_1, parent_2] == item.parents
 
-
     async def test_pull_nested(self):
         class Collaborator(EmbeddedDocument):
             user = StringField()
 
             def __unicode__(self):
-                return "%s" % self.user
+                return f"{self.user}"
 
         class Site(Document):
             name = StringField(max_length=75, unique=True, required=True)
@@ -402,13 +356,12 @@ class TestQueryset3(MongoDBTestCase):
         with pytest.raises(InvalidQueryError):
             await Site.objects(id=s.id).update_one(pull_all__collaborators__user=["Ross"])
 
-
     async def test_pull_from_nested_embedded(self):
         class User(EmbeddedDocument):
             name = StringField()
 
             def __unicode__(self):
-                return "%s" % self.name
+                return f"{self.name}"
 
         class Collaborator(EmbeddedDocument):
             helpful = ListField(EmbeddedDocumentField(User))
@@ -422,23 +375,16 @@ class TestQueryset3(MongoDBTestCase):
 
         c = User(name="Esteban")
         f = User(name="Frank")
-        s = await Site(
-            name="test", collaborators=Collaborator(helpful=[c], unhelpful=[f])
-        ).save()
+        s = await Site(name="test", collaborators=Collaborator(helpful=[c], unhelpful=[f])).save()
 
         await Site.objects(id=s.id).update_one(pull__collaborators__helpful=c)
         assert (await Site.objects.first()).collaborators["helpful"] == []
 
-        await Site.objects(id=s.id).update_one(
-            pull__collaborators__unhelpful={"name": "Frank"}
-        )
+        await Site.objects(id=s.id).update_one(pull__collaborators__unhelpful={"name": "Frank"})
         assert (await Site.objects.first()).collaborators["unhelpful"] == []
 
         with pytest.raises(InvalidQueryError):
-            await Site.objects(id=s.id).update_one(
-                pull_all__collaborators__helpful__name=["Ross"]
-            )
-
+            await Site.objects(id=s.id).update_one(pull_all__collaborators__helpful__name=["Ross"])
 
     async def test_pull_from_nested_embedded_using_in_nin(self):
         """Ensure that the 'pull' update operation works on embedded documents using 'in' and 'nin' operators."""
@@ -447,7 +393,7 @@ class TestQueryset3(MongoDBTestCase):
             name = StringField()
 
             def __unicode__(self):
-                return "%s" % self.name
+                return f"{self.name}"
 
         class Collaborator(EmbeddedDocument):
             helpful = ListField(EmbeddedDocumentField(User))
@@ -464,27 +410,20 @@ class TestQueryset3(MongoDBTestCase):
         x = User(name="Harry")
         y = User(name="John")
 
-        s = await Site(
-            name="test", collaborators=Collaborator(helpful=[a, b], unhelpful=[x, y])
-        ).save()
+        s = await Site(name="test", collaborators=Collaborator(helpful=[a, b], unhelpful=[x, y])).save()
 
-        await Site.objects(id=s.id).update_one(
-            pull__collaborators__helpful__name__in=["Esteban"]
-        )  # Pull a
+        await Site.objects(id=s.id).update_one(pull__collaborators__helpful__name__in=["Esteban"])  # Pull a
         assert (await Site.objects.first()).collaborators["helpful"] == [b]
 
-        await Site.objects(id=s.id).update_one(
-            pull__collaborators__unhelpful__name__nin=["John"]
-        )  # Pull x
+        await Site.objects(id=s.id).update_one(pull__collaborators__unhelpful__name__nin=["John"])  # Pull x
         assert (await Site.objects.first()).collaborators["unhelpful"] == [y]
-
 
     async def test_pull_from_nested_mapfield(self):
         class Collaborator(EmbeddedDocument):
             user = StringField()
 
             def __unicode__(self):
-                return "%s" % self.user
+                return f"{self.user}"
 
         class Site(Document):
             name = StringField(max_length=75, unique=True, required=True)
@@ -500,16 +439,11 @@ class TestQueryset3(MongoDBTestCase):
         await Site.objects(id=s.id).update_one(pull__collaborators__helpful__user="Esteban")
         assert (await Site.objects.first()).collaborators["helpful"] == []
 
-        await Site.objects(id=s.id).update_one(
-            pull__collaborators__unhelpful={"user": "Frank"}
-        )
+        await Site.objects(id=s.id).update_one(pull__collaborators__unhelpful={"user": "Frank"})
         assert (await Site.objects.first()).collaborators["unhelpful"] == []
 
         with pytest.raises(InvalidQueryError):
-            await Site.objects(id=s.id).update_one(
-                pull_all__collaborators__helpful__user=["Ross"]
-            )
-
+            await Site.objects(id=s.id).update_one(pull_all__collaborators__helpful__user=["Ross"])
 
     async def test_pull_in_genericembedded_field(self):
         class Foo(EmbeddedDocument):
@@ -526,7 +460,6 @@ class TestQueryset3(MongoDBTestCase):
         await bar.reload()
         assert len(bar.foos) == 0
 
-
     async def test_update_one_check_return_with_full_result(self):
         class BlogTag(Document):
             name = StringField(required=True)
@@ -539,7 +472,6 @@ class TestQueryset3(MongoDBTestCase):
 
         full_result_update = await BlogTag.objects.update_one(name="new", full_result=True)
         assert isinstance(full_result_update, UpdateResult)
-
 
     async def test_update_one_pop_generic_reference(self):
         class BlogTag(Document):
@@ -572,7 +504,6 @@ class TestQueryset3(MongoDBTestCase):
         await BlogPost.drop_collection()
         await BlogTag.drop_collection()
 
-
     async def test_editting_embedded_objects(self):
         class BlogTag(EmbeddedDocument):
             name = StringField(required=True)
@@ -603,7 +534,6 @@ class TestQueryset3(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_set_list_embedded_documents(self):
         class Author(EmbeddedDocument):
             name = StringField()
@@ -617,9 +547,7 @@ class TestQueryset3(MongoDBTestCase):
         message = Message(title="hello", authors=[Author(name="Harry")])
         await message.save()
 
-        await Message.objects(authors__name="Harry").update_one(
-            set__authors__S=Author(name="Ross")
-        )
+        await Message.objects(authors__name="Harry").update_one(set__authors__S=Author(name="Ross"))
 
         message = await message.reload()
         assert message.authors[0].name == "Ross"
@@ -637,7 +565,6 @@ class TestQueryset3(MongoDBTestCase):
         assert message.authors[1].name == "Ross"
         assert message.authors[2].name == "Adam"
 
-
     async def test_set_generic_embedded_documents(self):
         class Bar(EmbeddedDocument):
             name = StringField()
@@ -654,7 +581,6 @@ class TestQueryset3(MongoDBTestCase):
         user = await User.objects(username="abc").first()
         assert user.bar.name == "test"
 
-
     async def test_reload_embedded_docs_instance(self):
         class SubDoc(EmbeddedDocument):
             val = IntField()
@@ -667,7 +593,6 @@ class TestQueryset3(MongoDBTestCase):
 
         assert doc.pk == doc.embedded._instance.pk
 
-
     async def test_reload_list_embedded_docs_instance(self):
         class SubDoc(EmbeddedDocument):
             val = IntField()
@@ -679,7 +604,6 @@ class TestQueryset3(MongoDBTestCase):
         await doc.reload()
 
         assert doc.pk == doc.embedded[0]._instance.pk
-
 
     async def test_order_by(self):
         """Ensure that QuerySets may be ordered."""
@@ -704,7 +628,6 @@ class TestQueryset3(MongoDBTestCase):
 
         ages = [p.age async for p in self.Person.objects.order_by("")]
         assert ages == [40, 20, 30]
-
 
     async def test_order_by_optional(self):
         class BlogPost(Document):
@@ -731,7 +654,6 @@ class TestQueryset3(MongoDBTestCase):
         expected.reverse()
         await self.assertSequence(BlogPost.objects.order_by("-published_date"), expected)
 
-
     async def test_order_by_list(self):
         class BlogPost(Document):
             title = StringField()
@@ -739,15 +661,9 @@ class TestQueryset3(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-        blog_post_1 = await BlogPost.objects.create(
-            title="A", published_date=datetime.datetime(2010, 1, 6, 0, 0, 0)
-        )
-        blog_post_2 = await BlogPost.objects.create(
-            title="B", published_date=datetime.datetime(2010, 1, 6, 0, 0, 0)
-        )
-        blog_post_3 = await BlogPost.objects.create(
-            title="C", published_date=datetime.datetime(2010, 1, 7, 0, 0, 0)
-        )
+        blog_post_1 = await BlogPost.objects.create(title="A", published_date=datetime.datetime(2010, 1, 6, 0, 0, 0))
+        blog_post_2 = await BlogPost.objects.create(title="B", published_date=datetime.datetime(2010, 1, 6, 0, 0, 0))
+        blog_post_3 = await BlogPost.objects.create(title="C", published_date=datetime.datetime(2010, 1, 7, 0, 0, 0))
 
         qs = BlogPost.objects.order_by("published_date", "title")
         expected = [blog_post_1, blog_post_2, blog_post_3]
@@ -756,7 +672,6 @@ class TestQueryset3(MongoDBTestCase):
         qs = BlogPost.objects.order_by("-published_date", "-title")
         expected.reverse()
         await self.assertSequence(qs, expected)
-
 
     async def test_order_by_chaining(self):
         """Ensure that an order_by query chains properly and allows .only()"""
@@ -789,7 +704,6 @@ class TestQueryset3(MongoDBTestCase):
         ages = [p.age async for p in qs]
         assert ages == [40, 30, 20]
 
-
     async def test_order_by_using_raw(self):
         person_a = self.Person(name="User A", age=20)
         await person_a.save()
@@ -805,17 +719,12 @@ class TestQueryset3(MongoDBTestCase):
         names = [p.name async for p in qs]
         assert names == ["User C", "User B", "User B", "User A"]
 
-        names = [
-            (p.name, p.age)
-            async for p in self.Person.objects.order_by(__raw__=[("name", pymongo.ASCENDING)])
-        ]
+        names = [(p.name, p.age) async for p in self.Person.objects.order_by(__raw__=[("name", pymongo.ASCENDING)])]
         assert names == [("User A", 20), ("User B", 30), ("User B", 25), ("User C", 40)]
 
         if PYMONGO_VERSION >= (4, 4):
             # Pymongo >= 4.4 allow to mix single key with tuples inside the list
-            qs = self.Person.objects.order_by(
-                __raw__=["name", ("age", pymongo.ASCENDING)]
-            )
+            qs = self.Person.objects.order_by(__raw__=["name", ("age", pymongo.ASCENDING)])
             names = [(p.name, p.age) async for p in qs]
             assert names == [
                 ("User A", 20),
@@ -824,15 +733,13 @@ class TestQueryset3(MongoDBTestCase):
                 ("User C", 40),
             ]
 
-
     async def test_order_by_using_raw_and_keys_raises_exception(self):
         with pytest.raises(OperationError):
             self.Person.objects.order_by("-name", __raw__=[("age", pymongo.ASCENDING)])
 
-
     async def test_confirm_order_by_reference_wont_work(self):
         """Ordering by reference is not possible.  Use map / reduce.. or
-            denormalise"""
+        denormalise"""
 
         class Author(Document):
             author = ReferenceField(self.Person)
@@ -857,7 +764,6 @@ class TestQueryset3(MongoDBTestCase):
             names.append(person.name)
         assert names == ["User A", "User B", "User C"]
 
-
     async def test_comment(self):
         """Make sure adding a comment to the query gets added to the query"""
         _, CMD_QUERY_KEY = "sort", "command"
@@ -876,7 +782,6 @@ class TestQueryset3(MongoDBTestCase):
             for op in ops:
                 assert op[CMD_QUERY_KEY][QUERY_KEY] == {"age": {"$gte": 18}}
                 assert op[CMD_QUERY_KEY][COMMENT_KEY] == "looking for an adult"
-
 
     async def test_map_reduce(self):
         """Ensure map/reduce is both mapping and reducing."""
@@ -921,11 +826,10 @@ class TestQueryset3(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_map_reduce_with_custom_object_ids(self):
         """Ensure that QuerySet.map_reduce works properly with custom
-            primary keys.
-            """
+        primary keys.
+        """
 
         class BlogPost(Document):
             title = StringField(primary_key=True)
@@ -961,9 +865,7 @@ class TestQueryset3(MongoDBTestCase):
                 }
             """
 
-        results = await BlogPost.objects.order_by("_id").map_reduce(
-            map_f, reduce_f, "myresults2"
-        )
+        results = await BlogPost.objects.order_by("_id").map_reduce(map_f, reduce_f, "myresults2")
         results = list(results)
 
         assert len(results) == 3
@@ -973,11 +875,10 @@ class TestQueryset3(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-
     async def test_map_reduce_custom_output(self):
         """
-            Test map/reduce custom output
-            """
+        Test map/reduce custom output
+        """
 
         class Family(Document):
             id = IntField(primary_key=True)
@@ -1111,11 +1012,10 @@ class TestQueryset3(MongoDBTestCase):
             },
         }
 
-
     async def test_map_reduce_finalize(self):
         """Ensure that map, reduce, and finalize run and introduce "scope"
-            by simulating "hotness" ranking with Reddit algorithm.
-            """
+        by simulating "hotness" ranking with Reddit algorithm.
+        """
         from time import mktime
 
         class Link(Document):
@@ -1224,9 +1124,7 @@ class TestQueryset3(MongoDBTestCase):
         # to "-value", which orders the "weight" value returned from
         # "finalize_f" in descending order.
         results = Link.objects.order_by("-value")
-        results = await results.map_reduce(
-            map_f, reduce_f, "myresults", finalize_f=finalize_f, scope=scope
-        )
+        results = await results.map_reduce(map_f, reduce_f, "myresults", finalize_f=finalize_f, scope=scope)
         results = list(results)
 
         # assert troublesome Buzz article is ranked 1st
@@ -1236,4 +1134,3 @@ class TestQueryset3(MongoDBTestCase):
         assert (await results[-1].get_object()).title.startswith("How to see")
 
         await Link.drop_collection()
-

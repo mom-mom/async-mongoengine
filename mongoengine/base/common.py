@@ -52,12 +52,8 @@ class _DocumentRegistry:
 
         # 3. Suffix fallback for old-style names (e.g. "Area" -> "Location.Area")
         single_end = name.split(".")[-1]
-        compound_end = ".%s" % single_end
-        possible_match = [
-            k
-            for k in _class_name_registry
-            if k.endswith(compound_end) or k == single_end
-        ]
+        compound_end = f".{single_end}"
+        possible_match = [k for k in _class_name_registry if k.endswith(compound_end) or k == single_end]
         if len(possible_match) == 1:
             return _class_name_registry[possible_match[0]]
 
@@ -90,10 +86,7 @@ class _DocumentRegistry:
             _document_registry.pop(doc_cls_name)
         else:
             # Find by _class_name suffix in primary registry
-            to_remove = [
-                k for k in _document_registry
-                if k.endswith(".%s" % doc_cls_name)
-            ]
+            to_remove = [k for k in _document_registry if k.endswith(f".{doc_cls_name}")]
             for key in to_remove:
                 _document_registry.pop(key)
 
@@ -104,8 +97,4 @@ def _get_documents_by_db(connection_alias, default_connection_alias):
     def get_doc_alias(doc_cls):
         return doc_cls._meta.get("db_alias", default_connection_alias)
 
-    return [
-        doc_cls
-        for doc_cls in _document_registry.values()
-        if get_doc_alias(doc_cls) == connection_alias
-    ]
+    return [doc_cls for doc_cls in _document_registry.values() if get_doc_alias(doc_cls) == connection_alias]

@@ -60,9 +60,7 @@ class TestContextManagers(MongoDBTestCase):
         collection = await User._get_collection()
         original_write_concern = collection.write_concern
 
-        with set_write_concern(
-            collection, {"w": "majority", "j": True, "wtimeout": 1234}
-        ) as updated_collection:
+        with set_write_concern(collection, {"w": "majority", "j": True, "wtimeout": 1234}) as updated_collection:
             assert updated_collection.write_concern.document == {
                 "w": "majority",
                 "j": True,
@@ -164,7 +162,7 @@ class TestContextManagers(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            await User(name="user %s" % i).save()
+            await User(name=f"user {i}").save()
 
         user = await User.objects.first()
         await Group(ref=user, members=[u async for u in User.objects], generic=user).save()
@@ -217,9 +215,7 @@ class TestContextManagers(MongoDBTestCase):
                     group = Group.objects.first()
                     assert isinstance(group.ref, User)
 
-        threads = [
-            TestableThread(target=run_in_thread, args=(id,)) for id in range(100)
-        ]
+        threads = [TestableThread(target=run_in_thread, args=(id,)) for id in range(100)]
         _ = [th.start() for th in threads]
         _ = [th.join() for th in threads]
 
@@ -236,7 +232,7 @@ class TestContextManagers(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            await User(name="user %s" % i).save()
+            await User(name=f"user {i}").save()
 
         user = await User.objects.first()
         await Group(ref=user).save()
@@ -272,7 +268,7 @@ class TestContextManagers(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            await User(name="user %s" % i).save()
+            await User(name=f"user {i}").save()
 
         user = await User.objects.first()
         await Group(ref=user, members=[u async for u in User.objects], generic=user).save()
@@ -386,7 +382,7 @@ class TestContextManagers(MongoDBTestCase):
             new_level = 1
             await _set_profiling_level(new_level)
             assert await _current_profiling_level() == new_level
-            async with query_counter() as q:
+            async with query_counter():
                 assert await _current_profiling_level() == 2
             assert await _current_profiling_level() == new_level
         except Exception:
@@ -482,7 +478,7 @@ class TestContextManagers(MongoDBTestCase):
         collection = db.query_counter
         await collection.drop()
 
-        many_docs = [{"test": "garbage %s" % i} for i in range(150)]
+        many_docs = [{"test": f"garbage {i}"} for i in range(150)]
         await collection.insert_many(many_docs)
 
         async with query_counter() as q:
@@ -494,7 +490,7 @@ class TestContextManagers(MongoDBTestCase):
         db = get_db()
 
         collection = db.query_counter
-        await collection.insert_many([{"test": "garbage %s" % i} for i in range(10)])
+        await collection.insert_many([{"test": f"garbage {i}"} for i in range(10)])
 
         async with query_counter() as q:
             assert await q.get_count() == 0
@@ -505,9 +501,7 @@ class TestContextManagers(MongoDBTestCase):
 
             await cursor.close()  # issues a `killcursors` query that is ignored by the context
             assert await q.get_count() == 1
-            _ = await (
-                db.system.indexes.find_one()
-            )  # queries on db.system.indexes are ignored as well
+            _ = await db.system.indexes.find_one()  # queries on db.system.indexes are ignored as well
             assert await q.get_count() == 1
 
     @pytest.mark.skip(reason="Requires replica set for transactions")
@@ -863,17 +857,13 @@ class TestContextManagers(MongoDBTestCase):
                 await A.objects.create(i=i)
 
             # Prime the threads
-            threads = [
-                TestableThread(target=thread_fn, args=(i,)) for i in range(thread_count)
-            ]
+            threads = [TestableThread(target=thread_fn, args=(i,)) for i in range(thread_count)]
             for t in threads:
                 t.start()
             for t in threads:
                 t.join()
 
             # Check the sum
-            expected_sum = sum(
-                i if i % 2 == 0 else i * thread_count for i in range(thread_count)
-            )
+            expected_sum = sum(i if i % 2 == 0 else i * thread_count for i in range(thread_count))
             assert expected_sum == 2090
             assert expected_sum == sum(a.i async for a in A.objects.all())

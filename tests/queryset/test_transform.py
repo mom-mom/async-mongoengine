@@ -7,24 +7,17 @@ from tests.utils import MongoDBTestCase
 
 
 class TestTransform(MongoDBTestCase):
-
     def test_transform_str_datetime(self):
         data = {"date": {"$ne": "2015-12-01T00:00:00"}}
         assert transform.query(**data) == {"date": {"$ne": "2015-12-01T00:00:00"}}
-        assert transform.query(date__ne="2015-12-01T00:00:00") == {
-            "date": {"$ne": "2015-12-01T00:00:00"}
-        }
+        assert transform.query(date__ne="2015-12-01T00:00:00") == {"date": {"$ne": "2015-12-01T00:00:00"}}
 
     def test_transform_query(self):
         """Ensure that the _transform_query function operates correctly."""
         assert transform.query(name="test", age=30) == {"name": "test", "age": 30}
         assert transform.query(age__lt=30) == {"age": {"$lt": 30}}
-        assert transform.query(age__gt=20, age__lt=50) == {
-            "age": {"$gt": 20, "$lt": 50}
-        }
-        assert transform.query(age=20, age__gt=50) == {
-            "$and": [{"age": {"$gt": 50}}, {"age": 20}]
-        }
+        assert transform.query(age__gt=20, age__lt=50) == {"age": {"$gt": 20, "$lt": 50}}
+        assert transform.query(age=20, age__gt=50) == {"$and": [{"age": {"$gt": 50}}, {"age": 20}]}
         assert transform.query(friend__age__gte=30) == {"friend.age": {"$gte": 30}}
         assert transform.query(name__exists=True) == {"name": {"$exists": True}}
         assert transform.query(name=["Mark"], __raw__={"name": {"$in": "Tom"}}) == {
@@ -56,7 +49,7 @@ class TestTransform(MongoDBTestCase):
             ("set_on_insert", "$setOnInsert"),
             ("push", "$push"),
         ):
-            update = transform.update(DicDoc, **{"%s__dictField__test" % k: doc})
+            update = transform.update(DicDoc, **{f"{k}__dictField__test": doc})
             assert isinstance(update[v]["dictField.test"], dict)
 
         # Update special cases
@@ -98,9 +91,7 @@ class TestTransform(MongoDBTestCase):
 
         class BlogPost(Document):
             title = StringField(db_field="postTitle")
-            comments = ListField(
-                EmbeddedDocumentField(Comment), db_field="postComments"
-            )
+            comments = ListField(EmbeddedDocumentField(Comment), db_field="postComments")
 
         await BlogPost.drop_collection()
 
@@ -214,9 +205,7 @@ class TestTransform(MongoDBTestCase):
         update = transform.update(Location, set__loc=[1, 2])
         assert update == {"$set": {"loc": {"type": "Point", "coordinates": [1, 2]}}}
 
-        update = transform.update(
-            Location, set__loc={"type": "Point", "coordinates": [1, 2]}
-        )
+        update = transform.update(Location, set__loc={"type": "Point", "coordinates": [1, 2]})
         assert update == {"$set": {"loc": {"type": "Point", "coordinates": [1, 2]}}}
 
     def test_geojson_LineStringField(self):
@@ -224,24 +213,16 @@ class TestTransform(MongoDBTestCase):
             line = LineStringField()
 
         update = transform.update(Location, set__line=[[1, 2], [2, 2]])
-        assert update == {
-            "$set": {"line": {"type": "LineString", "coordinates": [[1, 2], [2, 2]]}}
-        }
+        assert update == {"$set": {"line": {"type": "LineString", "coordinates": [[1, 2], [2, 2]]}}}
 
-        update = transform.update(
-            Location, set__line={"type": "LineString", "coordinates": [[1, 2], [2, 2]]}
-        )
-        assert update == {
-            "$set": {"line": {"type": "LineString", "coordinates": [[1, 2], [2, 2]]}}
-        }
+        update = transform.update(Location, set__line={"type": "LineString", "coordinates": [[1, 2], [2, 2]]})
+        assert update == {"$set": {"line": {"type": "LineString", "coordinates": [[1, 2], [2, 2]]}}}
 
     def test_geojson_PolygonField(self):
         class Location(Document):
             poly = PolygonField()
 
-        update = transform.update(
-            Location, set__poly=[[[40, 5], [40, 6], [41, 6], [40, 5]]]
-        )
+        update = transform.update(Location, set__poly=[[[40, 5], [40, 6], [41, 6], [40, 5]]])
         assert update == {
             "$set": {
                 "poly": {
@@ -354,9 +335,7 @@ class TestTransform(MongoDBTestCase):
 
         word = Word(word="abc", index=1)
         update = transform.update(MainDoc, pull__content__text=word)
-        assert update == {
-            "$pull": {"content.text": SON([("word", "abc"), ("index", 1)])}
-        }
+        assert update == {"$pull": {"content.text": SON([("word", "abc"), ("index", 1)])}}
 
         update = transform.update(MainDoc, pull__content__heading="xyz")
         assert update == {"$pull": {"content.heading": "xyz"}}
@@ -364,9 +343,7 @@ class TestTransform(MongoDBTestCase):
         update = transform.update(MainDoc, pull__content__text__word__in=["foo", "bar"])
         assert update == {"$pull": {"content.text": {"word": {"$in": ["foo", "bar"]}}}}
 
-        update = transform.update(
-            MainDoc, pull__content__text__word__nin=["foo", "bar"]
-        )
+        update = transform.update(MainDoc, pull__content__text__word__nin=["foo", "bar"])
         assert update == {"$pull": {"content.text": {"word": {"$nin": ["foo", "bar"]}}}}
 
     async def test_transform_embedded_document_list_fields(self):
@@ -385,12 +362,8 @@ class TestTransform(MongoDBTestCase):
         await Shop.drop_collection()
         drinks = [Drink(id="drink_1"), Drink(id="drink_2")]
         await Shop.objects.create(drinks=drinks)
-        q_obj = transform.query(
-            Shop, drinks__all=[{"$elemMatch": {"_id": x.id}} for x in drinks]
-        )
-        assert q_obj == {
-            "drinks": {"$all": [{"$elemMatch": {"_id": x.id}} for x in drinks]}
-        }
+        q_obj = transform.query(Shop, drinks__all=[{"$elemMatch": {"_id": x.id}} for x in drinks])
+        assert q_obj == {"drinks": {"$all": [{"$elemMatch": {"_id": x.id}} for x in drinks]}}
 
         await Shop.drop_collection()
 
@@ -401,20 +374,16 @@ class TestTransform(MongoDBTestCase):
         await Object.drop_collection()
         objects = await Object.objects.insert([Object() for _ in range(8)])
         # singular queries
-        assert transform.query(Object, field=objects[0].pk) == {
-            "field._ref.$id": objects[0].pk
-        }
-        assert transform.query(Object, field=objects[1].to_dbref()) == {
-            "field._ref": objects[1].to_dbref()
-        }
+        assert transform.query(Object, field=objects[0].pk) == {"field._ref.$id": objects[0].pk}
+        assert transform.query(Object, field=objects[1].to_dbref()) == {"field._ref": objects[1].to_dbref()}
 
         # iterable queries
         assert transform.query(Object, field__in=[objects[2].pk, objects[3].pk]) == {
             "field._ref.$id": {"$in": [objects[2].pk, objects[3].pk]}
         }
-        assert transform.query(
-            Object, field__in=[objects[4].to_dbref(), objects[5].to_dbref()]
-        ) == {"field._ref": {"$in": [objects[4].to_dbref(), objects[5].to_dbref()]}}
+        assert transform.query(Object, field__in=[objects[4].to_dbref(), objects[5].to_dbref()]) == {
+            "field._ref": {"$in": [objects[4].to_dbref(), objects[5].to_dbref()]}
+        }
 
         # invalid query
         with pytest.raises(match="cannot be applied to mixed queries"):

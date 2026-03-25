@@ -35,24 +35,21 @@ class TestSignal(MongoDBTestCase):
 
             @classmethod
             def pre_init(cls, sender, document, *args, **kwargs):
-                signal_output.append("pre_init signal, %s" % cls.__name__)
+                signal_output.append(f"pre_init signal, {cls.__name__}")
                 signal_output.append(kwargs["values"])
 
             @classmethod
             def post_init(cls, sender, document, **kwargs):
-                signal_output.append(
-                    "post_init signal, %s, document._created = %s"
-                    % (document, document._created)
-                )
+                signal_output.append(f"post_init signal, {document}, document._created = {document._created}")
 
             @classmethod
             def pre_save(cls, sender, document, **kwargs):
-                signal_output.append("pre_save signal, %s" % document)
+                signal_output.append(f"pre_save signal, {document}")
                 signal_output.append(kwargs)
 
             @classmethod
             def pre_save_post_validation(cls, sender, document, **kwargs):
-                signal_output.append("pre_save_post_validation signal, %s" % document)
+                signal_output.append(f"pre_save_post_validation signal, {document}")
                 if kwargs.pop("created", False):
                     signal_output.append("Is created")
                 else:
@@ -61,11 +58,9 @@ class TestSignal(MongoDBTestCase):
 
             @classmethod
             def post_save(cls, sender, document, **kwargs):
-                dirty_keys = list(document._delta()[0].keys()) + list(
-                    document._delta()[1].keys()
-                )
-                signal_output.append("post_save signal, %s" % document)
-                signal_output.append("post_save dirty keys, %s" % dirty_keys)
+                dirty_keys = list(document._delta()[0].keys()) + list(document._delta()[1].keys())
+                signal_output.append(f"post_save signal, {document}")
+                signal_output.append(f"post_save dirty keys, {dirty_keys}")
                 if kwargs.pop("created", False):
                     signal_output.append("Is created")
                 else:
@@ -74,22 +69,22 @@ class TestSignal(MongoDBTestCase):
 
             @classmethod
             def pre_delete(cls, sender, document, **kwargs):
-                signal_output.append("pre_delete signal, %s" % document)
+                signal_output.append(f"pre_delete signal, {document}")
                 signal_output.append(kwargs)
 
             @classmethod
             def post_delete(cls, sender, document, **kwargs):
-                signal_output.append("post_delete signal, %s" % document)
+                signal_output.append(f"post_delete signal, {document}")
                 signal_output.append(kwargs)
 
             @classmethod
             def pre_bulk_insert(cls, sender, documents, **kwargs):
-                signal_output.append("pre_bulk_insert signal, %s" % documents)
+                signal_output.append(f"pre_bulk_insert signal, {documents}")
                 signal_output.append(kwargs)
 
             @classmethod
             def post_bulk_insert(cls, sender, documents, **kwargs):
-                signal_output.append("post_bulk_insert signal, %s" % documents)
+                signal_output.append(f"post_bulk_insert signal, {documents}")
                 if kwargs.pop("loaded", False):
                     signal_output.append("Is loaded")
                 else:
@@ -108,12 +103,12 @@ class TestSignal(MongoDBTestCase):
 
             @classmethod
             def pre_delete(cls, sender, document, **kwargs):
-                signal_output.append("pre_delete signal, %s" % document)
+                signal_output.append(f"pre_delete signal, {document}")
                 signal_output.append(kwargs)
 
             @classmethod
             def post_delete(cls, sender, document, **kwargs):
-                signal_output.append("post_delete signal, %s" % document)
+                signal_output.append(f"post_delete signal, {document}")
                 signal_output.append(kwargs)
 
         self.Another = Another
@@ -143,10 +138,7 @@ class TestSignal(MongoDBTestCase):
             def pre_bulk_insert(cls, sender, documents, **kwargs):
                 signal_output.append(
                     "pre_bulk_insert signal, %s"
-                    % [
-                        (doc, {"active": documents[n].active})
-                        for n, doc in enumerate(documents)
-                    ]
+                    % [(doc, {"active": documents[n].active}) for n, doc in enumerate(documents)]
                 )
 
                 # make changes here, this is just an example -
@@ -160,10 +152,7 @@ class TestSignal(MongoDBTestCase):
             def post_bulk_insert(cls, sender, documents, **kwargs):
                 signal_output.append(
                     "post_bulk_insert signal, %s"
-                    % [
-                        (doc, {"active": documents[n].active})
-                        for n, doc in enumerate(documents)
-                    ]
+                    % [(doc, {"active": documents[n].active}) for n, doc in enumerate(documents)]
                 )
                 if kwargs.pop("loaded", False):
                     signal_output.append("Is loaded")
@@ -190,9 +179,7 @@ class TestSignal(MongoDBTestCase):
         signals.pre_init.connect(Author.pre_init, sender=Author)
         signals.post_init.connect(Author.post_init, sender=Author)
         signals.pre_save.connect(Author.pre_save, sender=Author)
-        signals.pre_save_post_validation.connect(
-            Author.pre_save_post_validation, sender=Author
-        )
+        signals.pre_save_post_validation.connect(Author.pre_save_post_validation, sender=Author)
         signals.post_save.connect(Author.post_save, sender=Author)
         signals.pre_delete.connect(Author.pre_delete, sender=Author)
         signals.post_delete.connect(Author.post_delete, sender=Author)
@@ -213,9 +200,7 @@ class TestSignal(MongoDBTestCase):
         signals.post_delete.disconnect(self.Author.post_delete)
         signals.pre_delete.disconnect(self.Author.pre_delete)
         signals.post_save.disconnect(self.Author.post_save)
-        signals.pre_save_post_validation.disconnect(
-            self.Author.pre_save_post_validation
-        )
+        signals.pre_save_post_validation.disconnect(self.Author.pre_save_post_validation)
         signals.pre_save.disconnect(self.Author.pre_save)
         signals.pre_bulk_insert.disconnect(self.Author.pre_bulk_insert)
         signals.post_bulk_insert.disconnect(self.Author.post_bulk_insert)

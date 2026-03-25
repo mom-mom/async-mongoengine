@@ -44,9 +44,7 @@ class DeReference:
         self.max_depth = max_depth
         doc_type = None
 
-        if instance and isinstance(
-            instance, (Document, EmbeddedDocument, TopLevelDocumentMetaclass)
-        ):
+        if instance and isinstance(instance, (Document, EmbeddedDocument, TopLevelDocumentMetaclass)):
             doc_type = instance._fields.get(name)
             while hasattr(doc_type, "field"):
                 doc_type = doc_type.field
@@ -58,9 +56,7 @@ class DeReference:
 
                 if is_list and all(i.__class__ == doc_type for i in items):
                     return items
-                elif not is_list and all(
-                    i.__class__ == doc_type for i in items.values()
-                ):
+                elif not is_list and all(i.__class__ == doc_type for i in items.values()):
                     return items
                 elif not field.dbref:
                     # We must turn the ObjectIds into DBRefs
@@ -131,18 +127,12 @@ class DeReference:
                     elif isinstance(v, DBRef):
                         reference_map.setdefault(field.document_type, set()).add(v.id)
                     elif isinstance(v, (dict, SON)) and "_ref" in v:
-                        reference_map.setdefault(
-                            _DocumentRegistry.get(v["_cls"]), set()
-                        ).add(v["_ref"].id)
+                        reference_map.setdefault(_DocumentRegistry.get(v["_cls"]), set()).add(v["_ref"].id)
                     elif isinstance(v, (dict, list, tuple)) and depth <= self.max_depth:
-                        field_cls = getattr(
-                            getattr(field, "field", None), "document_type", None
-                        )
+                        field_cls = getattr(getattr(field, "field", None), "document_type", None)
                         references = self._find_references(v, depth)
                         for key, refs in references.items():
-                            if isinstance(
-                                field_cls, (Document, TopLevelDocumentMetaclass)
-                            ):
+                            if isinstance(field_cls, (Document, TopLevelDocumentMetaclass)):
                                 key = field_cls
                             reference_map.setdefault(key, set()).update(refs)
             elif isinstance(item, LazyReference):
@@ -151,9 +141,7 @@ class DeReference:
             elif isinstance(item, DBRef):
                 reference_map.setdefault(item.collection, set()).add(item.id)
             elif isinstance(item, (dict, SON)) and "_ref" in item:
-                reference_map.setdefault(
-                    _DocumentRegistry.get(item["_cls"]), set()
-                ).add(item["_ref"].id)
+                reference_map.setdefault(_DocumentRegistry.get(item["_cls"]), set()).add(item["_ref"].id)
             elif isinstance(item, (dict, list, tuple)) and depth - 1 <= self.max_depth:
                 references = self._find_references(item, depth - 1)
                 for key, refs in references.items():
@@ -171,9 +159,7 @@ class DeReference:
 
             if ref_document_cls_exists:
                 col_name = collection._get_collection_name()
-                refs = [
-                    dbref for dbref in dbrefs if (col_name, dbref) not in object_map
-                ]
+                refs = [dbref for dbref in dbrefs if (col_name, dbref) not in object_map]
                 references = await collection.objects.in_bulk(refs)
                 for key, doc in references.items():
                     object_map[(col_name, key)] = doc
@@ -181,21 +167,15 @@ class DeReference:
                 if isinstance(doc_type, (ListField, DictField, MapField)):
                     continue
 
-                refs = [
-                    dbref for dbref in dbrefs if (collection, dbref) not in object_map
-                ]
+                refs = [dbref for dbref in dbrefs if (collection, dbref) not in object_map]
 
                 if doc_type:
-                    references = doc_type._get_db()[collection].find(
-                        {"_id": {"$in": refs}}, session=_get_session()
-                    )
+                    references = doc_type._get_db()[collection].find({"_id": {"$in": refs}}, session=_get_session())
                     async for ref in references:
                         doc = doc_type._from_son(ref)
                         object_map[(collection, doc.id)] = doc
                 else:
-                    references = get_db()[collection].find(
-                        {"_id": {"$in": refs}}, session=_get_session()
-                    )
+                    references = get_db()[collection].find({"_id": {"$in": refs}}, session=_get_session())
                     async for ref in references:
                         if "_cls" in ref:
                             doc = _DocumentRegistry.get(ref["_cls"])._from_son(ref)
@@ -231,9 +211,7 @@ class DeReference:
 
         if isinstance(items, (dict, SON)):
             if "_ref" in items:
-                return self.object_map.get(
-                    (items["_ref"].collection, items["_ref"].id), items
-                )
+                return self.object_map.get((items["_ref"].collection, items["_ref"].id), items)
             elif "_cls" in items:
                 doc = _DocumentRegistry.get(items["_cls"])._from_son(items)
                 _cls = doc._data.pop("_cls", None)
@@ -269,23 +247,15 @@ class DeReference:
                 for field_name in v._fields:
                     v = data[k]._data.get(field_name, None)
                     if isinstance(v, DBRef):
-                        data[k]._data[field_name] = self.object_map.get(
-                            (v.collection, v.id), v
-                        )
+                        data[k]._data[field_name] = self.object_map.get((v.collection, v.id), v)
                     elif isinstance(v, (dict, SON)) and "_ref" in v:
-                        data[k]._data[field_name] = self.object_map.get(
-                            (v["_ref"].collection, v["_ref"].id), v
-                        )
+                        data[k]._data[field_name] = self.object_map.get((v["_ref"].collection, v["_ref"].id), v)
                     elif isinstance(v, (dict, list, tuple)) and depth <= self.max_depth:
                         item_name = f"{name}.{k}.{field_name}"
-                        data[k]._data[field_name] = self._attach_objects(
-                            v, depth, instance=instance, name=item_name
-                        )
+                        data[k]._data[field_name] = self._attach_objects(v, depth, instance=instance, name=item_name)
             elif isinstance(v, (dict, list, tuple)) and depth <= self.max_depth:
                 item_name = f"{name}.{k}" if name else name
-                data[k] = self._attach_objects(
-                    v, depth - 1, instance=instance, name=item_name
-                )
+                data[k] = self._attach_objects(v, depth - 1, instance=instance, name=item_name)
             elif isinstance(v, DBRef) and hasattr(v, "id"):
                 data[k] = self.object_map.get((v.collection, v.id), v)
 

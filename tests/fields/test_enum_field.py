@@ -100,9 +100,7 @@ class TestStringEnumField(MongoDBTestCase):
             z = enum_field
 
         FancyDoc(z=Status.DONE).validate()
-        with pytest.raises(
-            ValidationError, match=r"Value must be one of .*Status.DONE"
-        ):
+        with pytest.raises(ValidationError, match=r"Value must be one of .*Status.DONE"):
             FancyDoc(z=Status.NEW).validate()
 
     def test_wrong_choices(self):
@@ -115,9 +113,7 @@ class TestStringEnumField(MongoDBTestCase):
 
     async def test_embedding_in_complex_field(self):
         await ModelComplexEnum.drop_collection()
-        model = await ModelComplexEnum(
-            status="new", statuses=["new"], color_mapping={"red": 1}
-        ).save()
+        model = await ModelComplexEnum(status="new", statuses=["new"], color_mapping={"red": 1}).save()
         assert model.status == Status.NEW
         assert model.statuses == [Status.NEW]
         assert model.color_mapping == {"red": Color.RED}

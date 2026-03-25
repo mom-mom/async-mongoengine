@@ -1,5 +1,3 @@
-import pytest
-import time
 from datetime import datetime, timedelta
 
 from mongoengine import (
@@ -36,9 +34,7 @@ class TestTimeSeriesCollections(MongoDBTestCase):
 
     async def test_definition(self):
         """Ensure that document may be defined using fields."""
-        assert ["id", "temperature", "timestamp"] == sorted(
-            self.SensorData._fields.keys()
-        )
+        assert ["id", "temperature", "timestamp"] == sorted(self.SensorData._fields.keys())
         assert ["DateTimeField", "FloatField", "ObjectIdField"] == sorted(
             x.__class__.__name__ for x in self.SensorData._fields.values()
         )
@@ -154,5 +150,3 @@ class TestTimeSeriesCollections(MongoDBTestCase):
         assert await documents.count() == 2
         assert (await documents.get_item(0)).temperature == 23.0
         assert (await documents.get_item(1)).temperature == 24.0
-
-

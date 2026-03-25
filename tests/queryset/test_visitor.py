@@ -208,14 +208,10 @@ class TestQ(MongoDBTestCase):
 
         await BlogPost.drop_collection()
 
-        post1 = BlogPost(
-            title="Test 1", publish_date=datetime.datetime(2010, 1, 8), published=False
-        )
+        post1 = BlogPost(title="Test 1", publish_date=datetime.datetime(2010, 1, 8), published=False)
         await post1.save()
 
-        post2 = BlogPost(
-            title="Test 2", publish_date=datetime.datetime(2010, 1, 15), published=True
-        )
+        post2 = BlogPost(title="Test 2", publish_date=datetime.datetime(2010, 1, 15), published=True)
         await post2.save()
 
         post3 = BlogPost(title="Test 3", published=True)
@@ -298,15 +294,9 @@ class TestQ(MongoDBTestCase):
         assert repr(Q()) == "Q(**{})"
         assert repr(Q(name="test")) == "Q(**{'name': 'test'})"
 
-        assert (
-            repr(Q(name="test") & Q(age__gte=18))
-            == "(Q(**{'name': 'test'}) & Q(**{'age__gte': 18}))"
-        )
+        assert repr(Q(name="test") & Q(age__gte=18)) == "(Q(**{'name': 'test'}) & Q(**{'age__gte': 18}))"
 
-        assert (
-            repr(Q(name="test") | Q(age__gte=18))
-            == "(Q(**{'name': 'test'}) | Q(**{'age__gte': 18}))"
-        )
+        assert repr(Q(name="test") | Q(age__gte=18)) == "(Q(**{'name': 'test'}) | Q(**{'age__gte': 18}))"
 
     async def test_q_lists(self):
         """Ensure that Q objects query ListFields correctly."""
@@ -354,13 +344,8 @@ class TestQ(MongoDBTestCase):
         await Item(postables=[Post(name="a"), Post(name="c")]).save()
         await Item(postables=[Post(name="a"), Post(name="b"), Post(name="c")]).save()
 
-        assert (
-            await Item.objects(Q(postables__name="a") & Q(postables__name="b")).count() == 2
-        )
-        assert (
-            await Item.objects.filter(postables__name="a").filter(postables__name="b").count()
-            == 2
-        )
+        assert await Item.objects(Q(postables__name="a") & Q(postables__name="b")).count() == 2
+        assert await Item.objects.filter(postables__name="a").filter(postables__name="b").count() == 2
 
     def test_equality(self):
         assert Q(name="John") == Q(name="John")

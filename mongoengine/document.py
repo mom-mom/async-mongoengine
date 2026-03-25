@@ -293,15 +293,12 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
 
         # If the collection already exists and has different options
         # (i.e. isn't capped or has different max/size), raise an error.
-        if collection_name in await list_collection_names(
-            db, include_system_collections=True
-        ):
+        if collection_name in await list_collection_names(db, include_system_collections=True):
             collection = db[collection_name]
             options = await collection.options()
             if options.get("max") != max_documents or options.get("size") != max_size:
                 raise InvalidCollectionError(
-                    'Cannot create collection "{}" as a capped '
-                    "collection as it already exists".format(cls._collection)
+                    f'Cannot create collection "{cls._collection}" as a capped collection as it already exists'
                 )
 
             return collection
@@ -320,9 +317,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         collection_name = cls._get_collection_name()
         timeseries_opts = cls._meta.get("timeseries")
 
-        if collection_name in await list_collection_names(
-            db, include_system_collections=True
-        ):
+        if collection_name in await list_collection_names(db, include_system_collections=True):
             collection = db[collection_name]
             await collection.options()
             return collection
@@ -373,9 +368,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         if id_field not in query:
             query[id_field] = self.pk
         elif query[id_field] != self.pk:
-            raise InvalidQueryError(
-                "Invalid document modify query: it must modify only this document."
-            )
+            raise InvalidQueryError("Invalid document modify query: it must modify only this document.")
 
         # Need to add shard key to query, or you get an error
         query.update(self._object_key)
@@ -474,9 +467,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         doc_id = self.to_mongo(fields=[self._meta["id_field"]])
         created = "_id" not in doc_id or self._created or force_insert
 
-        signals.pre_save_post_validation.send(
-            self.__class__, document=self, created=created, **signal_kwargs
-        )
+        signals.pre_save_post_validation.send(self.__class__, document=self, created=created, **signal_kwargs)
         # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
         doc = self.to_mongo()
 
@@ -492,13 +483,9 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         try:
             # Save a new document or update an existing one
             if created:
-                object_id = await self._save_create(
-                    doc=doc, force_insert=force_insert, write_concern=write_concern
-                )
+                object_id = await self._save_create(doc=doc, force_insert=force_insert, write_concern=write_concern)
             else:
-                object_id, created = await self._save_update(
-                    doc, save_condition, write_concern
-                )
+                object_id, created = await self._save_update(doc, save_condition, write_concern)
 
             if cascade is None:
                 cascade = self._meta.get("cascade", False) or cascade_kwargs is not None
@@ -532,9 +519,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         if created or id_field not in self._meta.get("shard_key", []):
             self[id_field] = self._fields[id_field].to_python(object_id)
 
-        signals.post_save.send(
-            self.__class__, document=self, created=created, **signal_kwargs
-        )
+        signals.post_save.send(self.__class__, document=self, created=created, **signal_kwargs)
 
         self._clear_changed_fields()
         self._created = False
@@ -557,15 +542,11 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             if "_id" in doc:
                 select_dict = {"_id": doc["_id"]}
                 select_dict = self._integrate_shard_key(doc, select_dict)
-                raw_object = await wc_collection.find_one_and_replace(
-                    select_dict, doc, session=_get_session()
-                )
+                raw_object = await wc_collection.find_one_and_replace(select_dict, doc, session=_get_session())
                 if raw_object:
                     return doc["_id"]
 
-            object_id = (await wc_collection.insert_one(
-                doc, session=_get_session()
-            )).inserted_id
+            object_id = (await wc_collection.insert_one(doc, session=_get_session())).inserted_id
 
         return object_id
 
@@ -622,13 +603,11 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         if update_doc:
             upsert = save_condition is None
             with set_write_concern(collection, write_concern) as wc_collection:
-                last_error = (await wc_collection.update_one(
-                    select_dict, update_doc, upsert=upsert, session=_get_session()
-                )).raw_result
+                last_error = (
+                    await wc_collection.update_one(select_dict, update_doc, upsert=upsert, session=_get_session())
+                ).raw_result
             if not upsert and last_error["n"] == 0:
-                raise SaveConditionError(
-                    "Race condition preventing document update detected"
-                )
+                raise SaveConditionError("Race condition preventing document update detected")
             if last_error is not None:
                 updated_existing = last_error.get("updatedExisting")
                 if updated_existing is False:
@@ -731,11 +710,9 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         signals.pre_delete.send(self.__class__, document=self, **signal_kwargs)
 
         try:
-            await self._qs.filter(**self._object_key).delete(
-                write_concern=write_concern, _from_doc_delete=True
-            )
+            await self._qs.filter(**self._object_key).delete(write_concern=write_concern, _from_doc_delete=True)
         except pymongo.errors.OperationFailure as err:
-            message = "Could not delete document (%s)" % err.args
+            message = f"Could not delete document ({err.args})"
             raise OperationError(message)
         signals.post_delete.send(self.__class__, document=self, **signal_kwargs)
 
@@ -808,22 +785,16 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         :param fields: (optional) args list of fields to reload
         :param max_depth: (optional) depth of dereferencing to follow
         """
-        max_depth = 1
         if fields and isinstance(fields[0], int):
-            max_depth = fields[0]
+            fields[0]
             fields = fields[1:]
         elif "max_depth" in kwargs:
-            max_depth = kwargs["max_depth"]
+            kwargs["max_depth"]
 
         if self.pk is None:
             raise self.DoesNotExist("Document does not exist")
 
-        queryset = (
-            self._qs.read_preference(ReadPreference.PRIMARY)
-            .filter(**self._object_key)
-            .only(*fields)
-            .limit(1)
-        )
+        queryset = self._qs.read_preference(ReadPreference.PRIMARY).filter(**self._object_key).only(*fields).limit(1)
 
         obj = await queryset.first()
         if obj is None:
@@ -843,11 +814,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
                         # i.e. obj.update(unset__field=1) followed by obj.reload()
                         delattr(self, field)
 
-        self._changed_fields = (
-            list(set(self._changed_fields) - set(fields))
-            if fields
-            else obj._changed_fields
-        )
+        self._changed_fields = list(set(self._changed_fields) - set(fields)) if fields else obj._changed_fields
         self._created = False
         return self
 
@@ -883,9 +850,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         object.
         """
         classes = [
-            _DocumentRegistry.get(class_name)
-            for class_name in cls._subclasses
-            if class_name != cls.__name__
+            _DocumentRegistry.get(class_name) for class_name in cls._subclasses if class_name != cls.__name__
         ] + [cls]
         documents = [
             _DocumentRegistry.get(class_name)
@@ -909,9 +874,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         """
         coll_name = cls._get_collection_name()
         if not coll_name:
-            raise OperationError(
-                "Document %s has no collection defined (is it abstract ?)" % cls
-            )
+            raise OperationError(f"Document {cls} has no collection defined (is it abstract ?)")
         cls._collection = None
         db = cls._get_db()
         await db.drop_collection(coll_name, session=_get_session())
@@ -932,9 +895,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         index_spec.update(kwargs)
 
         collection = await cls._get_collection()
-        return await collection.create_index(
-            fields, session=_get_session(), **index_spec
-        )
+        return await collection.create_index(fields, session=_get_session(), **index_spec)
 
     @classmethod
     async def ensure_indexes(cls):
@@ -980,9 +941,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
                 if "cls" in opts:
                     del opts["cls"]
 
-                await collection.create_index(
-                    fields, background=background, session=_get_session(), **opts
-                )
+                await collection.create_index(fields, background=background, session=_get_session(), **opts)
 
         # If _cls is being used (for polymorphism), it needs an index,
         # only if another index doesn't begin with _cls
@@ -992,9 +951,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             if "cls" in index_opts:
                 del index_opts["cls"]
 
-            await collection.create_index(
-                "_cls", background=background, session=_get_session(), **index_opts
-            )
+            await collection.create_index("_cls", background=background, session=_get_session(), **index_opts)
 
     @classmethod
     async def list_indexes(cls):
@@ -1018,8 +975,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
                     isinstance(base_cls, TopLevelDocumentMetaclass)
                     and base_cls != Document
                     and not base_cls._meta.get("abstract")
-                    and (await base_cls._get_collection()).full_name
-                    == (await cls._get_collection()).full_name
+                    and (await base_cls._get_collection()).full_name == (await cls._get_collection()).full_name
                     and base_cls not in classes
                 ):
                     classes.append(base_cls)
@@ -1027,8 +983,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             for subclass in cls.__subclasses__():
                 if (
                     isinstance(base_cls, TopLevelDocumentMetaclass)
-                    and (await subclass._get_collection()).full_name
-                    == (await cls._get_collection()).full_name
+                    and (await subclass._get_collection()).full_name == (await cls._get_collection()).full_name
                     and subclass not in classes
                 ):
                     classes.append(subclass)
@@ -1078,9 +1033,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
                 index_type = info["key"][0][1]
                 text_index_fields = info.get("weights").keys()
                 # Use NonOrderedList to avoid order comparison, see #2612
-                existing.append(
-                    NonOrderedList([(key, index_type) for key in text_index_fields])
-                )
+                existing.append(NonOrderedList([(key, index_type) for key in text_index_fields]))
             else:
                 existing.append(info["key"])
 
@@ -1184,7 +1137,7 @@ class MapReduceDocument:
             try:
                 self.key = id_field_type(self.key)
             except Exception:
-                raise Exception("Could not cast key as %s" % id_field_type.__name__)
+                raise Exception(f"Could not cast key as {id_field_type.__name__}")
 
         if not hasattr(self, "_key_object"):
             self._key_object = await self._document.objects.with_id(self.key)

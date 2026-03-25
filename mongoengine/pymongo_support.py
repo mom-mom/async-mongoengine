@@ -14,9 +14,7 @@ LEGACY_JSON_OPTIONS = json_util.LEGACY_JSON_OPTIONS.with_options(
 )
 
 
-async def count_documents(
-    collection, filter, skip=None, limit=None, hint=None, collation=None
-):
+async def count_documents(collection, filter, skip=None, limit=None, hint=None, collation=None):
     """Count documents using pymongo's count_documents"""
     if limit == 0:
         return 0
@@ -35,9 +33,7 @@ async def count_documents(
     if not filter and set(kwargs) <= {"max_time_ms"} and not is_active_session:
         return await collection.estimated_document_count(**kwargs)
     else:
-        return await collection.count_documents(
-            filter=filter, session=connection._get_session(), **kwargs
-        )
+        return await collection.count_documents(filter=filter, session=connection._get_session(), **kwargs)
 
 
 async def list_collection_names(db, include_system_collections=False):

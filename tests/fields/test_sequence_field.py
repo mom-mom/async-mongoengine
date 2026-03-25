@@ -12,7 +12,7 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            await Person(name="Person %s" % x).save()
+            await Person(name=f"Person {x}").save()
 
         c = await self.db["mongoengine.counters"].find_one({"_id": "person.id"})
         assert c["next"] == 10
@@ -36,7 +36,7 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            await Person(name="Person %s" % x).save()
+            await Person(name=f"Person {x}").save()
 
         assert await Person.id.get_next_value() == 11
         await self.db["mongoengine.counters"].drop()
@@ -51,7 +51,7 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            await Person(name="Person %s" % x).save()
+            await Person(name=f"Person {x}").save()
 
         assert await Person.id.get_next_value() == "11"
         await self.db["mongoengine.counters"].drop()
@@ -67,7 +67,7 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            await Person(name="Person %s" % x).save()
+            await Person(name=f"Person {x}").save()
 
         c = await self.db["mongoengine.counters"].find_one({"_id": "jelly.id"})
         assert c["next"] == 10
@@ -92,7 +92,7 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            await Person(name="Person %s" % x).save()
+            await Person(name=f"Person {x}").save()
 
         c = await self.db["mongoengine.counters"].find_one({"_id": "person.id"})
         assert c["next"] == 10
@@ -152,8 +152,8 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            await Animal(name="Animal %s" % x).save()
-            await Person(name="Person %s" % x).save()
+            await Animal(name=f"Animal {x}").save()
+            await Person(name=f"Person {x}").save()
 
         c = await self.db["mongoengine.counters"].find_one({"_id": "person.id"})
         assert c["next"] == 10
@@ -182,7 +182,7 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            p = Person(name="Person %s" % x)
+            p = Person(name=f"Person {x}")
             await p.save()
 
         c = await self.db["mongoengine.counters"].find_one({"_id": "person.id"})
@@ -239,10 +239,7 @@ class TestSequenceField(MongoDBTestCase):
 
         distinct_ids = await self.db["mongoengine.counters"].distinct("_id")
         assert "base.counter" in distinct_ids
-        assert not (
-            ("foo.counter" or "bar.counter")
-            in distinct_ids
-        )
+        assert ("foo.counter" or "bar.counter") not in distinct_ids
         assert foo.counter != bar.counter
         assert foo._fields["counter"].owner_document == Base
         assert bar._fields["counter"].owner_document == Base
@@ -281,7 +278,7 @@ class TestSequenceField(MongoDBTestCase):
         await Person.drop_collection()
 
         for x in range(10):
-            await Person(name="Person %s" % x).save()
+            await Person(name=f"Person {x}").save()
 
         c = await self.db["mongoengine.counters"].find_one({"_id": "person.id"})
         assert c["next"] == 10

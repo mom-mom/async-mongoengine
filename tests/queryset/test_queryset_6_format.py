@@ -2,31 +2,17 @@ import datetime
 import uuid
 from decimal import Decimal
 
-import pymongo
 import pytest
 from bson import DBRef, ObjectId
-from pymongo.read_preferences import ReadPreference
-from pymongo.results import UpdateResult
 
 from mongoengine import *
-from mongoengine.connection import get_db
-from mongoengine.context_managers import query_counter, switch_db
-from mongoengine.errors import InvalidQueryError
-from mongoengine.pymongo_support import PYMONGO_VERSION
+from mongoengine.context_managers import query_counter
 from mongoengine.queryset import (
-    DoesNotExist,
-    MultipleObjectsReturned,
     QuerySet,
-    QuerySetManager,
-    queryset_manager,
 )
-from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
-    db_ops_tracker,
-    get_as_pymongo,
+    MongoDBTestCase,
 )
-
-from tests.utils import MongoDBTestCase
 
 
 class TestQueryset6(MongoDBTestCase):
@@ -43,8 +29,6 @@ class TestQueryset6(MongoDBTestCase):
         self.PersonMeta = PersonMeta
         self.Person = Person
 
-
-
     async def assertSequence(self, qs, expected):
         qs = [d async for d in qs]
         expected = list(expected)
@@ -52,10 +36,8 @@ class TestQueryset6(MongoDBTestCase):
         for i in range(len(qs)):
             assert qs[i] == expected[i]
 
-
     async def tearDown(self):
         await self.Person.drop_collection()
-
 
     async def test_json_simple(self):
         class Embedded(EmbeddedDocument):
@@ -75,7 +57,6 @@ class TestQueryset6(MongoDBTestCase):
 
         assert doc_objects == Doc.objects.from_json(json_data)
 
-
     async def test_json_complex(self):
         class EmbeddedDoc(EmbeddedDocument):
             pass
@@ -89,9 +70,7 @@ class TestQueryset6(MongoDBTestCase):
             float_field = FloatField(default=1.1)
             boolean_field = BooleanField(default=True)
             datetime_field = DateTimeField(default=datetime.datetime.now)
-            embedded_document_field = EmbeddedDocumentField(
-                EmbeddedDoc, default=lambda: EmbeddedDoc()
-            )
+            embedded_document_field = EmbeddedDocumentField(EmbeddedDoc, default=lambda: EmbeddedDoc())
             list_field = ListField(default=lambda: [1, 2, 3])
             dict_field = DictField(default=lambda: {"hello": "world"})
             objectid_field = ObjectIdField(default=ObjectId)
@@ -107,9 +86,7 @@ class TestQueryset6(MongoDBTestCase):
             geo_point_field = GeoPointField(default=lambda: [1, 2])
             sequence_field = SequenceField()
             uuid_field = UUIDField(binary=False, default=uuid.uuid4)
-            generic_embedded_document_field = GenericEmbeddedDocumentField(
-                default=lambda: EmbeddedDoc()
-            )
+            generic_embedded_document_field = GenericEmbeddedDocumentField(default=lambda: EmbeddedDoc())
 
         await Simple.drop_collection()
         await Doc.drop_collection()
@@ -123,7 +100,6 @@ class TestQueryset6(MongoDBTestCase):
         doc_objects = [d async for d in Doc.objects]
 
         assert doc_objects == Doc.objects.from_json(json_data)
-
 
     async def test_as_pymongo(self):
         class LastLogin(EmbeddedDocument):
@@ -175,7 +151,6 @@ class TestQueryset6(MongoDBTestCase):
             "last_login": {"location": "White House", "ip": "104.107.108.116"},
         }
 
-
     async def test_as_pymongo_returns_cls_attribute_when_using_inheritance(self):
         class User(Document):
             name = StringField()
@@ -187,7 +162,6 @@ class TestQueryset6(MongoDBTestCase):
         result = await User.objects.as_pymongo().first()
         assert result == {"_cls": "User", "_id": user.id, "name": "Bob Dole"}
 
-
     async def test_as_pymongo_json_limit_fields(self):
         class User(Document):
             email = EmailField(unique=True, required=True)
@@ -195,38 +169,25 @@ class TestQueryset6(MongoDBTestCase):
             password_salt = StringField(db_field="password_salt", required=True)
 
         await User.drop_collection()
-        await User(
-            email="ross@example.com", password_salt="SomeSalt", password_hash="SomeHash"
-        ).save()
+        await User(email="ross@example.com", password_salt="SomeSalt", password_hash="SomeHash").save()
 
-        serialized_user = await User.objects.exclude(
-            "password_salt", "password_hash"
-        ).as_pymongo().get_item(0)
+        serialized_user = await User.objects.exclude("password_salt", "password_hash").as_pymongo().get_item(0)
         assert {"_id", "email"} == set(serialized_user.keys())
 
-        serialized_user = await User.objects.exclude(
-            "id", "password_salt", "password_hash"
-        ).to_json()
+        serialized_user = await User.objects.exclude("id", "password_salt", "password_hash").to_json()
         assert '[{"email": "ross@example.com"}]' == serialized_user
 
         serialized_user = await User.objects.only("email").as_pymongo().get_item(0)
         assert {"_id", "email"} == set(serialized_user.keys())
 
-        serialized_user = await (
-            User.objects.exclude("password_salt").only("email").as_pymongo().get_item(0)
-        )
+        serialized_user = await User.objects.exclude("password_salt").only("email").as_pymongo().get_item(0)
         assert {"_id", "email"} == set(serialized_user.keys())
 
-        serialized_user = await (
-            User.objects.exclude("password_salt", "id").only("email").as_pymongo().get_item(0)
-        )
+        serialized_user = await User.objects.exclude("password_salt", "id").only("email").as_pymongo().get_item(0)
         assert {"email"} == set(serialized_user.keys())
 
-        serialized_user = await (
-            User.objects.exclude("password_salt", "id").only("email").to_json()
-        )
+        serialized_user = await User.objects.exclude("password_salt", "id").only("email").to_json()
         assert '[{"email": "ross@example.com"}]' == serialized_user
-
 
     async def test_only_after_count(self):
         """Test that only() works after count()"""
@@ -249,7 +210,6 @@ class TestQueryset6(MongoDBTestCase):
 
         result = await user_queryset.only("name", "age").as_pymongo().first()
         assert result == {"_id": user.id, "name": "User", "age": 50}
-
 
     async def test_no_dereference(self):
         class Organization(Document):
@@ -281,7 +241,6 @@ class TestQueryset6(MongoDBTestCase):
         # Verify no_dereference() doesn't affect the original queryset's settings
         assert qs._auto_dereference is True
 
-
     async def test_no_dereference_internals(self):
         # Test the internals on which queryset.no_dereference relies on
         class Organization(Document):
@@ -309,10 +268,7 @@ class TestQueryset6(MongoDBTestCase):
         assert not instance_org_field._auto_dereference
 
         assert isinstance(user_no_deref.organization, DBRef)
-        assert (
-            cls_organization_field._auto_dereference
-        ), True  # Make sure the class Field wasn't altered
-
+        assert cls_organization_field._auto_dereference, True  # Make sure the class Field wasn't altered
 
     async def test_no_dereference_no_side_effect_on_existing_instance(self):
         # Relates to issue #1677 - ensures no regression of the bug
@@ -353,7 +309,6 @@ class TestQueryset6(MongoDBTestCase):
         # Verify no_dereference() doesn't affect the original queryset's settings
         assert qs._auto_dereference is True
 
-
     async def test_no_dereference_embedded_doc(self):
         class User(Document):
             name = StringField()
@@ -377,9 +332,7 @@ class TestQueryset6(MongoDBTestCase):
 
         member = Member(name="Flash", user=user)
 
-        company = Organization(
-            name="Mongo Inc", ceo=user, member=member, admins=[user], members=[member]
-        )
+        company = Organization(name="Mongo Inc", ceo=user, member=member, admins=[user], members=[member])
         await company.save()
 
         org = await Organization.objects().no_dereference().first()
@@ -392,14 +345,13 @@ class TestQueryset6(MongoDBTestCase):
         assert isinstance(org.member.user, DBRef)
         assert isinstance(org.members[0].user, DBRef)
 
-
     async def test_cached_queryset(self):
         class Person(Document):
             name = StringField()
 
         await Person.drop_collection()
 
-        persons = [Person(name="No: %s" % i) for i in range(100)]
+        persons = [Person(name=f"No: {i}") for i in range(100)]
         await Person.objects.insert(persons, load_bulk=True)
 
         async with query_counter() as q:
@@ -431,14 +383,13 @@ class TestQueryset6(MongoDBTestCase):
             await people.count(with_limit_and_skip=True)  # now cached
             assert await q.get_count() == 2
 
-
     async def test_no_cached_queryset(self):
         class Person(Document):
             name = StringField()
 
         await Person.drop_collection()
 
-        persons = [Person(name="No: %s" % i) for i in range(100)]
+        persons = [Person(name=f"No: {i}") for i in range(100)]
         await Person.objects.insert(persons, load_bulk=True)
 
         async with query_counter() as q:
@@ -454,7 +405,6 @@ class TestQueryset6(MongoDBTestCase):
             await people.count()
             assert await q.get_count() == 3
 
-
     async def test_no_cached_queryset__repr__(self):
         class Person(Document):
             name = StringField()
@@ -462,7 +412,6 @@ class TestQueryset6(MongoDBTestCase):
         await Person.drop_collection()
         qs = Person.objects.no_cache()
         assert repr(qs) == "Person async queryset (no cache)"
-
 
     async def test_no_cached_on_a_cached_queryset_raise_error(self):
         class Person(Document):
@@ -475,7 +424,6 @@ class TestQueryset6(MongoDBTestCase):
         with pytest.raises(OperationError, match="QuerySet already cached"):
             qs.no_cache()
 
-
     async def test_no_cached_queryset_no_cache_back_to_cache(self):
         class Person(Document):
             name = StringField()
@@ -487,7 +435,6 @@ class TestQueryset6(MongoDBTestCase):
         assert isinstance(qs, QuerySetNoCache)
         qs = qs.cache()
         assert isinstance(qs, QuerySet)
-
 
     async def test_cache_not_cloned(self):
         class User(Document):
@@ -510,7 +457,6 @@ class TestQueryset6(MongoDBTestCase):
         result = [d async for d in users]
         assert len(result) == 1
         assert 1 == len(users._result_cache)
-
 
     async def test_no_cache(self):
         """Ensure you can add metadata to file"""
@@ -548,7 +494,6 @@ class TestQueryset6(MongoDBTestCase):
         async with query_counter() as q:
             [d async for d in docs]
             assert await q.get_count() == 1
-
 
     async def test_nested_queryset_iterator(self):
         # Try iterating the same queryset twice, nested.
@@ -602,7 +547,6 @@ class TestQueryset6(MongoDBTestCase):
 
             assert await q.get_count() == 2
 
-
     async def test_no_sub_classes(self):
         class A(Document):
             x = IntField()
@@ -642,7 +586,6 @@ class TestQueryset6(MongoDBTestCase):
         async for obj in C.objects.no_sub_classes():
             assert obj.__class__ == C
 
-
     async def test_query_generic_embedded_document(self):
         """Ensure that querying sub field on generic_embedded_field works"""
 
@@ -665,7 +608,6 @@ class TestQueryset6(MongoDBTestCase):
         assert await Doc.objects(document__a_name="A doc").count() == 1
         assert await Doc.objects(document__b_name="B doc").count() == 1
 
-
     async def test_query_reference_to_custom_pk_doc(self):
         class A(Document):
             id = StringField(primary_key=True)
@@ -682,7 +624,6 @@ class TestQueryset6(MongoDBTestCase):
         assert await B.objects.count() == 1
         assert (await B.objects.get(a=a)).a == a
         assert (await B.objects.get(a=a.id)).a == a
-
 
     async def test_cls_query_in_subclassed_docs(self):
         class Animal(Document):
@@ -709,7 +650,6 @@ class TestQueryset6(MongoDBTestCase):
             "_cls": "Animal.Cat",
         }
 
-
     async def test_can_have_field_same_name_as_query_operator(self):
         class Size(Document):
             name = StringField()
@@ -725,7 +665,6 @@ class TestQueryset6(MongoDBTestCase):
 
         assert await Example.objects(size=instance_size).count() == 1
         assert await Example.objects(size__in=[instance_size]).count() == 1
-
 
     async def test_cursor_in_an_if_stmt(self):
         class Test(Document):
@@ -750,14 +689,13 @@ class TestQueryset6(MongoDBTestCase):
         with pytest.raises(TypeError):
             bool(queryset)
 
-
     async def test_bool_performance(self):
         class Person(Document):
             name = StringField()
 
         await Person.drop_collection()
 
-        persons = [Person(name="No: %s" % i) for i in range(100)]
+        persons = [Person(name=f"No: {i}") for i in range(100)]
         await Person.objects.insert(persons, load_bulk=True)
 
         async with query_counter() as q:
@@ -765,13 +703,10 @@ class TestQueryset6(MongoDBTestCase):
             assert await Person.objects._has_data()
 
             assert await q.get_count() == 1
-            ops = await q.db.system.profile.find(
-                {"ns": {"$ne": "%s.system.indexes" % q.db.name}}
-            ).to_list()
+            ops = await q.db.system.profile.find({"ns": {"$ne": f"{q.db.name}.system.indexes"}}).to_list()
             op = ops[0]
 
             assert op["nreturned"] == 1
-
 
     async def test_bool_with_ordering(self):
         ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
@@ -788,9 +723,7 @@ class TestQueryset6(MongoDBTestCase):
         async with query_counter() as q:
             assert await qs._has_data()
 
-            ops = await q.db.system.profile.find(
-                {"ns": {"$ne": "%s.system.indexes" % q.db.name}}
-            ).to_list()
+            ops = await q.db.system.profile.find({"ns": {"$ne": f"{q.db.name}.system.indexes"}}).to_list()
             op = ops[0]
 
             assert ORDER_BY_KEY not in op[CMD_QUERY_KEY]
@@ -801,16 +734,13 @@ class TestQueryset6(MongoDBTestCase):
             async for x in qs2:
                 pass
 
-            ops = await q.db.system.profile.find(
-                {"ns": {"$ne": "%s.system.indexes" % q.db.name}}
-            ).to_list()
+            ops = await q.db.system.profile.find({"ns": {"$ne": f"{q.db.name}.system.indexes"}}).to_list()
             op = ops[0]
 
             assert ORDER_BY_KEY in op[CMD_QUERY_KEY]
 
-
     async def test_bool_with_ordering_from_meta_dict(self):
-        ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
+        _ORDER_BY_KEY, CMD_QUERY_KEY = "sort", "command"
 
         class Person(Document):
             name = StringField()
@@ -826,38 +756,26 @@ class TestQueryset6(MongoDBTestCase):
             # In async mode, use _has_data() instead of bool()
             assert await Person.objects._has_data()
 
-            ops = await q.db.system.profile.find(
-                {"ns": {"$ne": "%s.system.indexes" % q.db.name}}
-            ).to_list()
+            ops = await q.db.system.profile.find({"ns": {"$ne": f"{q.db.name}.system.indexes"}}).to_list()
             op = ops[0]
 
-            assert (
-                "$orderby" not in op[CMD_QUERY_KEY]
-            ), "BaseQuerySet must remove orderby from meta in boolen test"
+            assert "$orderby" not in op[CMD_QUERY_KEY], "BaseQuerySet must remove orderby from meta in boolen test"
 
             assert (await Person.objects.first()).name == "A"
             assert await Person.objects._has_data(), "Cursor has data and returned False"
 
-
     async def test_delete_count(self):
         for i in range(1, 4):
             await self.Person(name=f"User {i}", age=i * 10).save()
-        assert (
-            await self.Person.objects().delete() == 3
-        )  # test ordinary QuerySey delete count
+        assert await self.Person.objects().delete() == 3  # test ordinary QuerySey delete count
 
         for i in range(1, 4):
             await self.Person(name=f"User {i}", age=i * 10).save()
 
-        assert (
-            await self.Person.objects().skip(1).delete() == 2
-        )  # test Document delete with existing documents
+        assert await self.Person.objects().skip(1).delete() == 2  # test Document delete with existing documents
 
         await self.Person.objects().delete()
-        assert (
-            await self.Person.objects().skip(1).delete() == 0
-        )  # test Document delete without existing documents
-
+        assert await self.Person.objects().skip(1).delete() == 0  # test Document delete without existing documents
 
     async def test_max_time_ms(self):
         # 778: max_time_ms accepts int or None
@@ -868,7 +786,6 @@ class TestQueryset6(MongoDBTestCase):
 
         qs = self.Person.objects(name="name").max_time_ms(None)
         assert qs._max_time_ms is None
-
 
     async def test_subclass_field_query(self):
         class Animal(Document):
@@ -889,7 +806,6 @@ class TestQueryset6(MongoDBTestCase):
         assert await Animal.objects(folded_ears=True).count() == 1
         assert await Animal.objects(whiskers_length=5.1).count() == 1
 
-
     async def test_loop_over_invalid_id_does_not_crash(self):
         class Person(Document):
             name = StringField()
@@ -900,11 +816,10 @@ class TestQueryset6(MongoDBTestCase):
         async for p in Person.objects():
             assert p.name == "a"
 
-
     async def test_len_during_iteration(self):
         """Tests that iterating over a limited queryset returns the
-            correct number of documents.
-            """
+        correct number of documents.
+        """
 
         class Data(Document):
             pass
@@ -932,12 +847,11 @@ class TestQueryset6(MongoDBTestCase):
             i += 1
         assert i == 249
 
-
     async def test_iteration_within_iteration(self):
         """You should be able to reliably iterate over all the documents
-            in a given queryset even if there are multiple iterations of it
-            happening at the same time.
-            """
+        in a given queryset even if there are multiple iterations of it
+        happening at the same time.
+        """
 
         class Data(Document):
             pass
@@ -956,11 +870,10 @@ class TestQueryset6(MongoDBTestCase):
         assert i == 249
         assert j == 249
 
-
     async def test_in_operator_on_non_iterable(self):
         """Ensure that using the `__in` operator on a non-iterable raises an
-            error.
-            """
+        error.
+        """
 
         class User(Document):
             name = StringField()
@@ -973,9 +886,7 @@ class TestQueryset6(MongoDBTestCase):
         await BlogPost.drop_collection()
 
         author = await User.objects.create(name="Test User")
-        post = await BlogPost.objects.create(
-            content="Had a good coffee today...", authors=[author]
-        )
+        post = await BlogPost.objects.create(content="Had a good coffee today...", authors=[author])
 
         # Make sure using `__in` with a list works
         blog_posts = BlogPost.objects(authors__in=[author])
@@ -990,7 +901,6 @@ class TestQueryset6(MongoDBTestCase):
         with pytest.raises(TypeError):
             await BlogPost.objects(authors__in=author).count()
 
-
     async def test_create_count(self):
         await self.Person.drop_collection()
         await self.Person.objects.create(name="Foo")
@@ -1001,7 +911,6 @@ class TestQueryset6(MongoDBTestCase):
         await self.Person.objects.create(name="Foo_1")
         assert await self.Person.objects.count(with_limit_and_skip=True) == 4
 
-
     async def test_no_cursor_timeout(self):
         qs = self.Person.objects()
         assert qs._cursor_args == {}  # ensure no regression of  #2148
@@ -1011,7 +920,6 @@ class TestQueryset6(MongoDBTestCase):
 
         qs = self.Person.objects().timeout(False)
         assert qs._cursor_args == {"no_cursor_timeout": True}
-
 
     async def test_allow_disk_use(self):
         qs = self.Person.objects()
@@ -1036,4 +944,3 @@ class TestQueryset6(MongoDBTestCase):
 
         for index in range(await qs_disk.count()):
             assert await qs_disk.get_item(index) == await qs.get_item(index)
-

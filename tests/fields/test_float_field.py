@@ -48,7 +48,7 @@ class TestFloatField(MongoDBTestCase):
 
         big_person = BigPerson()
 
-        big_person.height = int(0)
+        big_person.height = 0
         big_person.validate()
 
         big_person.height = 2**500

@@ -19,9 +19,7 @@ from tests.utils import MongoDBTestCase
 
 class TestCachedReferenceField(MongoDBTestCase):
     def test_constructor_fail_bad_document_type(self):
-        with pytest.raises(
-            ValidationError, match="must be a document class or a string"
-        ):
+        with pytest.raises(ValidationError, match="must be a document class or a string"):
             CachedReferenceField(document_type=0)
 
     async def test_get_and_save(self):
@@ -286,9 +284,7 @@ class TestCachedReferenceField(MongoDBTestCase):
         await Animal.drop_collection()
         await Ocorrence.drop_collection()
 
-        a = Animal(
-            name="Leopard", tag="heavy", owner=Owner(tp="u", name="Wilson Junior")
-        )
+        a = Animal(name="Leopard", tag="heavy", owner=Owner(tp="u", name="Wilson Junior"))
         await a.save()
 
         o = Ocorrence(person="teste", animal=a)
@@ -311,9 +307,7 @@ class TestCachedReferenceField(MongoDBTestCase):
         count = await Ocorrence.objects(animal__tag="heavy", animal__owner__tp="u").count()
         assert count == 1
 
-        ocorrence = await Ocorrence.objects(
-            animal__tag="heavy", animal__owner__tp="u"
-        ).first()
+        ocorrence = await Ocorrence.objects(animal__tag="heavy", animal__owner__tp="u").first()
         assert ocorrence.person == "teste"
         # CachedReferenceField to_python returns raw dict
         assert isinstance(ocorrence.animal, dict)
@@ -358,14 +352,10 @@ class TestCachedReferenceField(MongoDBTestCase):
         await Ocorrence(person="teste 2").save()
         await Ocorrence(person="teste 3").save()
 
-        query = Ocorrence.objects(
-            animal__tag="heavy", animal__owner__tags="cool"
-        )._query
+        query = Ocorrence.objects(animal__tag="heavy", animal__owner__tags="cool")._query
         assert query == {"animal.owner.tags": "cool", "animal.tag": "heavy"}
 
-        ocorrence = await Ocorrence.objects(
-            animal__tag="heavy", animal__owner__tags="cool"
-        ).first()
+        ocorrence = await Ocorrence.objects(animal__tag="heavy", animal__owner__tags="cool").first()
         assert ocorrence.person == "teste 2"
         # CachedReferenceField to_python returns raw dict
         assert isinstance(ocorrence.animal, dict)

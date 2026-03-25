@@ -57,9 +57,7 @@ STRING_OPERATORS = (
     "iwholeword",
 )
 CUSTOM_OPERATORS = ("match",)
-MATCH_OPERATORS = (
-    COMPARISON_OPERATORS + GEO_OPERATORS + STRING_OPERATORS + CUSTOM_OPERATORS
-)
+MATCH_OPERATORS = COMPARISON_OPERATORS + GEO_OPERATORS + STRING_OPERATORS + CUSTOM_OPERATORS
 
 
 def handle_raw_query(value, mongo_query):
@@ -117,7 +115,7 @@ def query(_doc_cls=None, **kwargs):
                     append_field = False
                 # is last and CachedReferenceField
                 elif isinstance(field, CachedReferenceField) and fields[-1] == field:
-                    parts.append("%s._id" % field.db_field)
+                    parts.append(f"{field.db_field}._id")
                 else:
                     parts.append(field.db_field)
 
@@ -146,13 +144,9 @@ def query(_doc_cls=None, **kwargs):
             # * If the value is a DBRef, the key should be "field_name._ref".
             # * If the value is an ObjectId, the key should be "field_name._ref.$id".
             if isinstance(field, GenericReferenceField):
-                if isinstance(value, DBRef) or (
-                    is_iterable and all(isinstance(v, DBRef) for v in value)
-                ):
+                if isinstance(value, DBRef) or (is_iterable and all(isinstance(v, DBRef) for v in value)):
                     parts[-1] += "._ref"
-                elif isinstance(value, ObjectId) or (
-                    is_iterable and all(isinstance(v, ObjectId) for v in value)
-                ):
+                elif isinstance(value, ObjectId) or (is_iterable and all(isinstance(v, ObjectId) for v in value)):
                     parts[-1] += "._ref.$id"
                 elif (
                     is_iterable
@@ -161,8 +155,7 @@ def query(_doc_cls=None, **kwargs):
                 ):
                     raise ValueError(
                         "The `in`, `nin`, `all`, or `near`-operators cannot "
-                        "be applied to mixed queries of DBRef/ObjectId/%s"
-                        % _doc_cls.__name__
+                        f"be applied to mixed queries of DBRef/ObjectId/{_doc_cls.__name__}"
                     )
 
         # if op and op not in COMPARISON_OPERATORS:
@@ -182,9 +175,7 @@ def query(_doc_cls=None, **kwargs):
                     value = field.prepare_query_value(op, value)
                 value = {"$elemMatch": value}
             elif op in CUSTOM_OPERATORS:
-                NotImplementedError(
-                    'Custom method "%s" has not ' "been implemented" % op
-                )
+                NotImplementedError(f'Custom method "{op}" has not been implemented')
             elif op not in STRING_OPERATORS:
                 value = {"$" + op: value}
 
@@ -218,13 +209,9 @@ def query(_doc_cls=None, **kwargs):
                         if isinstance(value_dict.get(near_op), dict):
                             value_son[near_op] = SON(value_son[near_op])
                             if "$maxDistance" in value_dict:
-                                value_son[near_op]["$maxDistance"] = value_dict[
-                                    "$maxDistance"
-                                ]
+                                value_son[near_op]["$maxDistance"] = value_dict["$maxDistance"]
                             if "$minDistance" in value_dict:
-                                value_son[near_op]["$minDistance"] = value_dict[
-                                    "$minDistance"
-                                ]
+                                value_son[near_op]["$minDistance"] = value_dict["$minDistance"]
                             near_embedded = True
 
                     if not near_embedded:
@@ -379,9 +366,7 @@ def update(_doc_cls=None, **update):
             # unless they point to a list field
             # Otherwise it uses nested dict syntax
             if op == "pullAll":
-                raise InvalidQueryError(
-                    "pullAll operations only support a single field depth"
-                )
+                raise InvalidQueryError("pullAll operations only support a single field depth")
 
             # Look for the last list field and use dot notation until there
             field_classes = [c.__class__ for c in cleaned_fields]
@@ -454,9 +439,7 @@ def _geo_operator(field, op, value):
         elif op == "within_box":
             value = {"$within": {"$box": value}}
         else:
-            raise NotImplementedError(
-                'Geo method "%s" has not been ' "implemented for a GeoPointField" % op
-            )
+            raise NotImplementedError(f'Geo method "{op}" has not been implemented for a GeoPointField')
     else:
         if op == "geo_within":
             value = {"$geoWithin": _infer_geometry(value)}
@@ -473,11 +456,7 @@ def _geo_operator(field, op, value):
         elif op == "near":
             value = {"$near": _infer_geometry(value)}
         else:
-            raise NotImplementedError(
-                'Geo method "{}" has not been implemented for a {} '.format(
-                    op, field._name
-                )
-            )
+            raise NotImplementedError(f'Geo method "{op}" has not been implemented for a {field._name} ')
     return value
 
 
@@ -490,9 +469,7 @@ def _infer_geometry(value):
             return value
         elif "coordinates" in value and "type" in value:
             return {"$geometry": value}
-        raise InvalidQueryError(
-            "Invalid $geometry dictionary should have type and coordinates keys"
-        )
+        raise InvalidQueryError("Invalid $geometry dictionary should have type and coordinates keys")
     elif isinstance(value, (list, set)):
         # TODO: shouldn't we test value[0][0][0][0] to see if it is MultiPolygon?
 
@@ -514,10 +491,7 @@ def _infer_geometry(value):
         except (TypeError, IndexError):
             pass
 
-    raise InvalidQueryError(
-        "Invalid $geometry data. Can be either a "
-        "dictionary or (nested) lists of coordinate(s)"
-    )
+    raise InvalidQueryError("Invalid $geometry data. Can be either a dictionary or (nested) lists of coordinate(s)")
 
 
 def _prepare_query_for_iterable(field, op, value):
@@ -534,10 +508,6 @@ def _prepare_query_for_iterable(field, op, value):
         )
 
     if not hasattr(value, "__iter__"):
-        raise TypeError(
-            "The `in`, `nin`, `all`, or "
-            "`near`-operators must be applied to an "
-            "iterable (e.g. a list)."
-        )
+        raise TypeError("The `in`, `nin`, `all`, or `near`-operators must be applied to an iterable (e.g. a list).")
 
     return [field.prepare_query_value(op, v) for v in value]

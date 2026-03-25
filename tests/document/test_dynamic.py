@@ -1,4 +1,3 @@
-
 import pytest
 
 from mongoengine import *
@@ -383,15 +382,10 @@ class TestDynamicDocument(MongoDBTestCase):
 
         await Person.drop_collection()
 
-        await Person(
-            name="Eric", address=Address(city="San Francisco", street_number="1337")
-        ).save()
+        await Person(name="Eric", address=Address(city="San Francisco", street_number="1337")).save()
 
         assert (await Person.objects.first()).address.street_number == "1337"
-        assert (
-            (await Person.objects.only("address__street_number").first()).address.street_number
-            == "1337"
-        )
+        assert (await Person.objects.only("address__street_number").first()).address.street_number == "1337"
 
     async def test_dynamic_and_embedded_dict_access(self):
         """Ensure embedded dynamic documents work with dict[] style access"""
@@ -429,5 +423,3 @@ class TestDynamicDocument(MongoDBTestCase):
         person["age"] = 35
         await person.save()
         assert (await Person.objects.first()).age == 35
-
-

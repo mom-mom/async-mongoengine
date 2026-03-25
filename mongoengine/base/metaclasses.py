@@ -49,9 +49,7 @@ class DocumentMetaclass(type):
                 elif hasattr(base, "_meta"):
                     meta.merge(base._meta)
             attrs["_meta"] = meta
-            attrs["_meta"][
-                "abstract"
-            ] = False  # 789: EmbeddedDocument shouldn't inherit abstract
+            attrs["_meta"]["abstract"] = False  # 789: EmbeddedDocument shouldn't inherit abstract
 
         # If allow_inheritance is True, add a "_cls" string field to the attrs
         if attrs["_meta"].get("allow_inheritance"):
@@ -90,28 +88,21 @@ class DocumentMetaclass(type):
             doc_fields[attr_name] = attr_value
 
             # Count names to ensure no db_field redefinitions
-            field_names[attr_value.db_field] = (
-                field_names.get(attr_value.db_field, 0) + 1
-            )
+            field_names[attr_value.db_field] = field_names.get(attr_value.db_field, 0) + 1
 
         # Ensure no duplicate db_fields
         duplicate_db_fields = [k for k, v in field_names.items() if v > 1]
         if duplicate_db_fields:
-            msg = "Multiple db_fields defined for: %s " % ", ".join(duplicate_db_fields)
+            msg = "Multiple db_fields defined for: {} ".format(", ".join(duplicate_db_fields))
             raise InvalidDocumentError(msg)
 
         # Set _fields and db_field maps
         attrs["_fields"] = doc_fields
-        attrs["_db_field_map"] = {
-            k: getattr(v, "db_field", k) for k, v in doc_fields.items()
-        }
-        attrs["_reverse_db_field_map"] = {
-            v: k for k, v in attrs["_db_field_map"].items()
-        }
+        attrs["_db_field_map"] = {k: getattr(v, "db_field", k) for k, v in doc_fields.items()}
+        attrs["_reverse_db_field_map"] = {v: k for k, v in attrs["_db_field_map"].items()}
 
         attrs["_fields_ordered"] = tuple(
-            i[1]
-            for i in sorted((v.creation_counter, v.name) for v in doc_fields.values())
+            i[1] for i in sorted((v.creation_counter, v.name) for v in doc_fields.values())
         )
 
         #
@@ -120,9 +111,7 @@ class DocumentMetaclass(type):
         superclasses = ()
         class_name = [name]
         for base in flattened_bases:
-            if not getattr(base, "_is_base_cls", True) and not getattr(
-                base, "_meta", {}
-            ).get("abstract", True):
+            if not getattr(base, "_is_base_cls", True) and not getattr(base, "_meta", {}).get("abstract", True):
                 # Collate hierarchy for _cls and _subclasses
                 class_name.append(base.__name__)
 
@@ -132,9 +121,8 @@ class DocumentMetaclass(type):
                 allow_inheritance = base._meta.get("allow_inheritance")
                 if not allow_inheritance and not base._meta.get("abstract"):
                     raise ValueError(
-                        "Document %s may not be subclassed. "
+                        f"Document {base.__name__} may not be subclassed. "
                         'To enable inheritance, use the "allow_inheritance" meta attribute.'
-                        % base.__name__
                     )
 
         # Get superclasses from last base superclass
@@ -179,9 +167,7 @@ class DocumentMetaclass(type):
             delete_rule = getattr(f, "reverse_delete_rule", DO_NOTHING)
             if isinstance(f, CachedReferenceField):
                 if issubclass(new_class, EmbeddedDocument):
-                    raise InvalidDocumentError(
-                        "CachedReferenceFields is not allowed in EmbeddedDocuments"
-                    )
+                    raise InvalidDocumentError("CachedReferenceFields is not allowed in EmbeddedDocuments")
 
                 if f.auto_sync:
                     f.start_listener()
@@ -191,29 +177,19 @@ class DocumentMetaclass(type):
             if isinstance(f, ComplexBaseField) and hasattr(f, "field"):
                 delete_rule = getattr(f.field, "reverse_delete_rule", DO_NOTHING)
                 if isinstance(f, DictField) and delete_rule != DO_NOTHING:
-                    msg = (
-                        "Reverse delete rules are not supported "
-                        "for %s (field: %s)" % (field.__class__.__name__, field.name)
-                    )
+                    msg = f"Reverse delete rules are not supported for {field.__class__.__name__} (field: {field.name})"
                     raise InvalidDocumentError(msg)
 
                 f = field.field
 
             if delete_rule != DO_NOTHING:
                 if issubclass(new_class, EmbeddedDocument):
-                    msg = (
-                        "Reverse delete rules are not supported for "
-                        "EmbeddedDocuments (field: %s)" % field.name
-                    )
+                    msg = f"Reverse delete rules are not supported for EmbeddedDocuments (field: {field.name})"
                     raise InvalidDocumentError(msg)
                 f.document_type.register_delete_rule(new_class, field.name, delete_rule)
 
-            if (
-                field.name
-                and hasattr(Document, field.name)
-                and EmbeddedDocument not in new_class.mro()
-            ):
-                msg = "%s is a document method and not a valid field name" % field.name
+            if field.name and hasattr(Document, field.name) and EmbeddedDocument not in new_class.mro():
+                msg = f"{field.name} is a document method and not a valid field name"
                 raise InvalidDocumentError(msg)
 
         return new_class
@@ -294,19 +270,13 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
             del attrs["meta"]
 
         # Find the parent document class
-        parent_doc_cls = [
-            b for b in flattened_bases if b.__class__ == TopLevelDocumentMetaclass
-        ]
+        parent_doc_cls = [b for b in flattened_bases if b.__class__ == TopLevelDocumentMetaclass]
         parent_doc_cls = None if not parent_doc_cls else parent_doc_cls[0]
 
         # Prevent classes setting collection different to their parents
         # If parent wasn't an abstract class
-        if (
-            parent_doc_cls
-            and "collection" in attrs.get("_meta", {})
-            and not parent_doc_cls._meta.get("abstract", True)
-        ):
-            msg = "Trying to set a collection on a subclass (%s)" % name
+        if parent_doc_cls and "collection" in attrs.get("_meta", {}) and not parent_doc_cls._meta.get("abstract", True):
+            msg = f"Trying to set a collection on a subclass ({name})"
             warnings.warn(msg, SyntaxWarning, stacklevel=2)
             del attrs["_meta"]["collection"]
 
@@ -338,26 +308,13 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
         # Only simple classes (i.e. direct subclasses of Document) may set
         # allow_inheritance to False. If the base Document allows inheritance,
         # none of its subclasses can override allow_inheritance to False.
-        simple_class = all(
-            b._meta.get("abstract") for b in flattened_bases if hasattr(b, "_meta")
-        )
-        if (
-            not simple_class
-            and meta["allow_inheritance"] is False
-            and not meta["abstract"]
-        ):
-            raise ValueError(
-                "Only direct subclasses of Document may set "
-                '"allow_inheritance" to False'
-            )
+        simple_class = all(b._meta.get("abstract") for b in flattened_bases if hasattr(b, "_meta"))
+        if not simple_class and meta["allow_inheritance"] is False and not meta["abstract"]:
+            raise ValueError('Only direct subclasses of Document may set "allow_inheritance" to False')
 
         # Set default collection name
         if "collection" not in meta:
-            meta["collection"] = (
-                "".join("_%s" % c if c.isupper() else c for c in name)
-                .strip("_")
-                .lower()
-            )
+            meta["collection"] = "".join(f"_{c}" if c.isupper() else c for c in name).strip("_").lower()
         attrs["_meta"] = meta
 
         # Call super and get the new class
@@ -411,9 +368,7 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
         module = attrs.get("__module__")
         for exc in exceptions_to_merge:
             name = exc.__name__
-            parents = tuple(
-                getattr(base, name) for base in flattened_bases if hasattr(base, name)
-            ) or (exc,)
+            parents = tuple(getattr(base, name) for base in flattened_bases if hasattr(base, name)) or (exc,)
 
             # Create a new exception and set it as an attribute on the new
             # class.

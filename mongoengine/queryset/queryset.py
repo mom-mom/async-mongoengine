@@ -112,7 +112,7 @@ class QuerySet(BaseQuerySet):
                 data[-1] = "...(remaining elements truncated)..."
             return repr(data)
 
-        return "%s async queryset" % self._document._class_name
+        return f"{self._document._class_name} async queryset"
 
     def no_cache(self):
         """Convert to a non-caching queryset"""
@@ -133,7 +133,7 @@ class QuerySetNoCache(BaseQuerySet):
         """Provides the string representation of the QuerySet"""
         if self._iter:
             return ".. queryset mid-iteration .."
-        return "%s async queryset (no cache)" % self._document._class_name
+        return f"{self._document._class_name} async queryset (no cache)"
 
     async def __aiter__(self):
         queryset = self
@@ -146,9 +146,7 @@ class QuerySetNoCache(BaseQuerySet):
             if queryset._as_pymongo:
                 yield doc
             else:
-                result = queryset._document._from_son(
-                    doc, _auto_dereference=queryset._auto_dereference
-                )
+                result = queryset._document._from_son(doc, _auto_dereference=queryset._auto_dereference)
                 if queryset._scalar:
                     yield queryset._get_scalar(result)
                 else:

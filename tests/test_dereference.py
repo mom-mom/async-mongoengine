@@ -19,7 +19,7 @@ class FieldTest(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            user = User(name="user %s" % i)
+            user = User(name=f"user {i}")
             await user.save()
 
         group = Group(members=[u async for u in User.objects])
@@ -77,7 +77,7 @@ class FieldTest(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            user = User(name="user %s" % i)
+            user = User(name=f"user {i}")
             await user.save()
 
         group = Group(members=[u async for u in User.objects])
@@ -133,7 +133,7 @@ class FieldTest(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            user = User(name="user %s" % i)
+            user = User(name=f"user {i}")
             await user.save()
 
         group = Group(members=[u async for u in User.objects])
@@ -197,7 +197,7 @@ class FieldTest(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 26):
-            user = User(name="user %s" % i)
+            user = User(name=f"user {i}")
             await user.save()
 
         group = Group(members=[u async for u in User.objects])
@@ -364,7 +364,7 @@ class FieldTest(MongoDBTestCase):
             relations = ListField(EmbeddedDocumentField("Relation"))
 
             def __repr__(self):
-                return "<Person: %s>" % self.name
+                return f"<Person: {self.name}>"
 
         await Person.drop_collection()
         mother = Person(name="Mother")
@@ -393,7 +393,7 @@ class FieldTest(MongoDBTestCase):
             relations = ListField(ReferenceField("self"))
 
             def __repr__(self):
-                return "<Person: %s>" % self.name
+                return f"<Person: {self.name}>"
 
         await Person.drop_collection()
         mother = Person(name="Mother")
@@ -424,7 +424,7 @@ class FieldTest(MongoDBTestCase):
             other = EmbeddedDocumentField(Other, default=lambda: Other())
 
             def __repr__(self):
-                return "<Person: %s>" % self.name
+                return f"<Person: {self.name}>"
 
         await Person.drop_collection()
         paul = await Person(name="Paul").save()
@@ -448,10 +448,9 @@ class FieldTest(MongoDBTestCase):
         anna.other.name = "Anna's friends"
         await anna.save()
 
-        assert (
-            "[<Person: Paul>, <Person: Maria>, <Person: Julia>, <Person: Anna>]"
-            == "%s" % [doc async for doc in Person.objects()]
-        )
+        assert "[<Person: Paul>, <Person: Maria>, <Person: Julia>, <Person: Anna>]" == "%s" % [
+            doc async for doc in Person.objects()
+        ]
 
     async def test_generic_reference(self):
         class UserA(Document):
@@ -473,13 +472,13 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            a = UserA(name="User A %s" % i)
+            a = UserA(name=f"User A {i}")
             await a.save()
 
-            b = UserB(name="User B %s" % i)
+            b = UserB(name=f"User B {i}")
             await b.save()
 
-            c = UserC(name="User C %s" % i)
+            c = UserC(name=f"User C {i}")
             await c.save()
 
             members += [a, b, c]
@@ -560,13 +559,13 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            a = UserA(name="User A %s" % i)
+            a = UserA(name=f"User A {i}")
             await a.save()
 
-            b = UserB(name="User B %s" % i)
+            b = UserB(name=f"User B {i}")
             await b.save()
 
-            c = UserC(name="User C %s" % i)
+            c = UserC(name=f"User C {i}")
             await c.save()
 
             members += [a, b, c]
@@ -616,13 +615,13 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            a = UserA(name="User A %s" % i)
+            a = UserA(name=f"User A {i}")
             await a.save()
 
-            b = UserB(name="User B %s" % i)
+            b = UserB(name=f"User B {i}")
             await b.save()
 
-            c = UserC(name="User C %s" % i)
+            c = UserC(name=f"User C {i}")
             await c.save()
 
             members += [a, b, c]
@@ -698,7 +697,7 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            user = User(name="user %s" % i)
+            user = User(name=f"user {i}")
             await user.save()
             members.append(user)
 
@@ -770,13 +769,13 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            a = UserA(name="User A %s" % i)
+            a = UserA(name=f"User A {i}")
             await a.save()
 
-            b = UserB(name="User B %s" % i)
+            b = UserB(name=f"User B {i}")
             await b.save()
 
-            c = UserC(name="User C %s" % i)
+            c = UserC(name=f"User C {i}")
             await c.save()
 
             members += [a, b, c]
@@ -865,7 +864,7 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            a = UserA(name="User A %s" % i)
+            a = UserA(name=f"User A {i}")
             await a.save()
 
             members += [a]
@@ -947,13 +946,13 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            a = UserA(name="User A %s" % i)
+            a = UserA(name=f"User A {i}")
             await a.save()
 
-            b = UserB(name="User B %s" % i)
+            b = UserB(name=f"User B {i}")
             await b.save()
 
-            c = UserC(name="User C %s" % i)
+            c = UserC(name=f"User C {i}")
             await c.save()
 
             members += [a, b, c]
@@ -1184,7 +1183,7 @@ class FieldTest(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            await User(name="user %s" % i).save()
+            await User(name=f"user {i}").save()
 
         await Group(name="Test", members=[u async for u in User.objects]).save()
 
@@ -1213,7 +1212,7 @@ class FieldTest(MongoDBTestCase):
         await Group.drop_collection()
 
         for i in range(1, 51):
-            await User(name="user %s" % i).save()
+            await User(name=f"user {i}").save()
 
         await Group(name="Test", members=[u async for u in User.objects]).save()
 
@@ -1249,9 +1248,9 @@ class FieldTest(MongoDBTestCase):
 
         members = []
         for i in range(1, 51):
-            a = await UserA(name="User A %s" % i).save()
-            b = await UserB(name="User B %s" % i).save()
-            c = await UserC(name="User C %s" % i).save()
+            a = await UserA(name=f"User A {i}").save()
+            b = await UserB(name=f"User B {i}").save()
+            c = await UserC(name=f"User C {i}").save()
 
             members += [a, b, c]
 
@@ -1356,7 +1355,7 @@ class FieldTest(MongoDBTestCase):
         await Playlist.drop_collection()
         await Song.drop_collection()
 
-        songs = [await Song.objects.create(title="song %d" % i) for i in range(3)]
+        songs = [await Song.objects.create(title=f"song {i}") for i in range(3)]
         items = [PlaylistItem(song=song) for song in songs]
         playlist = await Playlist.objects.create(items=items)
 

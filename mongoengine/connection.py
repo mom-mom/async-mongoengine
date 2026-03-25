@@ -2,9 +2,7 @@ import contextvars
 
 from pymongo import AsyncMongoClient, ReadPreference, uri_parser
 from pymongo.common import _UUID_REPRESENTATIONS
-
 from pymongo.database_shared import _check_name
-
 from pymongo.driver_info import DriverInfo
 
 import mongoengine
@@ -48,7 +46,7 @@ def _check_db_name(name):
     This functionality is copied from pymongo Database class constructor.
     """
     if not isinstance(name, str):
-        raise TypeError("name must be an instance of %s" % str)
+        raise TypeError(f"name must be an instance of {str}")
     elif name != "$external":
         _check_name(name)
 
@@ -127,9 +125,7 @@ def _get_connection_settings(
                 if uri_dict.get(param):
                     conn_settings[param] = uri_dict[param]
 
-            uri_options = uri_dict[
-                "options"
-            ]  # uri_options is a _CaseInsensitiveDictionary
+            uri_options = uri_dict["options"]  # uri_options is a _CaseInsensitiveDictionary
             if "replicaset" in uri_options:
                 conn_settings["replicaSet"] = uri_options["replicaset"]
             if "authsource" in uri_options:
@@ -149,31 +145,20 @@ def _get_connection_settings(
                 if isinstance(read_pf_mode, str):
                     read_pf_mode = read_pf_mode.lower()
                 for preference in read_preferences:
-                    if (
-                        preference.name.lower() == read_pf_mode
-                        or preference.mode == read_pf_mode
-                    ):
+                    if preference.name.lower() == read_pf_mode or preference.mode == read_pf_mode:
                         ReadPrefClass = preference.__class__
                         break
 
                 if "readpreferencetags" in uri_options:
-                    conn_settings["read_preference"] = ReadPrefClass(
-                        tag_sets=uri_options["readpreferencetags"]
-                    )
+                    conn_settings["read_preference"] = ReadPrefClass(tag_sets=uri_options["readpreferencetags"])
                 else:
                     conn_settings["read_preference"] = ReadPrefClass()
 
             if "authmechanismproperties" in uri_options:
-                conn_settings["authmechanismproperties"] = uri_options[
-                    "authmechanismproperties"
-                ]
+                conn_settings["authmechanismproperties"] = uri_options["authmechanismproperties"]
             if "uuidrepresentation" in uri_options:
-                REV_UUID_REPRESENTATIONS = {
-                    v: k for k, v in _UUID_REPRESENTATIONS.items()
-                }
-                conn_settings["uuidrepresentation"] = REV_UUID_REPRESENTATIONS[
-                    uri_options["uuidrepresentation"]
-                ]
+                REV_UUID_REPRESENTATIONS = {v: k for k, v in _UUID_REPRESENTATIONS.items()}
+                conn_settings["uuidrepresentation"] = REV_UUID_REPRESENTATIONS[uri_options["uuidrepresentation"]]
         else:
             resolved_hosts.append(entity)
     conn_settings["host"] = resolved_hosts
@@ -278,6 +263,7 @@ def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
     """
     if reconnect:
         import warnings
+
         warnings.warn(
             "reconnect=True does not close the existing async connection. "
             "Use 'await disconnect(alias)' before calling get_connection().",
@@ -298,7 +284,7 @@ def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
         if alias == DEFAULT_CONNECTION_NAME:
             msg = "You have not defined a default connection"
         else:
-            msg = 'Connection with alias "%s" has not been defined' % alias
+            msg = f'Connection with alias "{alias}" has not been defined'
         raise ConnectionFailure(msg)
 
     def _clean_settings(settings_dict):
@@ -319,9 +305,7 @@ def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
     # alias and remove the database name and authentication info (we don't
     # care about them at this point).
     conn_settings = _clean_settings(raw_conn_settings)
-    conn_settings.setdefault(
-        "driver", DriverInfo("AsyncMongoEngine", mongoengine.__version__)
-    )
+    conn_settings.setdefault("driver", DriverInfo("AsyncMongoEngine", mongoengine.__version__))
 
     # Determine if we should use PyMongo's or an alternative AsyncMongoClient.
     if "mongo_client_class" in conn_settings:
@@ -334,9 +318,7 @@ def get_connection(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
     if existing_connection:
         connection = existing_connection
     else:
-        connection = _create_connection(
-            alias=alias, mongo_client_class=mongo_client_class, **conn_settings
-        )
+        connection = _create_connection(alias=alias, mongo_client_class=mongo_client_class, **conn_settings)
     _connections[alias] = connection
     return _connections[alias]
 
@@ -362,10 +344,7 @@ def _find_existing_connection(connection_settings):
     :param connection_settings: the settings of the new connection
     :return: An existing connection or None
     """
-    connection_settings_bis = (
-        (db_alias, settings.copy())
-        for db_alias, settings in _connection_settings.items()
-    )
+    connection_settings_bis = ((db_alias, settings.copy()) for db_alias, settings in _connection_settings.items())
 
     def _clean_settings(settings_dict):
         # Only remove the name but it's important to
@@ -383,6 +362,7 @@ def _find_existing_connection(connection_settings):
 def get_db(alias=DEFAULT_CONNECTION_NAME, reconnect=False):
     if reconnect:
         import warnings
+
         warnings.warn(
             "reconnect=True does not close the existing async connection. "
             "Use 'await disconnect(alias)' before calling get_db().",
@@ -421,10 +401,7 @@ def connect(db=None, alias=DEFAULT_CONNECTION_NAME, **kwargs):
         new_conn_settings = _get_connection_settings(db, **kwargs)
 
         if new_conn_settings != prev_conn_setting:
-            err_msg = (
-                "A different connection with alias `{}` was already "
-                "registered. Use disconnect() first"
-            ).format(alias)
+            err_msg = f"A different connection with alias `{alias}` was already registered. Use disconnect() first"
             raise ConnectionFailure(err_msg)
     else:
         register_connection(alias, db, **kwargs)
@@ -439,9 +416,7 @@ _get_db = get_db
 
 # Session management using contextvars for async compatibility.
 # Uses a tuple-based stack to support nested session contexts.
-_session_stack: contextvars.ContextVar = contextvars.ContextVar(
-    "_session_stack", default=()
-)
+_session_stack: contextvars.ContextVar = contextvars.ContextVar("_session_stack", default=())
 
 
 def _set_session(session):

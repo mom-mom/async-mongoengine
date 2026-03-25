@@ -1,5 +1,5 @@
-from tests.utils import MongoDBTestCase
 from datetime import datetime
+
 import pytest
 from pymongo.collation import Collation
 from pymongo.errors import OperationFailure
@@ -10,6 +10,7 @@ from mongoengine.mongodb_support import (
     get_mongodb_version,
 )
 from mongoengine.pymongo_support import PYMONGO_VERSION
+from tests.utils import MongoDBTestCase
 
 
 async def _safe_drop_collection(doc_cls):
@@ -225,9 +226,7 @@ class TestIndexes(MongoDBTestCase):
             current = DictField(field=EmbeddedDocumentField("EmbeddedLocation"))
             meta = {"allow_inheritance": True, "indexes": ["*current.location.point"]}
 
-        assert [{"fields": [("current.location.point", "2d")]}] == Place._meta[
-            "index_specs"
-        ]
+        assert [{"fields": [("current.location.point", "2d")]}] == Place._meta["index_specs"]
 
         await Place.ensure_indexes()
         info = await (await Place._get_collection()).index_information()
@@ -241,9 +240,7 @@ class TestIndexes(MongoDBTestCase):
             location = DictField()
             meta = {"allow_inheritance": True, "indexes": ["(location.point"]}
 
-        assert [{"fields": [("location.point", "2dsphere")]}] == Place._meta[
-            "index_specs"
-        ]
+        assert [{"fields": [("location.point", "2dsphere")]}] == Place._meta["index_specs"]
 
         await Place.ensure_indexes()
         info = await (await Place._get_collection()).index_information()
@@ -261,9 +258,7 @@ class TestIndexes(MongoDBTestCase):
             name = StringField()
             meta = {"indexes": [(")location.point", "name")]}
 
-        assert [
-            {"fields": [("location.point", "geoHaystack"), ("name", 1)]}
-        ] == Place._meta["index_specs"]
+        assert [{"fields": [("location.point", "geoHaystack"), ("name", 1)]}] == Place._meta["index_specs"]
 
         # GeoHaystack index creation is not supported for now from meta, as it
         # requires a bucketSize parameter.
@@ -311,9 +306,7 @@ class TestIndexes(MongoDBTestCase):
             tags = ListField(StringField())
             meta = {"indexes": [{"fields": ["-date"], "unique": True, "sparse": True}]}
 
-        assert [
-            {"fields": [("addDate", -1)], "unique": True, "sparse": True}
-        ] == BlogPost._meta["index_specs"]
+        assert [{"fields": [("addDate", -1)], "unique": True, "sparse": True}] == BlogPost._meta["index_specs"]
 
         await _safe_drop_collection(BlogPost)
 
@@ -324,10 +317,7 @@ class TestIndexes(MongoDBTestCase):
         # Indexes are lazy so use list() to perform query
         [doc async for doc in BlogPost.objects]
         info = await (await BlogPost._get_collection()).index_information()
-        info = [
-            (value["key"], value.get("unique", False), value.get("sparse", False))
-            for key, value in info.items()
-        ]
+        info = [(value["key"], value.get("unique", False), value.get("sparse", False)) for key, value in info.items()]
         assert ([("addDate", -1)], True, True) in info
 
         await _safe_drop_collection(BlogPost)
@@ -456,66 +446,35 @@ class TestIndexes(MongoDBTestCase):
         mongo_db = await get_mongodb_version()
         if mongo_db >= MONGODB_80:
             query_plan = await Test.objects(id=obj.id).exclude("a").explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["stage"] == "EXPRESS_IXSCAN"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["stage"] == "EXPRESS_IXSCAN"
 
             query_plan = await Test.objects(id=obj.id).only("id").explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["stage"] == "EXPRESS_IXSCAN"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["stage"] == "EXPRESS_IXSCAN"
 
             query_plan = await Test.objects(a=1).only("a").exclude("id").explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"]
-                == "IXSCAN"
-            )
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["stage"]
-                == "PROJECTION_COVERED"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"] == "IXSCAN"
+            assert query_plan["queryPlanner"]["winningPlan"]["stage"] == "PROJECTION_COVERED"
 
             query_plan = await Test.objects(a=1).explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"]
-                == "IXSCAN"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"] == "IXSCAN"
 
-            assert (
-                query_plan.get("queryPlanner").get("winningPlan").get("stage")
-                == "FETCH"
-            )
+            assert query_plan.get("queryPlanner").get("winningPlan").get("stage") == "FETCH"
         elif mongo_db < MONGODB_80:
             query_plan = await Test.objects(id=obj.id).exclude("a").explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"]
-                == "IDHACK"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"] == "IDHACK"
 
             query_plan = await Test.objects(id=obj.id).only("id").explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"]
-                == "IDHACK"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"] == "IDHACK"
 
             query_plan = await Test.objects(a=1).only("a").exclude("id").explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"]
-                == "IXSCAN"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"] == "IXSCAN"
 
             assert query_plan["queryPlanner"]["winningPlan"]["stage"] == "PROJECTION_COVERED"
 
             query_plan = await Test.objects(a=1).explain()
-            assert (
-                query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"]
-                == "IXSCAN"
-            )
+            assert query_plan["queryPlanner"]["winningPlan"]["inputStage"]["stage"] == "IXSCAN"
 
-            assert (
-                query_plan.get("queryPlanner").get("winningPlan").get("stage")
-                == "FETCH"
-            )
+            assert query_plan.get("queryPlanner").get("winningPlan").get("stage") == "FETCH"
 
     async def test_index_on_id(self):
         class BlogPost(Document):
@@ -540,7 +499,7 @@ class TestIndexes(MongoDBTestCase):
         await _safe_drop_collection(BlogPost)
 
         for i in range(10):
-            tags = [("tag %i" % n) for n in range(i % 2)]
+            tags = [(f"tag {n}") for n in range(i % 2)]
             await BlogPost(tags=tags).save()
 
         # Hinting by shape should work.
@@ -574,11 +533,7 @@ class TestIndexes(MongoDBTestCase):
 
         class BlogPost(Document):
             name = StringField()
-            meta = {
-                "indexes": [
-                    {"fields": ["name"], "name": "name_index", "collation": base}
-                ]
-            }
+            meta = {"indexes": [{"fields": ["name"], "name": "name_index", "collation": base}]}
 
         await _safe_drop_collection(BlogPost)
 
@@ -597,9 +552,7 @@ class TestIndexes(MongoDBTestCase):
         incorrect_collation = {"arndom": "wrdo"}
         with pytest.raises(OperationFailure) as exc_info:
             await BlogPost.objects.collation(incorrect_collation).count()
-        assert "Missing expected field" in str(
-            exc_info.value
-        ) or "unknown field" in str(exc_info.value)
+        assert "Missing expected field" in str(exc_info.value) or "unknown field" in str(exc_info.value)
 
         query_result = BlogPost.objects.collation({}).order_by("name")
         assert [x.name async for x in query_result] == sorted(names)
@@ -643,12 +596,9 @@ class TestIndexes(MongoDBTestCase):
         err_msg = str(exc_info.value)
         assert any(
             [
-                "The field 'unique' is not valid for an _id index specification"
-                in err_msg,
-                "The field 'background' is not valid for an _id index specification"
-                in err_msg,
-                "The field 'sparse' is not valid for an _id index specification"
-                in err_msg,
+                "The field 'unique' is not valid for an _id index specification" in err_msg,
+                "The field 'background' is not valid for an _id index specification" in err_msg,
+                "The field 'sparse' is not valid for an _id index specification" in err_msg,
             ]
         )
 
@@ -922,11 +872,7 @@ class TestIndexes(MongoDBTestCase):
 
             class BlogPost(Document):
                 comments = EmbeddedDocumentField(Comment)
-                meta = {
-                    "indexes": [
-                        {"fields": ["pk", "comments.comment_id"], "unique": True}
-                    ]
-                }
+                meta = {"indexes": [{"fields": ["pk", "comments.comment_id"], "unique": True}]}
 
         except UnboundLocalError:
             pytest.fail("Unbound local error at index + pk definition")
@@ -980,16 +926,12 @@ class TestIndexes(MongoDBTestCase):
     async def test_sparse_compound_indexes(self):
         class MyDoc(Document):
             provider_ids = DictField()
-            meta = {
-                "indexes": [
-                    {"fields": ("provider_ids.foo", "provider_ids.bar"), "sparse": True}
-                ]
-            }
+            meta = {"indexes": [{"fields": ("provider_ids.foo", "provider_ids.bar"), "sparse": True}]}
 
         info = await (await MyDoc._get_collection()).index_information()
-        assert [("provider_ids.foo", 1), ("provider_ids.bar", 1)] == info[
-            "provider_ids.foo_1_provider_ids.bar_1"
-        ]["key"]
+        assert [("provider_ids.foo", 1), ("provider_ids.bar", 1)] == info["provider_ids.foo_1_provider_ids.bar_1"][
+            "key"
+        ]
         assert info["provider_ids.foo_1_provider_ids.bar_1"]["sparse"]
 
         assert await MyDoc.compare_indexes() == {"missing": [], "extra": []}
@@ -1096,13 +1038,9 @@ class TestIndexes(MongoDBTestCase):
 
         index_info = await (await TestDoc._get_collection()).index_information()
         for key in index_info:
-            del index_info[key][
-                "v"
-            ]  # drop the index version - we don't care about that here
+            del index_info[key]["v"]  # drop the index version - we don't care about that here
             if "ns" in index_info[key]:
-                del index_info[key][
-                    "ns"
-                ]  # drop the index namespace - we don't care about that here, MongoDB 3+
+                del index_info[key]["ns"]  # drop the index namespace - we don't care about that here, MongoDB 3+
 
         assert index_info == {
             "txt_1": {"key": [("txt", 1)], "background": False},
@@ -1160,5 +1098,3 @@ class TestIndexes(MongoDBTestCase):
         await Sample2.ensure_indexes()
         assert await Sample1.compare_indexes() == {"missing": [], "extra": []}
         assert await Sample2.compare_indexes() == {"missing": [], "extra": []}
-
-

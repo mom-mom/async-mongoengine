@@ -31,16 +31,10 @@ except ImportError:
             self.__doc__ = doc
 
         def _fail(self, *args, **kwargs):
-            raise RuntimeError(
-                "signalling support is unavailable "
-                "because the blinker library is "
-                "not installed."
-            )
+            raise RuntimeError("signalling support is unavailable because the blinker library is not installed.")
 
         send = lambda *a, **kw: None  # noqa
-        connect = disconnect = has_receivers_for = receivers_for = (
-            temporarily_connected_to
-        ) = _fail
+        connect = disconnect = has_receivers_for = receivers_for = temporarily_connected_to = _fail
         del _fail
 
 

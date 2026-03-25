@@ -64,18 +64,11 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
 
         for values in itertools.product([2014], mm, dd, hh, ii, ss, microsecond):
             stored = LogEntry(date=datetime.datetime(*values)).to_mongo()["date"]
-            assert (
-                re.match(r"^\d{4},\d{2},\d{2},\d{2},\d{2},\d{2},\d{6}$", stored)
-                is not None
-            )
+            assert re.match(r"^\d{4},\d{2},\d{2},\d{2},\d{2},\d{2},\d{6}$", stored) is not None
 
         # Test separator
-        stored = LogEntry(date_with_dots=datetime.datetime(2014, 1, 1)).to_mongo()[
-            "date_with_dots"
-        ]
-        assert (
-            re.match(r"^\d{4}.\d{2}.\d{2}.\d{2}.\d{2}.\d{2}.\d{6}$", stored) is not None
-        )
+        stored = LogEntry(date_with_dots=datetime.datetime(2014, 1, 1)).to_mongo()["date_with_dots"]
+        assert re.match(r"^\d{4}.\d{2}.\d{2}.\d{2}.\d{2}.\d{2}.\d{6}$", stored) is not None
 
     async def test_complexdatetime_usage(self):
         """Tests for complex datetime fields - which can handle
@@ -144,9 +137,7 @@ class ComplexDateTimeFieldTest(MongoDBTestCase):
             next_log = logs[next_idx]
             assert log.date > next_log.date
 
-        logs = LogEntry.objects.filter(
-            date__lte=datetime.datetime(2015, 1, 1, 0, 0, 0, 10000)
-        )
+        logs = LogEntry.objects.filter(date__lte=datetime.datetime(2015, 1, 1, 0, 0, 0, 10000))
         assert await logs.count() == 4
 
     async def test_no_default_value(self):

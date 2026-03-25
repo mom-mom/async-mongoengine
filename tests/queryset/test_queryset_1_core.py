@@ -1,31 +1,14 @@
-import datetime
-import uuid
-from decimal import Decimal
-
-import pymongo
 import pytest
-from bson import DBRef, ObjectId
-from pymongo.read_preferences import ReadPreference
+from bson import ObjectId
 from pymongo.results import UpdateResult
 
 from mongoengine import *
-from mongoengine.connection import get_db
-from mongoengine.context_managers import query_counter, switch_db
 from mongoengine.errors import InvalidQueryError
-from mongoengine.pymongo_support import PYMONGO_VERSION
 from mongoengine.queryset import (
     DoesNotExist,
     MultipleObjectsReturned,
     QuerySet,
-    QuerySetManager,
-    queryset_manager,
 )
-from mongoengine.queryset.base import BaseQuerySet
-from tests.utils import (
-    db_ops_tracker,
-    get_as_pymongo,
-)
-
 from tests.utils import MongoDBTestCase
 
 
@@ -43,8 +26,6 @@ class TestQueryset1(MongoDBTestCase):
         self.PersonMeta = PersonMeta
         self.Person = Person
 
-
-
     async def assertSequence(self, qs, expected):
         qs = [d async for d in qs]
         expected = list(expected)
@@ -52,21 +33,15 @@ class TestQueryset1(MongoDBTestCase):
         for i in range(len(qs)):
             assert qs[i] == expected[i]
 
-
-
     async def test_initialisation(self):
         """Ensure that a QuerySet is correctly initialised by QuerySetManager."""
         qs = self.Person.objects
         assert isinstance(qs, QuerySet)
         await qs._ensure_collection()
-        assert (
-            qs._collection.name == self.Person._get_collection_name()
-        )
+        assert qs._collection.name == self.Person._get_collection_name()
         from pymongo.asynchronous.collection import AsyncCollection
-        assert isinstance(
-            qs._collection, AsyncCollection
-        )
 
+        assert isinstance(qs._collection, AsyncCollection)
 
     async def test_cannot_perform_joins_references(self):
         class BlogPost(Document):
@@ -80,7 +55,6 @@ class TestQueryset1(MongoDBTestCase):
         # should fail for a generic reference as well
         with pytest.raises(InvalidQueryError):
             [d async for d in BlogPost.objects(author2__name="test")]
-
 
     async def test_find(self):
         """Ensure that a query returns a valid set of results."""
@@ -111,7 +85,6 @@ class TestQueryset1(MongoDBTestCase):
         assert person.name == "User A"
         assert person.age == 20
 
-
     async def test_slicing_sets_empty_limit_skip(self):
         await self.Person.objects.insert(
             [self.Person(name=f"User {i}", age=i) for i in range(5)],
@@ -135,7 +108,6 @@ class TestQueryset1(MongoDBTestCase):
         assert (qs2._empty, qs2._skip, qs2._limit) == (False, 1, 4)
         assert len([d async for d in qs2]) == 4
 
-
     async def test_limit_0_returns_all_documents(self):
         await self.Person.objects.create(name="User A", age=20)
         await self.Person.objects.create(name="User B", age=30)
@@ -145,7 +117,6 @@ class TestQueryset1(MongoDBTestCase):
         persons = [d async for d in self.Person.objects().limit(0)]
         assert len(persons) == 2 == n_docs
 
-
     async def test_limit_0(self):
         """Ensure that QuerySet.limit works as expected."""
         await self.Person.objects.create(name="User A", age=20)
@@ -153,7 +124,6 @@ class TestQueryset1(MongoDBTestCase):
         # Test limit with 0 as parameter
         qs = self.Person.objects.limit(0)
         assert await qs.count() == 0
-
 
     async def test_limit(self):
         """Ensure that QuerySet.limit works as expected."""
@@ -182,7 +152,6 @@ class TestQueryset1(MongoDBTestCase):
         assert person == user_a
         assert person.name == "User A"
         assert person.age is None
-
 
     async def test_skip(self):
         """Ensure that QuerySet.skip works as expected."""
@@ -215,12 +184,10 @@ class TestQueryset1(MongoDBTestCase):
         assert person.name == "User B"
         assert person.age is None
 
-
     async def test___getitem___invalid_index(self):
         """Ensure slicing a queryset works as expected."""
         with pytest.raises(TypeError):
             self.Person.objects()["a"]
-
 
     async def test_slice(self):
         """Ensure slicing a queryset works as expected."""
@@ -273,7 +240,7 @@ class TestQueryset1(MongoDBTestCase):
         # Test larger slice __repr__
         await self.Person.objects.delete()
         for i in range(55):
-            await self.Person(name="A%s" % i, age=i).save()
+            await self.Person(name=f"A{i}", age=i).save()
 
         assert await self.Person.objects.count() == 55
         assert "Person object" == "%s" % await self.Person.objects.get_item(0)
@@ -282,7 +249,6 @@ class TestQueryset1(MongoDBTestCase):
         assert len(sliced) == 2
         sliced = [d async for d in self.Person.objects[51:53]]
         assert len(sliced) == 2
-
 
     async def test_find_one(self):
         """Ensure that a query using find_one returns a valid result."""
@@ -321,7 +287,6 @@ class TestQueryset1(MongoDBTestCase):
         with pytest.raises(InvalidQueryError):
             await self.Person.objects(name="User A").with_id(person1.id)
 
-
     async def test_get_no_document_exists_raises_doesnotexist(self):
         assert await self.Person.objects.count() == 0
         # Try retrieving when no objects exists
@@ -329,7 +294,6 @@ class TestQueryset1(MongoDBTestCase):
             await self.Person.objects.get()
         with pytest.raises(self.Person.DoesNotExist):
             await self.Person.objects.get()
-
 
     async def test_get_multiple_match_raises_multipleobjectsreturned(self):
         """Ensure that a query using ``get`` returns at most one result."""
@@ -363,7 +327,6 @@ class TestQueryset1(MongoDBTestCase):
         # Use a query to filter the people found to just person2
         person = await self.Person.objects.get(age=30)
         assert person == person3
-
 
     async def test_find_array_position(self):
         """Ensure that query by array position works."""
@@ -412,7 +375,6 @@ class TestQueryset1(MongoDBTestCase):
 
         await Blog.drop_collection()
 
-
     async def test_none(self):
         class A(Document):
             s = StringField()
@@ -438,7 +400,6 @@ class TestQueryset1(MongoDBTestCase):
         assert [d async for d in A.objects.none().limit(1)] == []
         assert [d async for d in A.objects.none().skip(1)] == []
         assert [d async for d in A.objects.none()[:5]] == []
-
 
     async def test_chaining(self):
         class A(Document):
@@ -469,7 +430,6 @@ class TestQueryset1(MongoDBTestCase):
         query = query.filter(boolfield=True)
         assert await query.count() == 1
 
-
     async def test_batch_size(self):
         """Ensure that batch_size works."""
 
@@ -499,7 +459,6 @@ class TestQueryset1(MongoDBTestCase):
         with pytest.raises(ValueError):
             [d async for d in qs]
 
-
     async def test_batch_size_cloned(self):
         class A(Document):
             s = StringField()
@@ -509,7 +468,6 @@ class TestQueryset1(MongoDBTestCase):
         assert qs._batch_size == 5
         qs_clone = qs.clone()
         assert qs_clone._batch_size == 5
-
 
     async def test_update_write_concern(self):
         """Test that passing write_concern works"""
@@ -529,15 +487,10 @@ class TestQueryset1(MongoDBTestCase):
         result = await self.Person.objects.update(set__name="Ross", write_concern={"w": 0})
         assert result is None
 
-        result = await self.Person.objects.update_one(
-            set__name="Test User", write_concern={"w": 1}
-        )
+        result = await self.Person.objects.update_one(set__name="Test User", write_concern={"w": 1})
         assert result == 1
-        result = await self.Person.objects.update_one(
-            set__name="Test User", write_concern={"w": 0}
-        )
+        result = await self.Person.objects.update_one(set__name="Test User", write_concern={"w": 0})
         assert result is None
-
 
     async def test_update_update_has_a_value(self):
         """Test to ensure that update is passed a value to update to"""
@@ -551,14 +504,13 @@ class TestQueryset1(MongoDBTestCase):
         with pytest.raises(OperationError):
             await self.Person.objects(pk=author.pk).update_one({})
 
-
     async def test_update_array_position(self):
         """Ensure that updating by array position works.
 
-            Check update() and update_one() can take syntax like:
-                set__posts__1__comments__1__name="testc"
-            Check that it only works for ListFields.
-            """
+        Check update() and update_one() can take syntax like:
+            set__posts__1__comments__1__name="testc"
+        Check that it only works for ListFields.
+        """
 
         class Comment(EmbeddedDocument):
             name = StringField()
@@ -598,7 +550,6 @@ class TestQueryset1(MongoDBTestCase):
             await Blog.objects().update(set__posts__1__comments__0__name__1="asdf")
 
         await Blog.drop_collection()
-
 
     async def test_update_array_filters(self):
         """Ensure that updating by array_filters works."""
@@ -675,10 +626,9 @@ class TestQueryset1(MongoDBTestCase):
 
         assert await testc_blogs.count() == 2
 
-
     async def test_update_using_positional_operator(self):
         """Ensure that the list fields can be updated using the positional
-            operator."""
+        operator."""
 
         class Comment(EmbeddedDocument):
             by = StringField()
@@ -700,7 +650,6 @@ class TestQueryset1(MongoDBTestCase):
         post = await BlogPost.objects.first()
         assert post.comments[1].by == "jane"
         assert post.comments[1].votes == 8
-
 
     async def test_update_using_positional_operator_matches_first(self):
         # Currently the $ operator only applies to the first matched item in
@@ -746,10 +695,9 @@ class TestQueryset1(MongoDBTestCase):
             await Simple.objects(x__test=2).update(set__x__S__test__S=3)
             assert simple.x == [1, 2, 3, 4]
 
-
     async def test_update_using_positional_operator_embedded_document(self):
         """Ensure that the embedded documents can be updated using the positional
-            operator."""
+        operator."""
 
         class Vote(EmbeddedDocument):
             score = IntField()
@@ -769,14 +717,11 @@ class TestQueryset1(MongoDBTestCase):
 
         await BlogPost(title="ABC", comments=[c1, c2]).save()
 
-        await BlogPost.objects(comments__by="joe").update(
-            set__comments__S__votes=Vote(score=4)
-        )
+        await BlogPost.objects(comments__by="joe").update(set__comments__S__votes=Vote(score=4))
 
         post = await BlogPost.objects.first()
         assert post.comments[0].by == "joe"
         assert post.comments[0].votes.score == 4
-
 
     async def test_update_min_max(self):
         class Scores(Document):
@@ -795,7 +740,6 @@ class TestQueryset1(MongoDBTestCase):
         await Scores.objects(id=scores.id).update(max__high_score=500)
         assert (await Scores.objects.get(id=scores.id)).high_score == 1000
 
-
     async def test_update_multiple(self):
         class Product(Document):
             item = StringField()
@@ -808,7 +752,6 @@ class TestQueryset1(MongoDBTestCase):
         unknown_product = await Product.objects.create(item="Unknown")
         await Product.objects(id=unknown_product.id).update(mul__price=100)
         assert (await Product.objects.get(id=unknown_product.id)).price == 0
-
 
     async def test_updates_can_have_match_operators(self):
         class Comment(EmbeddedDocument):
@@ -836,7 +779,6 @@ class TestQueryset1(MongoDBTestCase):
 
         assert 1 == len((await Post.objects.first()).comments)
 
-
     async def test_mapfield_update(self):
         """Ensure that the MapField can be updated."""
 
@@ -859,7 +801,6 @@ class TestQueryset1(MongoDBTestCase):
         assert club.members["John"].gender == "F"
         assert club.members["John"].age == 14
 
-
     async def test_dictfield_update(self):
         """Ensure that the DictField can be updated."""
 
@@ -875,7 +816,6 @@ class TestQueryset1(MongoDBTestCase):
         club = await Club.objects().first()
         assert club.members["John"]["gender"] == "F"
         assert club.members["John"]["age"] == 14
-
 
     async def test_update_results(self):
         await self.Person.drop_collection()
@@ -894,7 +834,6 @@ class TestQueryset1(MongoDBTestCase):
         result = await self.Person.objects(name="Bob").update(set__name="bobby", multi=True)
         assert result == 2
 
-
     async def test_update_validate(self):
         class EmDoc(EmbeddedDocument):
             str_f = StringField()
@@ -911,7 +850,6 @@ class TestQueryset1(MongoDBTestCase):
             await Doc.objects().update(dt_f="datetime", upsert=True)
         with pytest.raises(ValidationError):
             await Doc.objects().update(ed_f__str_f=1, upsert=True)
-
 
     async def test_update_related_models(self):
         class TestPerson(Document):
@@ -947,7 +885,6 @@ class TestQueryset1(MongoDBTestCase):
 
         assert p.name == "p2"  # Fails; it's still `p1`
 
-
     async def test_upsert(self):
         await self.Person.drop_collection()
 
@@ -956,7 +893,6 @@ class TestQueryset1(MongoDBTestCase):
         bob = await self.Person.objects.first()
         assert "Bob" == bob.name
         assert 30 == bob.age
-
 
     async def test_upsert_one(self):
         await self.Person.drop_collection()
@@ -975,18 +911,14 @@ class TestQueryset1(MongoDBTestCase):
         assert 30 == bobby.age
         assert bob.id == bobby.id
 
-
     async def test_set_on_insert(self):
         await self.Person.drop_collection()
 
-        await self.Person.objects(pk=ObjectId()).update(
-            set__name="Bob", set_on_insert__age=30, upsert=True
-        )
+        await self.Person.objects(pk=ObjectId()).update(set__name="Bob", set_on_insert__age=30, upsert=True)
 
         bob = await self.Person.objects.first()
         assert "Bob" == bob.name
         assert 30 == bob.age
-
 
     async def test_rename(self):
         await self.Person.drop_collection()
@@ -1002,4 +934,3 @@ class TestQueryset1(MongoDBTestCase):
         assert "age" not in bob
         assert "person_age" in bob
         assert bob["person_age"] == 11
-

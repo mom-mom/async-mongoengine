@@ -1,4 +1,3 @@
-import pytest
 import uuid
 from datetime import datetime
 
@@ -26,9 +25,7 @@ class TestJson(MongoDBTestCase):
             embedded = EmbeddedDocumentField(Embedded, db_field="e")
 
         doc = Doc(string="Hello", embedded=Embedded(string="Inner Hello"))
-        doc_json = doc.to_json(
-            sort_keys=True, use_db_field=False, separators=(",", ":")
-        )
+        doc_json = doc.to_json(sort_keys=True, use_db_field=False, separators=(",", ":"))
 
         expected_json = """{"embedded":{"string":"Inner Hello"},"string":"Hello"}"""
 
@@ -43,10 +40,7 @@ class TestJson(MongoDBTestCase):
             embedded_field = EmbeddedDocumentField(Embedded)
 
             def __eq__(self, other):
-                return (
-                    self.string == other.string
-                    and self.embedded_field == other.embedded_field
-                )
+                return self.string == other.string and self.embedded_field == other.embedded_field
 
         doc = Doc(string="Hi", embedded_field=Embedded(string="Hi"))
 
@@ -75,9 +69,7 @@ class TestJson(MongoDBTestCase):
             float_field = FloatField(default=1.1)
             boolean_field = BooleanField(default=True)
             datetime_field = DateTimeField(default=datetime.now)
-            embedded_document_field = EmbeddedDocumentField(
-                EmbeddedDoc, default=lambda: EmbeddedDoc()
-            )
+            embedded_document_field = EmbeddedDocumentField(EmbeddedDoc, default=lambda: EmbeddedDoc())
             list_field = ListField(default=lambda: [1, 2, 3])
             dict_field = DictField(default=lambda: {"hello": "world"})
             objectid_field = ObjectIdField(default=ObjectId)
@@ -93,9 +85,7 @@ class TestJson(MongoDBTestCase):
             geo_point_field = GeoPointField(default=lambda: [1, 2])
             sequence_field = SequenceField()
             uuid_field = UUIDField(default=uuid.uuid4)
-            generic_embedded_document_field = GenericEmbeddedDocumentField(
-                default=lambda: EmbeddedDoc()
-            )
+            generic_embedded_document_field = GenericEmbeddedDocumentField(default=lambda: EmbeddedDoc())
 
             def __eq__(self, other):
                 import json
@@ -104,5 +94,3 @@ class TestJson(MongoDBTestCase):
 
         doc = Doc(reference_field=simple_ref, generic_reference_field=simple_generic_ref)
         assert doc == Doc.from_json(doc.to_json())
-
-

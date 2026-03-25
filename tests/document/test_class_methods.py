@@ -1,10 +1,7 @@
-from tests.utils import MongoDBTestCase
-
-import pytest
 from mongoengine import *
-from mongoengine.connection import get_db
 from mongoengine.pymongo_support import list_collection_names
 from mongoengine.queryset import NULLIFY, PULL
+from tests.utils import MongoDBTestCase
 
 
 class TestClassMethods(MongoDBTestCase):
@@ -238,9 +235,7 @@ class TestClassMethods(MongoDBTestCase):
 
         class Animal(Document):
             family = StringField(required=True)
-            vaccine_made = ListField(
-                ReferenceField("Vaccine", reverse_delete_rule=PULL)
-            )
+            vaccine_made = ListField(ReferenceField("Vaccine", reverse_delete_rule=PULL))
 
             meta = {"allow_inheritance": True, "indexes": ["family"]}
 
@@ -289,10 +284,7 @@ class TestClassMethods(MongoDBTestCase):
         class OldMixinNamingConvention(Document, BaseMixin):
             pass
 
-        assert (
-            "oldmixinnamingconvention"
-            == OldMixinNamingConvention._get_collection_name()
-        )
+        assert "oldmixinnamingconvention" == OldMixinNamingConvention._get_collection_name()
 
         class BaseMixin:
             meta = {"collection": lambda c: c.__name__.lower()}
@@ -338,5 +330,3 @@ class TestClassMethods(MongoDBTestCase):
         assert user_obj.name == "Test User"
 
         await Person.drop_collection()
-
-

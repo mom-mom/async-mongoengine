@@ -1,32 +1,19 @@
-import datetime
-import uuid
 from decimal import Decimal
 
-import pymongo
 import pytest
-from bson import DBRef, ObjectId
+from bson import DBRef
 from pymongo.read_preferences import ReadPreference
-from pymongo.results import UpdateResult
 
 from mongoengine import *
-from mongoengine.connection import get_db
-from mongoengine.context_managers import query_counter, switch_db
-from mongoengine.errors import InvalidQueryError
-from mongoengine.pymongo_support import PYMONGO_VERSION
+from mongoengine.context_managers import switch_db
 from mongoengine.queryset import (
-    DoesNotExist,
-    MultipleObjectsReturned,
     QuerySet,
     QuerySetManager,
-    queryset_manager,
 )
-from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import (
-    db_ops_tracker,
+    MongoDBTestCase,
     get_as_pymongo,
 )
-
-from tests.utils import MongoDBTestCase
 
 
 class TestQueryset5(MongoDBTestCase):
@@ -43,8 +30,6 @@ class TestQueryset5(MongoDBTestCase):
         self.PersonMeta = PersonMeta
         self.Person = Person
 
-
-
     async def assertSequence(self, qs, expected):
         qs = [d async for d in qs]
         expected = list(expected)
@@ -52,10 +37,8 @@ class TestQueryset5(MongoDBTestCase):
         for i in range(len(qs)):
             assert qs[i] == expected[i]
 
-
     async def tearDown(self):
         await self.Person.drop_collection()
-
 
     async def test_custom_querysets_managers_directly(self):
         """Ensure that custom QuerySet classes may be used."""
@@ -78,7 +61,6 @@ class TestQueryset5(MongoDBTestCase):
 
         await Post.drop_collection()
 
-
     async def test_custom_querysets_inherited(self):
         """Ensure that custom QuerySet classes may be used."""
 
@@ -100,7 +82,6 @@ class TestQueryset5(MongoDBTestCase):
         assert await Post.objects.not_empty()
 
         await Post.drop_collection()
-
 
     async def test_custom_querysets_inherited_direct(self):
         """Ensure that custom QuerySet classes may be used."""
@@ -128,7 +109,6 @@ class TestQueryset5(MongoDBTestCase):
 
         await Post.drop_collection()
 
-
     async def test_count_limit_and_skip(self):
         class Post(Document):
             title = StringField()
@@ -136,12 +116,11 @@ class TestQueryset5(MongoDBTestCase):
         await Post.drop_collection()
 
         for i in range(10):
-            await Post(title="Post %s" % i).save()
+            await Post(title=f"Post {i}").save()
 
         assert 5 == await Post.objects.limit(5).skip(5).count(with_limit_and_skip=True)
 
         assert 10 == await Post.objects.limit(5).skip(5).count(with_limit_and_skip=False)
-
 
     async def test_count_and_none(self):
         """Test count works with None()"""
@@ -156,7 +135,6 @@ class TestQueryset5(MongoDBTestCase):
         assert await MyDoc.objects.count() == 10
         assert await MyDoc.objects.none().count() == 0
 
-
     async def test_count_list_embedded(self):
         class B(EmbeddedDocument):
             c = StringField()
@@ -165,7 +143,6 @@ class TestQueryset5(MongoDBTestCase):
             b = ListField(EmbeddedDocumentField(B))
 
         assert await A.objects(b=[{"c": "c"}]).count() == 0
-
 
     async def test_call_after_limits_set(self):
         """Ensure that re-filtering after slicing works"""
@@ -183,7 +160,6 @@ class TestQueryset5(MongoDBTestCase):
 
         await Post.drop_collection()
 
-
     async def test_order_then_filter(self):
         """Ensure that ordering still works after filtering."""
 
@@ -200,7 +176,6 @@ class TestQueryset5(MongoDBTestCase):
         assert [d async for d in Number.objects.order_by("n").filter()] == [n1, n2]
 
         await Number.drop_collection()
-
 
     async def test_clone(self):
         """Ensure that cloning clones complex querysets"""
@@ -231,7 +206,6 @@ class TestQueryset5(MongoDBTestCase):
 
         await Number.drop_collection()
 
-
     async def test_clone_retains_settings(self):
         """Ensure that cloning retains the read_preference and read_concern"""
 
@@ -257,7 +231,6 @@ class TestQueryset5(MongoDBTestCase):
 
         await Number.drop_collection()
 
-
     async def test_using(self):
         """Ensure that switching databases for a queryset is possible"""
 
@@ -274,7 +247,6 @@ class TestQueryset5(MongoDBTestCase):
             await t.save()
 
         assert await (await Number2.objects.using("test2")).count() == 9
-
 
     async def test_unset_reference(self):
         class Comment(Document):
@@ -297,7 +269,6 @@ class TestQueryset5(MongoDBTestCase):
         await Comment.drop_collection()
         await Post.drop_collection()
 
-
     async def test_order_works_with_custom_db_field_names(self):
         class Number(Document):
             n = IntField(db_field="number")
@@ -311,7 +282,6 @@ class TestQueryset5(MongoDBTestCase):
         assert [d async for d in Number.objects.order_by("n")] == [n1, n2]
 
         await Number.drop_collection()
-
 
     async def test_order_works_with_primary(self):
         """Ensure that order_by and primary work."""
@@ -332,7 +302,6 @@ class TestQueryset5(MongoDBTestCase):
         assert [1, 2, 3] == numbers
         await Number.drop_collection()
 
-
     async def test_create_index(self):
         """Ensure that manual creation of indexes works."""
 
@@ -344,12 +313,8 @@ class TestQueryset5(MongoDBTestCase):
 
         collection = await Comment._get_collection()
         info = await collection.index_information()
-        info = [
-            (value["key"], value.get("unique", False), value.get("sparse", False))
-            for key, value in info.items()
-        ]
+        info = [(value["key"], value.get("unique", False), value.get("sparse", False)) for key, value in info.items()]
         assert ([("_cls", 1), ("message", 1)], False, False) in info
-
 
     async def test_where_query(self):
         """Ensure that where clauses work."""
@@ -379,13 +344,8 @@ class TestQueryset5(MongoDBTestCase):
         assert 1 == len(results)
         assert a in results
 
-        query = IntPair.objects.where(
-            "function() { return this[~fielda] >= this[~fieldb] }"
-        )
-        assert (
-            'function() { return this["fielda"] >= this["fieldb"] }'
-            == query._where_clause
-        )
+        query = IntPair.objects.where("function() { return this[~fielda] >= this[~fieldb] }")
+        assert 'function() { return this["fielda"] >= this["fieldb"] }' == query._where_clause
         results = [d async for d in query]
         assert 2 == len(results)
         assert a in results
@@ -393,7 +353,6 @@ class TestQueryset5(MongoDBTestCase):
 
         with pytest.raises(TypeError):
             [d async for d in IntPair.objects.where(fielda__gte=3)]
-
 
     async def test_where_query_field_name_subs(self):
         class DomainObj(Document):
@@ -409,7 +368,6 @@ class TestQueryset5(MongoDBTestCase):
         obj = DomainObj.objects.where("this[~field_1] == 'test'")
         assert [d async for d in obj]
 
-
     async def test_where_modify(self):
         class DomainObj(Document):
             field = StringField()
@@ -424,14 +382,11 @@ class TestQueryset5(MongoDBTestCase):
         obj = DomainObj.objects.where("this[~field] == 'test'")
         assert [d async for d in obj]
 
-        qs = await DomainObj.objects.where("this[~field] == 'NOTMATCHING'").modify(
-            field="new"
-        )
+        qs = await DomainObj.objects.where("this[~field] == 'NOTMATCHING'").modify(field="new")
         assert not qs
 
         qs = await DomainObj.objects.where("this[~field] == 'test'").modify(field="new")
         assert qs
-
 
     async def test_where_modify_field_name_subs(self):
         class DomainObj(Document):
@@ -441,16 +396,13 @@ class TestQueryset5(MongoDBTestCase):
 
         await DomainObj(field_1="test").save()
 
-        obj = await DomainObj.objects.where("this[~field_1] == 'NOTMATCHING'").modify(
-            field_1="new"
-        )
+        obj = await DomainObj.objects.where("this[~field_1] == 'NOTMATCHING'").modify(field_1="new")
         assert not obj
 
         obj = await DomainObj.objects.where("this[~field_1] == 'test'").modify(field_1="new")
         assert obj
 
         assert await get_as_pymongo(obj) == {"_id": obj.id, "field_2": "new"}
-
 
     async def test_scalar(self):
         class Organization(Document):
@@ -478,7 +430,6 @@ class TestQueryset5(MongoDBTestCase):
         user_map = User.objects.scalar("name", "organization")
         user_listing = [(user, orgs[org]) async for user, org in user_map]
         assert [("Bob Dole", "White House")] == user_listing
-
 
     async def test_scalar_simple(self):
         class TestDoc(Document):
@@ -522,7 +473,6 @@ class TestQueryset5(MongoDBTestCase):
 
         assert ulist == [("Tayza"), ("Wilson Jr"), ("Eliana"), ("Wilson")]
 
-
     async def test_scalar_embedded(self):
         class Profile(EmbeddedDocument):
             name = StringField()
@@ -558,12 +508,16 @@ class TestQueryset5(MongoDBTestCase):
             locale=Locale(city="Brasilia", country="Brazil"),
         ).save()
 
-        assert [d async for d in
-            Person.objects.order_by("profile__age").scalar("profile__name")
-        ] == ["Wilson Jr", "Gabriel Falcao", "Lincoln de souza", "Walter cruz"]
+        assert [d async for d in Person.objects.order_by("profile__age").scalar("profile__name")] == [
+            "Wilson Jr",
+            "Gabriel Falcao",
+            "Lincoln de souza",
+            "Walter cruz",
+        ]
 
-        ulist = [d async for d in
-            Person.objects.order_by("locale.city").scalar(
+        ulist = [
+            d
+            async for d in Person.objects.order_by("locale.city").scalar(
                 "profile__name", "profile__age", "locale__city"
             )
         ]
@@ -574,9 +528,7 @@ class TestQueryset5(MongoDBTestCase):
             ("Gabriel Falcao", 23, "New York"),
         ]
 
-
     async def test_scalar_decimal(self):
-        from decimal import Decimal
 
         class Person(Document):
             name = StringField()
@@ -587,7 +539,6 @@ class TestQueryset5(MongoDBTestCase):
 
         ulist = [d async for d in Person.objects.scalar("name", "rating")]
         assert ulist == [("Wilson Jr", Decimal("1.0"))]
-
 
     async def test_scalar_reference_field(self):
         class State(Document):
@@ -607,7 +558,6 @@ class TestQueryset5(MongoDBTestCase):
 
         plist = [d async for d in Person.objects.scalar("name", "state")]
         assert plist == [("Wilson JR", s1)]
-
 
     @pytest.mark.skip(reason="GenericReferenceField scalar dereference not working in async - library issue")
     async def test_scalar_generic_reference_field(self):
@@ -629,7 +579,6 @@ class TestQueryset5(MongoDBTestCase):
         plist = [d async for d in Person.objects.scalar("name", "state")]
         assert plist == [("Wilson JR", s1)]
 
-
     @pytest.mark.skip(reason="GenericReferenceField dereference not working in async with only() - library issue")
     async def test_generic_reference_field_with_only_and_as_pymongo(self):
         class TestPerson(Document):
@@ -648,12 +597,7 @@ class TestQueryset5(MongoDBTestCase):
         a1 = TestActivity(name="a1", owner=person)
         await a1.save()
 
-        activity = await (
-            TestActivity.objects(owner=person)
-            .scalar("id", "owner")
-            .no_dereference()
-            .first()
-        )
+        activity = await TestActivity.objects(owner=person).scalar("id", "owner").no_dereference().first()
         assert activity[0] == a1.pk
         assert activity[1]["_ref"] == DBRef("test_person", person.pk)
 
@@ -661,12 +605,9 @@ class TestQueryset5(MongoDBTestCase):
         assert activity.pk == a1.pk
         assert activity.owner == person
 
-        activity = await (
-            TestActivity.objects(owner=person).only("id", "owner").as_pymongo().first()
-        )
+        activity = await TestActivity.objects(owner=person).only("id", "owner").as_pymongo().first()
         assert activity["_id"] == a1.pk
         assert activity["owner"]["_ref"], DBRef("test_person", person.pk)
-
 
     async def test_scalar_db_field(self):
         class TestDoc(Document):
@@ -685,7 +626,6 @@ class TestQueryset5(MongoDBTestCase):
         assert plist[1] == (20, False)
         assert plist[2] == (30, True)
 
-
     async def test_scalar_primary_key(self):
         class SettingValue(Document):
             key = StringField(primary_key=True)
@@ -697,7 +637,6 @@ class TestQueryset5(MongoDBTestCase):
 
         val = SettingValue.objects.scalar("key", "value")
         assert [d async for d in val] == [("test", "test value")]
-
 
     async def test_scalar_cursor_behaviour(self):
         """Ensure that a query returns a valid set of results."""
@@ -761,21 +700,13 @@ class TestQueryset5(MongoDBTestCase):
         # Test larger slice __repr__
         await self.Person.objects.delete()
         for i in range(55):
-            await self.Person(name="A%s" % i, age=i).save()
+            await self.Person(name=f"A{i}", age=i).save()
 
         assert await self.Person.objects.scalar("name").count() == 55
-        assert (
-            "A0" == "%s" % await self.Person.objects.order_by("name").scalar("name").first()
-        )
+        assert "A0" == "%s" % await self.Person.objects.order_by("name").scalar("name").first()
         assert "A0" == "%s" % await self.Person.objects.scalar("name").order_by("name").get_item(0)
-        assert (
-            "['A1', 'A2']"
-            == "%s" % [d async for d in self.Person.objects.order_by("age").scalar("name")[1:3]]
-        )
-        assert (
-            "['A51', 'A52']"
-            == "%s" % [d async for d in self.Person.objects.order_by("age").scalar("name")[51:53]]
-        )
+        assert "['A1', 'A2']" == "%s" % [d async for d in self.Person.objects.order_by("age").scalar("name")[1:3]]
+        assert "['A51', 'A52']" == "%s" % [d async for d in self.Person.objects.order_by("age").scalar("name")[51:53]]
 
         # with_id and in_bulk
         person = await self.Person.objects.order_by("name").first()
@@ -784,8 +715,7 @@ class TestQueryset5(MongoDBTestCase):
         pks = self.Person.objects.order_by("age").scalar("pk")[1:3]
         names = (await self.Person.objects.scalar("name").in_bulk([d async for d in pks])).values()
         expected = "['A1', 'A2']"
-        assert expected == "%s" % sorted(names)
-
+        assert expected == f"{sorted(names)}"
 
     async def test_fields(self):
         class Bar(EmbeddedDocument):
@@ -842,9 +772,7 @@ class TestQueryset5(MongoDBTestCase):
         assert len(foos_with_sliced_items[4].items) == 1
         assert foos_with_sliced_items[4].items[0].z == "b"
 
-        foos_with_elem_match_items = [d async for d in
-            Foo.objects.order_by("y").fields(elemMatch__items={"z": "b"})
-        ]
+        foos_with_elem_match_items = [d async for d in Foo.objects.order_by("y").fields(elemMatch__items={"z": "b"})]
 
         assert foos_with_elem_match_items[0].items == []
         assert foos_with_elem_match_items[1].items == []
@@ -854,7 +782,6 @@ class TestQueryset5(MongoDBTestCase):
         assert foos_with_elem_match_items[3].items[0].v == "W"
         assert len(foos_with_elem_match_items[4].items) == 1
         assert foos_with_elem_match_items[4].items[0].z == "b"
-
 
     async def test_elem_match(self):
         class Foo(EmbeddedDocument):
@@ -902,22 +829,17 @@ class TestQueryset5(MongoDBTestCase):
         ak = [d async for d in Bar.objects(foo__match=Foo(shape="square", color="purple"))]
         assert [b1] == ak
 
-        ak = [d async for d in
-            Bar.objects(foo__elemMatch={"shape": "square", "color__exists": True})
-        ]
+        ak = [d async for d in Bar.objects(foo__elemMatch={"shape": "square", "color__exists": True})]
         assert [b1, b2] == ak
 
         ak = [d async for d in Bar.objects(foo__match={"shape": "square", "color__exists": True})]
         assert [b1, b2] == ak
 
-        ak = [d async for d in
-            Bar.objects(foo__elemMatch={"shape": "square", "color__exists": False})
-        ]
+        ak = [d async for d in Bar.objects(foo__elemMatch={"shape": "square", "color__exists": False})]
         assert [b3] == ak
 
         ak = [d async for d in Bar.objects(foo__match={"shape": "square", "color__exists": False})]
         assert [b3] == ak
-
 
     async def test_upsert_includes_cls(self):
         """Upserts should include _cls information for inheritable classes"""
@@ -938,7 +860,6 @@ class TestQueryset5(MongoDBTestCase):
         await Test.objects(test="foo").update_one(upsert=True, set__test="foo")
         assert "_cls" in await Test._collection.find_one()
 
-
     async def test_update_upsert_looks_like_a_digit(self):
         class MyDoc(DynamicDocument):
             pass
@@ -946,7 +867,6 @@ class TestQueryset5(MongoDBTestCase):
         await MyDoc.drop_collection()
         assert 1 == await MyDoc.objects.update_one(upsert=True, inc__47=1)
         assert (await MyDoc.objects.get())["47"] == 1
-
 
     async def test_dictfield_key_looks_like_a_digit(self):
         """Only should work with DictField even if they have numeric keys."""
@@ -958,7 +878,6 @@ class TestQueryset5(MongoDBTestCase):
         doc = MyDoc(test={"47": 1})
         await doc.save()
         assert (await MyDoc.objects.only("test__47").get()).test["47"] == 1
-
 
     async def test_clear_cls_query(self):
         class Parent(Document):
@@ -980,9 +899,7 @@ class TestQueryset5(MongoDBTestCase):
         assert Parent.objects._query == {"_cls": {"$in": ("Parent", "Parent.Child")}}
 
         # The rest of the query should not be cleared.
-        assert Parent.objects.filter(name="xyz").clear_cls_query()._query == {
-            "name": "xyz"
-        }
+        assert Parent.objects.filter(name="xyz").clear_cls_query()._query == {"name": "xyz"}
 
         await Parent.objects.create(name="foo")
         await Child.objects.create(name="bar", age=1)
@@ -993,7 +910,6 @@ class TestQueryset5(MongoDBTestCase):
         # XXX This isn't really how you'd want to use `clear_cls_query()`, but
         # it's a decent test to validate its behavior nonetheless.
         assert await Child.objects.clear_cls_query().count() == 2
-
 
     async def test_read_preference(self):
         class Bar(Document):
@@ -1009,10 +925,7 @@ class TestQueryset5(MongoDBTestCase):
 
         bars = Bar.objects.read_preference(ReadPreference.SECONDARY_PREFERRED)
         assert bars._read_preference == ReadPreference.SECONDARY_PREFERRED
-        assert (
-            bars._cursor.collection.read_preference
-            == ReadPreference.SECONDARY_PREFERRED
-        )
+        assert bars._cursor.collection.read_preference == ReadPreference.SECONDARY_PREFERRED
 
         # Make sure that `.read_preference(...)` does accept string values.
         with pytest.raises(TypeError):
@@ -1031,17 +944,12 @@ class TestQueryset5(MongoDBTestCase):
         assert_read_pref(bars, ReadPreference.SECONDARY_PREFERRED)
 
         # Make sure read preference is respected after an `.order_by(...)`.
-        bars = Bar.objects.order_by("txt").read_preference(
-            ReadPreference.SECONDARY_PREFERRED
-        )
+        bars = Bar.objects.order_by("txt").read_preference(ReadPreference.SECONDARY_PREFERRED)
         assert_read_pref(bars, ReadPreference.SECONDARY_PREFERRED)
 
         # Make sure read preference is respected after a `.hint(...)`.
-        bars = Bar.objects.hint([("txt", 1)]).read_preference(
-            ReadPreference.SECONDARY_PREFERRED
-        )
+        bars = Bar.objects.hint([("txt", 1)]).read_preference(ReadPreference.SECONDARY_PREFERRED)
         assert_read_pref(bars, ReadPreference.SECONDARY_PREFERRED)
-
 
     async def test_read_concern(self):
         class Bar(Document):
@@ -1082,4 +990,3 @@ class TestQueryset5(MongoDBTestCase):
         # Make sure read concern is respected after a `.hint(...)`.
         bars = Bar.objects.hint([("txt", 1)]).read_concern({"level": "majority"})
         assert_read_concern(bars, {"level": "majority"})
-

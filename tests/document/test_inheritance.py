@@ -220,9 +220,7 @@ class TestInheritance(MongoDBTestCase):
         class Employee(Person):
             salary = IntField()
 
-        assert ["_cls", "age", "id", "name", "salary"] == sorted(
-            Employee._fields.keys()
-        )
+        assert ["_cls", "age", "id", "name", "salary"] == sorted(Employee._fields.keys())
         assert Employee._get_collection_name() == Person._get_collection_name()
 
     async def test_inheritance_to_mongo_keys(self):
@@ -237,9 +235,7 @@ class TestInheritance(MongoDBTestCase):
         class Employee(Person):
             salary = IntField()
 
-        assert ["_cls", "age", "id", "name", "salary"] == sorted(
-            Employee._fields.keys()
-        )
+        assert ["_cls", "age", "id", "name", "salary"] == sorted(Employee._fields.keys())
         assert sorted(Person(name="Bob", age=35).to_mongo().keys()) == [
             "_cls",
             "age",
@@ -277,9 +273,9 @@ class TestInheritance(MongoDBTestCase):
 
         await C.ensure_indexes()
 
-        assert sorted(
-            idx["key"] for idx in (await (await C._get_collection()).index_information()).values()
-        ) == sorted([[("_cls", 1), ("b", 1)], [("_id", 1)], [("_cls", 1), ("a", 1)]])
+        assert sorted(idx["key"] for idx in (await (await C._get_collection()).index_information()).values()) == sorted(
+            [[("_cls", 1), ("b", 1)], [("_id", 1)], [("_cls", 1), ("a", 1)]]
+        )
 
     async def test_polymorphic_queries(self):
         """Ensure that the correct subclasses are returned from a query"""
@@ -350,10 +346,7 @@ class TestInheritance(MongoDBTestCase):
             class Mammal(Animal):
                 meta = {"allow_inheritance": False}
 
-        assert (
-            str(exc_info.value)
-            == 'Only direct subclasses of Document may set "allow_inheritance" to False'
-        )
+        assert str(exc_info.value) == 'Only direct subclasses of Document may set "allow_inheritance" to False'
 
     async def test_allow_inheritance_abstract_document(self):
         """Ensure that abstract documents can set inheritance rules and that
@@ -613,5 +606,3 @@ class TestInheritance(MongoDBTestCase):
         drinker1 = await Drinker.objects.get_item(1)
         assert drinker0.drink["_ref"].id == red_bull.id
         assert drinker1.drink["_ref"].id == beer.id
-
-

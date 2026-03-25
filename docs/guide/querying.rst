@@ -10,15 +10,15 @@ The :attr:`objects` attribute is actually a
 fetch documents from the database::
 
     # Prints out the names of all the users in the database
-    for user in User.objects:
-        print user.name
+    async for user in User.objects:
+        print(user.name)
 
 .. note::
 
-    As of MongoEngine 0.8 the querysets utilise a local cache.  So iterating
+    The querysets utilise a local cache.  So iterating
     it multiple times will only cause a single query.  If this is not the
     desired behaviour you can call :class:`~mongoengine.QuerySet.no_cache`
-    (version **0.8.3+**) to return a non-caching queryset.
+    to return a non-caching queryset.
 
 Filtering queries
 =================
@@ -209,11 +209,11 @@ the `slice` operator is required::
 For updating documents, if you don't know the position in a list, you can use
 the $ positional operator ::
 
-    Post.objects(comments__by="joe").update(**{'inc__comments__$__votes': 1})
+    await Post.objects(comments__by="joe").update(**{'inc__comments__$__votes': 1})
 
 However, this doesn't map well to the syntax so you can also use a capital S instead ::
 
-    Post.objects(comments__by="joe").update(inc__comments__S__votes=1)
+    await Post.objects(comments__by="joe").update(inc__comments__S__votes=1)
 
 .. note::
     Due to :program:`Mongo`, currently the $ operator only applies to the
@@ -229,11 +229,11 @@ be integrated directly into the query. This is done using the ``__raw__`` keywor
 
 Similarly, a raw update can be provided to the :meth:`~mongoengine.queryset.QuerySet.update` method::
 
-    Page.objects(tags='coding').update(__raw__={'$set': {'tags': 'coding'}})
+    await Page.objects(tags='coding').update(__raw__={'$set': {'tags': 'coding'}})
 
 And the two can also be combined::
 
-    Page.objects(__raw__={'tags': 'coding'}).update(__raw__={'$set': {'tags': 'coding'}})
+    await Page.objects(__raw__={'tags': 'coding'}).update(__raw__={'$set': {'tags': 'coding'}})
 
 
 Update with Aggregation Pipeline
@@ -245,7 +245,7 @@ and provide the pipeline as a list
 ::
 
     # 'tags' field is set to 'coding is fun'
-    Page.objects(tags='coding').update(__raw__=[
+    await Page.objects(tags='coding').update(__raw__=[
         {"$set": {"tags": {"$concat": ["$tags", "is fun"]}}}
         ],
     )
@@ -261,8 +261,8 @@ This is done by using ``__raw__`` keyword argument to the update method and prov
 ::
 
     # assuming an initial 'tags' field == ['test1', 'test2', 'test3']
-    Page.objects().update(__raw__={'$set': {"tags.$[element]": 'test11111'}},
-                                  array_filters=[{"element": {'$eq': 'test2'}}],
+    await Page.objects().update(__raw__={'$set': {"tags.$[element]": 'test11111'}},
+                                      array_filters=[{"element": {'$eq': 'test2'}}],
 
     # updated 'tags' field == ['test1', 'test11111', 'test3']
 
@@ -299,20 +299,25 @@ is preferred for achieving this::
     # 5 users, starting from the 11th user found
     users = User.objects[10:15]
 
-You may also index the query to retrieve a single result. If an item at that
-index does not exists, an :class:`IndexError` will be raised. A shortcut for
-retrieving the first result and returning :attr:`None` if no result exists is
-provided (:meth:`~mongoengine.queryset.QuerySet.first`)::
+.. note::
+
+    Integer indexing (e.g. ``qs[0]``) is **not** supported in async-mongoengine
+    and will raise a ``TypeError``. Use ``await qs.first()`` to get the first
+    result, or ``await qs.get_item(index)`` to retrieve a result by position.
+    Slicing (e.g. ``qs[1:5]``) still works synchronously and returns a new
+    QuerySet.
+
+A shortcut for retrieving the first result and returning :attr:`None` if no
+result exists is provided
+(:meth:`~mongoengine.queryset.QuerySet.first`)::
 
     >>> # Make sure there are no users
-    >>> User.drop_collection()
-    >>> User.objects[0]
-    IndexError: list index out of range
-    >>> User.objects.first() == None
+    >>> await User.drop_collection()
+    >>> await User.objects.first() == None
     True
-    >>> User(name='Test User').save()
-    >>> User.objects[0] == User.objects.first()
-    True
+    >>> await User(name='Test User').save()
+    >>> await User.objects.first()
+    <User: User object>
 
 Retrieving unique results
 -------------------------
@@ -322,13 +327,9 @@ To retrieve a result that should be unique in the collection, use
 no document matches the query, and
 :class:`~mongoengine.queryset.MultipleObjectsReturned`
 if more than one document matched the query.  These exceptions are merged into
-your document definitions eg: `MyDoc.DoesNotExist`
+your document definitions eg: ``MyDoc.DoesNotExist``::
 
-A variation of this method, get_or_create() existed, but it was unsafe. It
-could not be made safe, because there are no transactions in mongoDB. Other
-approaches should be investigated, to ensure you don't accidentally duplicate
-data when using something similar to this method. Therefore it was deprecated
-in 0.8 and removed in 0.10.
+    user = await User.objects.get(name='Test User')
 
 Default Document queries
 ========================
@@ -364,10 +365,10 @@ custom manager methods as you like::
         def live_posts(doc_cls, queryset):
             return queryset.filter(published=True)
 
-    BlogPost(title='test1', published=False).save()
-    BlogPost(title='test2', published=True).save()
-    assert len(BlogPost.objects) == 2
-    assert len(BlogPost.live_posts()) == 1
+    await BlogPost(title='test1', published=False).save()
+    await BlogPost(title='test2', published=True).save()
+    assert await BlogPost.objects.count() == 2
+    assert await BlogPost.live_posts().count() == 1
 
 Custom QuerySets
 ================
@@ -394,8 +395,7 @@ Aggregation
 ===========
 MongoDB provides some aggregation methods out of the box, but there are not as
 many as you typically get with an RDBMS. MongoEngine provides a wrapper around
-the built-in methods and provides some of its own, which are implemented as
-Javascript code that is executed on the database server.
+the built-in methods and provides some of its own.
 
 Counting results
 ----------------
@@ -403,22 +403,19 @@ Just as with limiting and skipping results, there is a method on a
 :class:`~mongoengine.queryset.QuerySet` object --
 :meth:`~mongoengine.queryset.QuerySet.count`::
 
-    num_users = User.objects.count()
+    num_users = await User.objects.count()
 
-You could technically use ``len(User.objects)`` to get the same result, but it
-would be significantly slower than :meth:`~mongoengine.queryset.QuerySet.count`.
-When you execute a server-side count query, you let MongoDB do the heavy
-lifting and you receive a single integer over the wire. Meanwhile, ``len()``
-retrieves all the results, places them in a local cache, and finally counts
-them. If we compare the performance of the two operations, ``len()`` is much slower
-than :meth:`~mongoengine.queryset.QuerySet.count`.
+.. note::
+
+    ``len(qs)`` is not supported in async-mongoengine. Always use
+    ``await qs.count()`` instead.
 
 Further aggregation
 -------------------
 You may sum over the values of a specific field on documents using
 :meth:`~mongoengine.queryset.QuerySet.sum`::
 
-    yearly_expense = Employee.objects.sum('salary')
+    yearly_expense = await Employee.objects.sum('salary')
 
 .. note::
 
@@ -428,7 +425,7 @@ You may sum over the values of a specific field on documents using
 To get the average (mean) of a field on a collection of documents, use
 :meth:`~mongoengine.queryset.QuerySet.average`::
 
-    mean_age = User.objects.average('age')
+    mean_age = await User.objects.average('age')
 
 As MongoDB provides native lists, MongoEngine provides a helper method to get a
 dictionary of the frequencies of items in lists across an entire collection --
@@ -439,7 +436,7 @@ would be generating "tag-clouds"::
         tag = ListField(StringField())
 
     # After adding some tagged articles...
-    tag_freqs = Article.objects.item_frequencies('tag', normalize=True)
+    tag_freqs = await Article.objects.item_frequencies('tag', normalize=True)
 
     from operator import itemgetter
     top_tags = sorted(tag_freqs.items(), key=itemgetter(1), reverse=True)[:10]
@@ -454,15 +451,22 @@ An example of its use would be::
         class Person(Document):
             name = StringField()
 
-        Person(name='John').save()
-        Person(name='Bob').save()
+        await Person(name='John').save()
+        await Person(name='Bob').save()
 
         pipeline = [
             {"$sort" : {"name" : -1}},
             {"$project": {"_id": 0, "name": {"$toUpper": "$name"}}}
             ]
-        data = Person.objects().aggregate(pipeline)
-        assert data == [{'name': 'BOB'}, {'name': 'JOHN'}]
+        data = await Person.objects().aggregate(pipeline)
+
+.. note::
+
+    ``aggregate()`` returns an ``AsyncCommandCursor``. Use ``async for`` to
+    iterate over the results::
+
+        async for doc in await Person.objects().aggregate(pipeline):
+            print(doc)
 
 Query efficiency and performance
 ================================
@@ -489,8 +493,8 @@ will be given::
     ...     year = IntField()
     ...     rating = IntField(default=3)
     ...
-    >>> Film(title='The Shawshank Redemption', year=1994, rating=5).save()
-    >>> f = Film.objects.only('title').first()
+    >>> await Film(title='The Shawshank Redemption', year=1994, rating=5).save()
+    >>> f = await Film.objects.only('title').first()
     >>> f.title
     'The Shawshank Redemption'
     >>> f.year   # None
@@ -503,7 +507,7 @@ will be given::
     :meth:`~mongoengine.queryset.QuerySet.only` if you want to exclude a field.
 
 If you later need the missing fields, just call
-:meth:`~mongoengine.Document.reload` on your document.
+``await doc.reload()`` on your document.
 
 Getting related data
 --------------------
@@ -519,9 +523,9 @@ There are times when that efficiency is not enough, documents that have
 expensive as the number of queries to MongoDB can quickly rise.
 
 To limit the number of queries use
-:func:`~mongoengine.queryset.QuerySet.select_related` which converts the
+``await qs.select_related()`` which converts the
 QuerySet to a list and dereferences as efficiently as possible.  By default
-:func:`~mongoengine.queryset.QuerySet.select_related` only dereferences any
+``select_related`` only dereferences any
 references to the depth of 1 level.  If you have more complicated documents and
 want to dereference more of the object at once then increasing the :attr:`max_depth`
 will dereference more levels of the document.
@@ -533,18 +537,19 @@ Sometimes for performance reasons you don't want to automatically dereference
 data. To turn off dereferencing of the results of a query use
 :func:`~mongoengine.queryset.QuerySet.no_dereference` on the queryset like so::
 
-    post = Post.objects.no_dereference().first()
+    post = await Post.objects.no_dereference().first()
     assert(isinstance(post.author, DBRef))
 
 You can also turn off all dereferencing for a fixed period by using the
 :class:`~mongoengine.context_managers.no_dereference` context manager::
 
     with no_dereference(Post):
-        post = Post.objects.first()
+        post = await Post.objects.first()
         assert(isinstance(post.author, DBRef))
 
-    # Outside the context manager dereferencing occurs.
-    assert(isinstance(post.author, User))
+.. note::
+
+    ``no_dereference`` remains a sync context manager (no ``async with`` needed).
 
 
 Advanced queries
@@ -586,7 +591,7 @@ Documents may be updated atomically by using the
 :class:`~mongoengine.queryset.QuerySet` or
 :meth:`~mongoengine.Document.modify` and
 :meth:`~mongoengine.Document.save` (with :attr:`save_condition` argument) on a
-:class:`~mongoengine.Document`.
+:class:`~mongoengine.Document`. All of these methods require ``await``.
 There are several different "modifiers" that you may use with these methods:
 
 * ``set`` -- set a particular value
@@ -611,17 +616,17 @@ The syntax for atomic updates is similar to the querying syntax, but the
 modifier comes before the field, not after it::
 
     >>> post = BlogPost(title='Test', page_views=0, tags=['database'])
-    >>> post.save()
-    >>> BlogPost.objects(id=post.id).update_one(inc__page_views=1)
-    >>> post.reload()  # the document has been changed, so we need to reload it
+    >>> await post.save()
+    >>> await BlogPost.objects(id=post.id).update_one(inc__page_views=1)
+    >>> await post.reload()  # the document has been changed, so we need to reload it
     >>> post.page_views
     1
-    >>> BlogPost.objects(id=post.id).update_one(set__title='Example Post')
-    >>> post.reload()
+    >>> await BlogPost.objects(id=post.id).update_one(set__title='Example Post')
+    >>> await post.reload()
     >>> post.title
     'Example Post'
-    >>> BlogPost.objects(id=post.id).update_one(push__tags='nosql')
-    >>> post.reload()
+    >>> await BlogPost.objects(id=post.id).update_one(push__tags='nosql')
+    >>> await post.reload()
     >>> post.tags
     ['database', 'nosql']
 
@@ -629,8 +634,8 @@ modifier comes before the field, not after it::
 
     If no modifier operator is specified the default will be ``$set``. So the following sentences are identical::
 
-        >>> BlogPost.objects(id=post.id).update(title='Example Post')
-        >>> BlogPost.objects(id=post.id).update(set__title='Example Post')
+        >>> await BlogPost.objects(id=post.id).update(title='Example Post')
+        >>> await BlogPost.objects(id=post.id).update(set__title='Example Post')
 
 .. note::
 
@@ -642,9 +647,9 @@ index position, therefore making the update a single atomic operation.  As we
 cannot use the `$` syntax in keyword arguments it has been mapped to `S`::
 
     >>> post = BlogPost(title='Test', page_views=0, tags=['database', 'mongo'])
-    >>> post.save()
-    >>> BlogPost.objects(id=post.id, tags='mongo').update(set__tags__S='mongodb')
-    >>> post.reload()
+    >>> await post.save()
+    >>> await BlogPost.objects(id=post.id, tags='mongo').update(set__tags__S='mongodb')
+    >>> await post.reload()
     >>> post.tags
     ['database', 'mongodb']
 
@@ -652,9 +657,9 @@ From MongoDB version 2.6, push operator supports $position value which allows
 to push values with index::
 
     >>> post = BlogPost(title="Test", tags=["mongo"])
-    >>> post.save()
-    >>> post.update(push__tags__0=["database", "code"])
-    >>> post.reload()
+    >>> await post.save()
+    >>> await post.update(push__tags__0=["database", "code"])
+    >>> await post.reload()
     >>> post.tags
     ['database', 'code', 'mongo']
 

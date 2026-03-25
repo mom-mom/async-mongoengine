@@ -18,11 +18,7 @@ class TestValidatorError(MongoDBTestCase):
         assert error.to_dict()["1st"] == "bad 1st"
 
         # 2nd level error schema
-        error.errors = {
-            "1st": ValidationError(
-                "bad 1st", errors={"2nd": ValidationError("bad 2nd")}
-            )
-        }
+        error.errors = {"1st": ValidationError("bad 1st", errors={"2nd": ValidationError("bad 2nd")})}
         assert "1st" in error.to_dict()
         assert isinstance(error.to_dict()["1st"], dict)
         assert "2nd" in error.to_dict()["1st"]
@@ -35,11 +31,7 @@ class TestValidatorError(MongoDBTestCase):
                 errors={
                     "2nd": ValidationError(
                         "bad 2nd",
-                        errors={
-                            "3rd": ValidationError(
-                                "bad 3rd", errors={"4th": ValidationError("Inception")}
-                            )
-                        },
+                        errors={"3rd": ValidationError("bad 3rd", errors={"4th": ValidationError("Inception")})},
                     )
                 },
             )
@@ -187,7 +179,7 @@ class TestValidatorError(MongoDBTestCase):
         try:
             await child.save()
         except ValidationError as e:
-            pytest.fail("ValidationError raised: %s" % e.message)
+            pytest.fail(f"ValidationError raised: {e.message}")
 
     async def test_parent_reference_set_as_attribute_in_child_document(self):
         """
@@ -210,5 +202,3 @@ class TestValidatorError(MongoDBTestCase):
 
         # Saving the child should not raise a ValidationError
         await child.save()
-
-

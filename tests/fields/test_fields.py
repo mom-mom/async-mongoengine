@@ -154,9 +154,7 @@ class TestField(MongoDBTestCase):
 
         with pytest.raises(ValidationError) as exc_info:
             Person(name="").validate()
-        assert "ValidationError (Person:None) (cantbeempty: ['name'])" == str(
-            exc_info.value
-        )
+        assert "ValidationError (Person:None) (cantbeempty: ['name'])" == str(exc_info.value)
 
         Person(name="garbage").validate()
         await Person(name="garbage").save()
@@ -603,9 +601,7 @@ class TestField(MongoDBTestCase):
             name = StringField()
 
         class CategoryList(Document):
-            categories = SortedListField(
-                EmbeddedDocumentField(Category), ordering="count", reverse=True
-            )
+            categories = SortedListField(EmbeddedDocumentField(Category), ordering="count", reverse=True)
             name = StringField()
 
         await CategoryList.drop_collection()
@@ -669,9 +665,7 @@ class TestField(MongoDBTestCase):
         post = await BlogPost.objects(info=["1", "2", "3", "4"]).get()
         post.info *= 2
         await post.save()
-        assert (
-            await BlogPost.objects(info=["1", "2", "3", "4", "1", "2", "3", "4"]).count() == 1
-        )
+        assert await BlogPost.objects(info=["1", "2", "3", "4", "1", "2", "3", "4"]).count() == 1
 
     async def test_list_field_manipulative_operators(self):
         """Ensure that ListField works with standard list operators that manipulate the list."""
@@ -1679,9 +1673,7 @@ class TestField(MongoDBTestCase):
 
         class Shirt(Document):
             size = StringField(max_length=3, choices=("S", "M", "L", "XL", "XXL"))
-            style = StringField(
-                max_length=3, choices=("Small", "Baggy", "wide"), default="Small"
-            )
+            style = StringField(max_length=3, choices=("Small", "Baggy", "wide"), default="Small")
 
         await Shirt.drop_collection()
 
@@ -1903,9 +1895,7 @@ class TestField(MongoDBTestCase):
         await Dog().save()
         await Fish().save()
         await Human().save()
-        assert (
-            await Animal.objects(_cls__in=["Animal.Mammal.Dog", "Animal.Fish"]).count() == 2
-        )
+        assert await Animal.objects(_cls__in=["Animal.Mammal.Dog", "Animal.Fish"]).count() == 2
         assert await Animal.objects(_cls__in=["Animal.Fish.Guppy"]).count() == 0
 
     async def test_sparse_field(self):
@@ -2087,9 +2077,7 @@ class TestEmbeddedDocumentListField(MongoDBTestCase):
             self.post2.comments.exclude(year=2)
 
     def test_chained_filter_exclude(self):
-        excluded = self.post2.comments.filter(author="user2").exclude(
-            message="message2"
-        )
+        excluded = self.post2.comments.filter(author="user2").exclude(message="message2")
         assert len(excluded) == 1
         assert excluded[0].author == "user2"
         assert excluded[0].message == "message3"
@@ -2147,9 +2135,7 @@ class TestEmbeddedDocumentListField(MongoDBTestCase):
         assert comment in loaded.comments
 
     async def test_filtered_create(self):
-        comment = self.post1.comments.filter(author="user1").create(
-            author="user4", message="message1"
-        )
+        comment = self.post1.comments.filter(author="user1").create(author="user4", message="message1")
         await self.post1.save()
 
         assert isinstance(comment, self.Comments)

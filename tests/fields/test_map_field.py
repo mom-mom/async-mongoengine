@@ -118,12 +118,7 @@ class TestMapField(MongoDBTestCase):
 
         assert 1 == await Log.objects(visited__friends__exists=True).count()
 
-        assert (
-            1
-            == await Log.objects(
-                actions__friends__operation="drink", actions__friends__object="beer"
-            ).count()
-        )
+        assert 1 == await Log.objects(actions__friends__operation="drink", actions__friends__object="beer").count()
 
     async def test_map_field_unicode(self):
         class Info(EmbeddedDocument):

@@ -117,9 +117,7 @@ class TestDictField(MongoDBTestCase):
 
         # with a Document with a _cls field
         to_embed_recursive = await ToEmbedChild(id=1).save()
-        to_embed_child = await ToEmbedChild(
-            id=2, recursive=to_embed_recursive.to_mongo().to_dict()
-        ).save()
+        to_embed_child = await ToEmbedChild(id=2, recursive=to_embed_recursive.to_mongo().to_dict()).save()
 
         doc_dump_as_dict = to_embed_child.to_mongo().to_dict()
         doc = Doc(field=doc_dump_as_dict)
@@ -154,9 +152,7 @@ class TestDictField(MongoDBTestCase):
             recursive = DictField()
 
         to_embed_recursive = await ToEmbed(id=1).save()
-        to_embed = await ToEmbed(
-            id=2, recursive=to_embed_recursive.to_mongo().to_dict()
-        ).save()
+        to_embed = await ToEmbed(id=2, recursive=to_embed_recursive.to_mongo().to_dict()).save()
         doc = Doc(field=to_embed.to_mongo().to_dict())
         await doc.save()
         assert isinstance(doc.field, dict)
@@ -219,30 +215,15 @@ class TestDictField(MongoDBTestCase):
         # Test querying
         assert await Simple.objects.filter(mapping__someint__value=42).count() == 1
         assert await Simple.objects.filter(mapping__nested_dict__number=1).count() == 1
-        assert (
-            await Simple.objects.filter(mapping__nested_dict__complex__value=42).count() == 1
-        )
-        assert (
-            await Simple.objects.filter(mapping__nested_dict__list__0__value=42).count() == 1
-        )
-        assert (
-            await Simple.objects.filter(mapping__nested_dict__list__1__value="foo").count()
-            == 1
-        )
+        assert await Simple.objects.filter(mapping__nested_dict__complex__value=42).count() == 1
+        assert await Simple.objects.filter(mapping__nested_dict__list__0__value=42).count() == 1
+        assert await Simple.objects.filter(mapping__nested_dict__list__1__value="foo").count() == 1
 
         # Confirm can update
         await Simple.objects().update(set__mapping={"someint": IntegerSetting(value=10)})
-        await Simple.objects().update(
-            set__mapping__nested_dict__list__1=StringSetting(value="Boo")
-        )
-        assert (
-            await Simple.objects.filter(mapping__nested_dict__list__1__value="foo").count()
-            == 0
-        )
-        assert (
-            await Simple.objects.filter(mapping__nested_dict__list__1__value="Boo").count()
-            == 1
-        )
+        await Simple.objects().update(set__mapping__nested_dict__list__1=StringSetting(value="Boo"))
+        assert await Simple.objects.filter(mapping__nested_dict__list__1__value="foo").count() == 0
+        assert await Simple.objects.filter(mapping__nested_dict__list__1__value="Boo").count() == 1
 
     async def test_push_dict(self):
         class MyModel(Document):
@@ -338,12 +319,8 @@ class TestDictField(MongoDBTestCase):
             mapping5 = DictField(DictField(field=ReferenceField(Doc, dbref=False)))
             mapping6 = DictField(ListField(DictField(ReferenceField(Doc, dbref=True))))
             mapping7 = DictField(ListField(DictField(ReferenceField(Doc, dbref=False))))
-            mapping8 = DictField(
-                ListField(DictField(ListField(ReferenceField(Doc, dbref=True))))
-            )
-            mapping9 = DictField(
-                ListField(DictField(ListField(ReferenceField(Doc, dbref=False))))
-            )
+            mapping8 = DictField(ListField(DictField(ListField(ReferenceField(Doc, dbref=True)))))
+            mapping9 = DictField(ListField(DictField(ListField(ReferenceField(Doc, dbref=False)))))
 
         await Doc.drop_collection()
         await Simple.drop_collection()
@@ -360,7 +337,7 @@ class TestDictField(MongoDBTestCase):
         s = await Simple.objects.first()
         # In async-mongoengine, auto-dereference is disabled.
         # ReferenceFields inside DictField remain as DBRef/ObjectId.
-        from bson import DBRef, ObjectId
+        from bson import DBRef
 
         # All references come back as DBRef in async-mongoengine
         # (no auto-dereference)
