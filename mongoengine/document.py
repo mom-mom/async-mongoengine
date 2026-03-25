@@ -213,7 +213,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     # my_metaclass is defined so that metaclass can be queried in Python 2 & 3
     my_metaclass = TopLevelDocumentMetaclass
 
-    __slots__ = ("__objects",)
+    __slots__ = ("_objects",)
 
     @property
     def pk(self):
@@ -651,10 +651,14 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     @property
     def _qs(self):
         """Return the default queryset corresponding to this document."""
-        if not hasattr(self, "__objects"):
+        try:
+            qs = self._objects
+        except AttributeError:
+            qs = None
+        if qs is None:
             queryset_class = self._meta.get("queryset_class", QuerySet)
-            self.__objects = queryset_class(self.__class__, self.__class__._collection)
-        return self.__objects
+            self._objects = queryset_class(self.__class__, self.__class__._collection)
+        return self._objects
 
     @property
     def _object_key(self):
@@ -744,8 +748,8 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             collection = await cls._get_collection()
         self._collection = collection
         self._created = True if not keep_created else self._created
-        self.__objects = self._qs
-        self.__objects._collection_obj = collection
+        queryset_class = self._meta.get("queryset_class", QuerySet)
+        self._objects = queryset_class(self.__class__, collection)
         return self
 
     async def switch_collection(self, collection_name, keep_created=True):
@@ -772,8 +776,8 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             collection = await cls._get_collection()
         self._collection = collection
         self._created = True if not keep_created else self._created
-        self.__objects = self._qs
-        self.__objects._collection_obj = collection
+        queryset_class = self._meta.get("queryset_class", QuerySet)
+        self._objects = queryset_class(self.__class__, collection)
         return self
 
     async def select_related(self, max_depth=1):

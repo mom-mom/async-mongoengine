@@ -2959,7 +2959,6 @@ class TestDocumentInstance(MongoDBTestCase):
         if PYMONGO_VERSION < (4,):
             assert custom_qs.count() == 2
 
-    @pytest.mark.skip(reason="switch_db + update interaction needs investigation")
     async def test_switch_db_instance(self):
         register_connection("testdb-1", "mongoenginetest2")
 
@@ -3287,47 +3286,6 @@ class TestDocumentInstance(MongoDBTestCase):
         person = await Person.objects.first()
         assert "id" in person._data.keys()
         assert person._data.get("id") == person.id
-
-    @pytest.mark.skip(reason="Requires auto-dereference which is removed in async-mongoengine")
-    async def test_complex_nesting_document_and_embedded_document(self):
-        class Macro(EmbeddedDocument):
-            value = DynamicField(default="UNDEFINED")
-
-        class Parameter(EmbeddedDocument):
-            macros = MapField(EmbeddedDocumentField(Macro))
-
-            def expand(self):
-                self.macros["test"] = Macro()
-
-        class Node(Document):
-            parameters = MapField(EmbeddedDocumentField(Parameter))
-
-            def expand(self):
-                self.flattened_parameter = {}
-                for parameter_name, parameter in self.parameters.items():
-                    parameter.expand()
-
-        class NodesSystem(Document):
-            name = StringField(required=True)
-            nodes = MapField(ReferenceField(Node, dbref=False))
-
-            async def save(self, *args, **kwargs):
-                for node_name, node in self.nodes.items():
-                    node.expand()
-                    await node.save(*args, **kwargs)
-                await super().save(*args, **kwargs)
-
-        await NodesSystem.drop_collection()
-        await Node.drop_collection()
-
-        system = NodesSystem(name="system")
-        system.nodes["node"] = Node()
-        await system.save()
-        system.nodes["node"].parameters["param"] = Parameter()
-        await system.save()
-
-        system = await NodesSystem.objects.first()
-        assert "UNDEFINED" == system.nodes["node"].parameters["param"].macros["test"].value
 
     async def test_embedded_document_equality(self):
         class Test(Document):

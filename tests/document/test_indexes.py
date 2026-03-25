@@ -247,54 +247,6 @@ class TestIndexes(MongoDBTestCase):
         info = [value["key"] for key, value in info.items()]
         assert [("location.point", "2dsphere")] in info
 
-    async def test_explicit_geohaystack_index(self):
-        """Ensure that geohaystack indexes work when created via meta[indexes]"""
-        # This test can be removed when pymongo 3.x is no longer supported
-        if PYMONGO_VERSION >= (4,):
-            pytest.skip("GEOHAYSTACK has been removed in pymongo 4.0")
-
-        class Place(Document):
-            location = DictField()
-            name = StringField()
-            meta = {"indexes": [(")location.point", "name")]}
-
-        assert [{"fields": [("location.point", "geoHaystack"), ("name", 1)]}] == Place._meta["index_specs"]
-
-        # GeoHaystack index creation is not supported for now from meta, as it
-        # requires a bucketSize parameter.
-        if False:
-            await Place.ensure_indexes()
-            info = await (await Place._get_collection()).index_information()
-            info = [value["key"] for key, value in info.items()]
-            assert [("location.point", "geoHaystack")] in info
-
-    async def test_create_geohaystack_index(self):
-        """Ensure that geohaystack indexes can be created"""
-
-        class Place(Document):
-            location = DictField()
-            name = StringField()
-
-        if PYMONGO_VERSION >= (4,):
-            expected_error = NotImplementedError
-        elif get_mongodb_version() >= (4, 9):
-            expected_error = OperationFailure
-        else:
-            expected_error = None
-
-        # This test can be removed when pymongo 3.x is no longer supported
-        if expected_error:
-            with pytest.raises(expected_error):
-                await Place.create_index(
-                    {"fields": (")location.point", "name")},
-                    bucketSize=10,
-                )
-        else:
-            await Place.create_index({"fields": (")location.point", "name")}, bucketSize=10)
-            info = await (await Place._get_collection()).index_information()
-            info = [value["key"] for key, value in info.items()]
-            assert [("location.point", "geoHaystack"), ("name", 1)] in info
-
     async def test_dictionary_indexes(self):
         """Ensure that indexes are used when meta[indexes] contains
         dictionaries instead of lists.

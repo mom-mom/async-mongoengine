@@ -26,6 +26,15 @@ async def _mongo_connection():
 
     _CACHED["mongodb_version"] = await get_mongodb_version()
     _CACHED["conn"] = conn
+
+    # Check if connected to a replica set
+    db = get_db()
+    try:
+        result = await db.command("hello")
+        _CACHED["is_replica_set"] = "setName" in result
+    except Exception:
+        _CACHED["is_replica_set"] = False
+
     yield conn
 
     _connections.clear()
@@ -74,6 +83,10 @@ async def _clean_db(_mongo_connection, request):
     await db.client.drop_database(MONGO_TEST_DB)
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "requires_replica_set: skip unless connected to a replica set")
+
+
 def pytest_collection_modifyitems(items):
     """Automatically add asyncio marker with session loop scope to all async test functions."""
     _session_marker = pytest.mark.asyncio(loop_scope="session")
@@ -86,3 +99,9 @@ def pytest_collection_modifyitems(items):
                 is_async = asyncio.iscoroutinefunction(item.function)
             if is_async:
                 item.add_marker(_session_marker)
+
+
+def pytest_runtest_setup(item):
+    if item.get_closest_marker("requires_replica_set"):
+        if not _CACHED.get("is_replica_set"):
+            pytest.skip("requires replica set")

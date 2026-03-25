@@ -146,150 +146,6 @@ class TestContextManagers(MongoDBTestCase):
 
         assert 1 == await Group.objects.count()
 
-    @pytest.mark.skip(reason="auto-dereference removed in async-mongoengine")
-    async def test_no_dereference_context_manager_object_id(self):
-        """Ensure that DBRef items in ListFields aren't dereferenced."""
-
-        class User(Document):
-            name = StringField()
-
-        class Group(Document):
-            ref = ReferenceField(User, dbref=False)
-            generic = GenericReferenceField()
-            members = ListField(ReferenceField(User, dbref=False))
-
-        await User.drop_collection()
-        await Group.drop_collection()
-
-        for i in range(1, 51):
-            await User(name=f"user {i}").save()
-
-        user = await User.objects.first()
-        await Group(ref=user, members=[u async for u in User.objects], generic=user).save()
-
-        with no_dereference(Group):
-            assert not Group._fields["members"]._auto_dereference
-
-        with no_dereference(Group):
-            group = await Group.objects.first()
-            for m in group.members:
-                assert isinstance(m, DBRef)
-            assert isinstance(group.ref, DBRef)
-            assert isinstance(group.generic, dict)
-
-        group = await Group.objects.first()
-        for m in group.members:
-            assert isinstance(m, User)
-        assert isinstance(group.ref, User)
-        assert isinstance(group.generic, User)
-
-    @pytest.mark.skip(reason="auto-dereference removed in async-mongoengine")
-    async def test_no_dereference_context_manager_thread_safe(self):
-        """Ensure no_dereference context manager works in threaded condition"""
-
-        class User(Document):
-            name = StringField()
-
-        class Group(Document):
-            ref = ReferenceField(User, dbref=False)
-
-        await User.drop_collection()
-        await Group.drop_collection()
-
-        user = await User(name="user 1").save()
-        await Group(ref=user).save()
-
-        def run_in_thread(id):
-            time.sleep(random.uniform(0.1, 0.5))  # Force desync of threads
-            if id % 2 == 0:
-                with no_dereference(Group):
-                    for i in range(20):
-                        time.sleep(random.uniform(0.1, 0.5))
-                        assert Group.ref._auto_dereference is False
-                        group = Group.objects.first()
-                        assert isinstance(group.ref, DBRef)
-            else:
-                for i in range(20):
-                    time.sleep(random.uniform(0.1, 0.5))
-                    assert Group.ref._auto_dereference is True
-                    group = Group.objects.first()
-                    assert isinstance(group.ref, User)
-
-        threads = [TestableThread(target=run_in_thread, args=(id,)) for id in range(100)]
-        _ = [th.start() for th in threads]
-        _ = [th.join() for th in threads]
-
-    @pytest.mark.skip(reason="auto-dereference removed in async-mongoengine")
-    async def test_no_dereference_context_manager_nested(self):
-
-        class User(Document):
-            name = StringField()
-
-        class Group(Document):
-            ref = ReferenceField(User, dbref=False)
-
-        await User.drop_collection()
-        await Group.drop_collection()
-
-        for i in range(1, 51):
-            await User(name=f"user {i}").save()
-
-        user = await User.objects.first()
-        await Group(ref=user).save()
-
-        with no_dereference(Group):
-            group = await Group.objects.first()
-            assert isinstance(group.ref, DBRef)
-
-            with no_dereference(Group):
-                group = await Group.objects.first()
-                assert isinstance(group.ref, DBRef)
-
-            # make sure it's still off here
-            group = await Group.objects.first()
-            assert isinstance(group.ref, DBRef)
-
-        group = await Group.objects.first()
-        assert isinstance(group.ref, User)
-
-    @pytest.mark.skip(reason="auto-dereference removed in async-mongoengine")
-    async def test_no_dereference_context_manager_dbref(self):
-        """Ensure that DBRef items in ListFields aren't dereferenced"""
-
-        class User(Document):
-            name = StringField()
-
-        class Group(Document):
-            ref = ReferenceField(User, dbref=True)
-            generic = GenericReferenceField()
-            members = ListField(ReferenceField(User, dbref=True))
-
-        await User.drop_collection()
-        await Group.drop_collection()
-
-        for i in range(1, 51):
-            await User(name=f"user {i}").save()
-
-        user = await User.objects.first()
-        await Group(ref=user, members=[u async for u in User.objects], generic=user).save()
-
-        with no_dereference(Group):
-            assert not Group._fields["members"]._auto_dereference
-
-        with no_dereference(Group):
-            qs = Group.objects
-            assert qs._auto_dereference is False
-            group = await qs.first()
-            assert not group._fields["members"]._auto_dereference
-            assert all(not isinstance(m, User) for m in group.members)
-            assert not isinstance(group.ref, User)
-            assert not isinstance(group.generic, User)
-
-        group = await Group.objects.first()
-        assert all(isinstance(m, User) for m in group.members)
-        assert isinstance(group.ref, User)
-        assert isinstance(group.generic, User)
-
     async def test_no_sub_classes(self):
         class A(Document):
             x = IntField()
@@ -504,7 +360,7 @@ class TestContextManagers(MongoDBTestCase):
             _ = await db.system.indexes.find_one()  # queries on db.system.indexes are ignored as well
             assert await q.get_count() == 1
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_updating_a_document_within_a_transaction(self):
         class A(Document):
             name = StringField()
@@ -521,7 +377,7 @@ class TestContextManagers(MongoDBTestCase):
         assert await A.objects.count() == 1
         assert (await A.objects.get(id=a_doc.id)).name == "b"
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_updating_a_document_within_a_transaction_that_fails(self):
         class A(Document):
             name = StringField()
@@ -539,7 +395,7 @@ class TestContextManagers(MongoDBTestCase):
         assert await A.objects.count() == 1
         assert (await A.objects.get(id=a_doc.id)).name == "a"
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_creating_a_document_within_a_transaction(self):
 
         class A(Document):
@@ -562,7 +418,7 @@ class TestContextManagers(MongoDBTestCase):
         assert (await A.objects.get(id=a_doc.id)).name == "a"
         assert (await A.objects.get(id=another_doc.id)).name == "b"
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_creating_a_document_within_a_transaction_that_fails(self):
 
         class A(Document):
@@ -584,7 +440,7 @@ class TestContextManagers(MongoDBTestCase):
 
         assert await A.objects.count() == 0
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_transaction_updates_across_databases(self):
         connect("mongoenginetest")
         connect("test2", "test2")
@@ -609,7 +465,7 @@ class TestContextManagers(MongoDBTestCase):
         assert "a2" == (await A.objects.get(id=a_doc.id)).name
         assert "b2" == (await B.objects.get(id=b_doc.id)).name
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_collection_creation_via_upserts_across_databases_in_transaction(self):
         connect("mongoenginetest")
         connect("test2", "test2")
@@ -641,7 +497,7 @@ class TestContextManagers(MongoDBTestCase):
         async with switch_db(A, "test2"):
             assert "a4" == (await A.objects.get(id=a_doc.id)).name
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_an_exception_raised_in_transactions_across_databases_rolls_back_updates(
         self,
     ):
@@ -681,7 +537,7 @@ class TestContextManagers(MongoDBTestCase):
         async with switch_db(A, "test2"):
             assert 0 == await A.objects.all().count()
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_exception_in_child_of_a_nested_transaction_rolls_parent_back(self):
         class A(Document):
             name = StringField()
@@ -723,7 +579,7 @@ class TestContextManagers(MongoDBTestCase):
         assert (await A.objects.get(id=a_doc.id)).name == "a"
         assert (await B.objects.get(id=b_doc.id)).name == "b"
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_exception_in_parent_of_nested_transaction_after_child_completed_only_rolls_parent_back(
         self,
     ):
@@ -764,7 +620,7 @@ class TestContextManagers(MongoDBTestCase):
         assert "a" == (await A.objects.get(id=a_doc.id)).name
         assert "trx-child" == (await B.objects.get(id=b_doc.id)).name
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_nested_transactions_create_and_release_sessions_accordingly(self):
         async with run_in_transaction():
             s1 = _get_session()
@@ -778,7 +634,7 @@ class TestContextManagers(MongoDBTestCase):
 
         assert _get_session() is None
 
-    @pytest.mark.skip(reason="Requires replica set for transactions")
+    @pytest.mark.requires_replica_set
     async def test_thread_safety_of_transactions(self):
         """
         Make sure transactions don't step over each other. Each

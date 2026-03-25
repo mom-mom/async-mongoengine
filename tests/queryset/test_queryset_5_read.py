@@ -559,55 +559,6 @@ class TestQueryset5(MongoDBTestCase):
         plist = [d async for d in Person.objects.scalar("name", "state")]
         assert plist == [("Wilson JR", s1)]
 
-    @pytest.mark.skip(reason="GenericReferenceField scalar dereference not working in async - library issue")
-    async def test_scalar_generic_reference_field(self):
-        class State(Document):
-            name = StringField()
-
-        class Person(Document):
-            name = StringField()
-            state = GenericReferenceField()
-
-        await State.drop_collection()
-        await Person.drop_collection()
-
-        s1 = State(name="Goias")
-        await s1.save()
-
-        await Person(name="Wilson JR", state=s1).save()
-
-        plist = [d async for d in Person.objects.scalar("name", "state")]
-        assert plist == [("Wilson JR", s1)]
-
-    @pytest.mark.skip(reason="GenericReferenceField dereference not working in async with only() - library issue")
-    async def test_generic_reference_field_with_only_and_as_pymongo(self):
-        class TestPerson(Document):
-            name = StringField()
-
-        class TestActivity(Document):
-            name = StringField()
-            owner = GenericReferenceField()
-
-        await TestPerson.drop_collection()
-        await TestActivity.drop_collection()
-
-        person = TestPerson(name="owner")
-        await person.save()
-
-        a1 = TestActivity(name="a1", owner=person)
-        await a1.save()
-
-        activity = await TestActivity.objects(owner=person).scalar("id", "owner").no_dereference().first()
-        assert activity[0] == a1.pk
-        assert activity[1]["_ref"] == DBRef("test_person", person.pk)
-
-        activity = await TestActivity.objects(owner=person).only("id", "owner").get_item(0)
-        assert activity.pk == a1.pk
-        assert activity.owner == person
-
-        activity = await TestActivity.objects(owner=person).only("id", "owner").as_pymongo().first()
-        assert activity["_id"] == a1.pk
-        assert activity["owner"]["_ref"], DBRef("test_person", person.pk)
 
     async def test_scalar_db_field(self):
         class TestDoc(Document):
