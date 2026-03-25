@@ -469,7 +469,9 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         created = "_id" not in doc_id or self._created or force_insert
 
         signals.pre_save_post_validation.send(self.__class__, document=self, created=created, **signal_kwargs)
-        await signals.pre_save_post_validation_async.send_async(self.__class__, document=self, created=created, **signal_kwargs)
+        await signals.pre_save_post_validation_async.send_async(
+            self.__class__, document=self, created=created, **signal_kwargs
+        )
         # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
         doc = self.to_mongo()
 

@@ -72,6 +72,7 @@ class BaseQuerySet:
         self._search_text_score = None
 
         self.__dereference = False
+        self._select_related_depth = 0
 
         # If inheritance is allowed, only return instances and instances of
         # subclasses of the class being used
@@ -202,10 +203,23 @@ class BaseQuerySet:
         result = self._document._from_son(doc)
         if self._scalar:
             return self._get_scalar(result)
+        if self._select_related_depth > 0:
+            await self._dereference([result], max_depth=self._select_related_depth)
         return result
 
     def __iter__(self):
         raise NotImplementedError
+
+    def __await__(self):
+        return self.to_list().__await__()
+
+    async def to_list(self):
+        """Materialize this queryset into a list.
+
+        >>> docs = await MyDoc.objects.to_list()
+        >>> docs = await MyDoc.objects.select_related().to_list()
+        """
+        return [doc async for doc in self]
 
     async def _has_data(self):
         """Return True if cursor has any data."""
@@ -287,6 +301,8 @@ class BaseQuerySet:
             # Check if there is another match
             await queryset.__anext__()
         except StopAsyncIteration:
+            if self._select_related_depth > 0 and not self._as_pymongo and not self._scalar:
+                await self._dereference([result], max_depth=self._select_related_depth)
             return result
 
         # If we were able to retrieve a 2nd doc, raise the MultipleObjectsReturned exception.
@@ -391,7 +407,9 @@ class BaseQuerySet:
 
         if not load_bulk:
             signals.post_bulk_insert.send(self._document, documents=docs, loaded=False, **signal_kwargs)
-            await signals.post_bulk_insert_async.send_async(self._document, documents=docs, loaded=False, **signal_kwargs)
+            await signals.post_bulk_insert_async.send_async(
+                self._document, documents=docs, loaded=False, **signal_kwargs
+            )
             return ids[0] if return_one else ids
 
         documents = await self.in_bulk(ids)
@@ -760,6 +778,8 @@ class BaseQuerySet:
 
         if result is not None:
             result = self._document._from_son(result)
+            if self._select_related_depth > 0 and not self._scalar:
+                await self._dereference([result], max_depth=self._select_related_depth)
 
         return result
 
@@ -796,6 +816,12 @@ class BaseQuerySet:
         else:
             async for doc in docs:
                 doc_map[doc["_id"]] = self._document._from_son(doc)
+
+        if self._select_related_depth > 0 and not self._as_pymongo and not self._scalar and doc_map:
+            await self._dereference(
+                list(doc_map.values()),
+                max_depth=self._select_related_depth,
+            )
 
         return doc_map
 
@@ -866,6 +892,7 @@ class BaseQuerySet:
             "_max_time_ms",
             "_comment",
             "_batch_size",
+            "_select_related_depth",
         )
 
         for prop in copy_props:
@@ -877,15 +904,17 @@ class BaseQuerySet:
 
         return new_qs
 
-    async def select_related(self, max_depth=1):
+    def select_related(self, max_depth=1):
         """Handles dereferencing of :class:`~bson.dbref.DBRef` objects or
         :class:`~bson.object_id.ObjectId` a maximum depth in order to cut down
         the number queries to mongodb.
+
+        This is a lazy modifier — actual dereferencing happens when the
+        queryset is consumed (e.g. via ``async for``).
         """
-        # Make select related work the same for querysets
-        max_depth += 1
         queryset = self.clone()
-        return await queryset._dereference(queryset, max_depth=max_depth)
+        queryset._select_related_depth = max_depth + 1
+        return queryset
 
     def limit(self, n):
         """Limit the number of returned documents to `n`. This may also be

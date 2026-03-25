@@ -125,7 +125,13 @@ def _get_connection_settings(
                 if uri_dict.get(param):
                     conn_settings[param] = uri_dict[param]
 
-            uri_options = uri_dict["options"]  # uri_options is a _CaseInsensitiveDictionary
+            # Normalize option keys to lowercase for case-insensitive lookup.
+            # PyMongo >= 4.10 returns a plain dict with mixed-case keys
+            # (e.g. "replicaSet", "readPreference") instead of the old
+            # _CaseInsensitiveDictionary.
+            uri_options_raw = uri_dict["options"]
+            uri_options = {k.lower(): v for k, v in uri_options_raw.items()}
+
             if "replicaset" in uri_options:
                 conn_settings["replicaSet"] = uri_options["replicaset"]
             if "authsource" in uri_options:
@@ -158,7 +164,13 @@ def _get_connection_settings(
                 conn_settings["authmechanismproperties"] = uri_options["authmechanismproperties"]
             if "uuidrepresentation" in uri_options:
                 REV_UUID_REPRESENTATIONS = {v: k for k, v in _UUID_REPRESENTATIONS.items()}
-                conn_settings["uuidrepresentation"] = REV_UUID_REPRESENTATIONS[uri_options["uuidrepresentation"]]
+                uuid_value = uri_options["uuidrepresentation"]
+                if uuid_value not in REV_UUID_REPRESENTATIONS:
+                    raise ConnectionFailure(
+                        f"Invalid uuidRepresentation value: {uuid_value!r}. "
+                        f"Valid values: {list(_UUID_REPRESENTATIONS.keys())}"
+                    )
+                conn_settings["uuidrepresentation"] = REV_UUID_REPRESENTATIONS[uuid_value]
         else:
             resolved_hosts.append(entity)
     conn_settings["host"] = resolved_hosts

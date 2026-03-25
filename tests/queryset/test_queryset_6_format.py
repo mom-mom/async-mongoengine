@@ -3,7 +3,7 @@ import uuid
 from decimal import Decimal
 
 import pytest
-from bson import DBRef, ObjectId
+from bson import ObjectId
 
 from mongoengine import *
 from mongoengine.context_managers import query_counter
