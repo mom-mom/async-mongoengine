@@ -1,4 +1,5 @@
 from mongoengine.errors import *
+from mongoengine.queryset.aggregation import *
 from mongoengine.queryset.field_list import *
 from mongoengine.queryset.manager import *
 from mongoengine.queryset.queryset import *
@@ -7,6 +8,7 @@ from mongoengine.queryset.visitor import *
 
 # Expose just the public subset of all imported objects and constants.
 __all__ = (
+    "AggregationResult",
     "QuerySet",
     "QuerySetNoCache",
     "Q",

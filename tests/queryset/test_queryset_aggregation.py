@@ -14,11 +14,8 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
         # Aggregates with read_preference
         pipeline = []
-        bars = await Bar.objects.read_preference(ReadPreference.SECONDARY_PREFERRED).aggregate(pipeline)
-        if hasattr(bars, "_CommandCursor__collection"):
-            read_pref = bars._CommandCursor__collection.read_preference
-        else:  # pymongo >= 4.9
-            read_pref = bars._collection.read_preference
+        cursor = await Bar.objects.read_preference(ReadPreference.SECONDARY_PREFERRED).aggregate(pipeline).get_cursor()
+        read_pref = cursor._collection.read_preference
         assert read_pref == ReadPreference.SECONDARY_PREFERRED
 
     async def test_queryset_aggregation_framework(self):
@@ -36,7 +33,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects(age__lte=22).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [
+        assert data == [
             {"_id": p1.pk, "name": "ISABELLA LUANNA"},
             {"_id": p2.pk, "name": "WILSON JUNIOR"},
         ]
@@ -44,18 +41,18 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects(age__lte=22).order_by("-name").aggregate(pipeline)
 
-        assert [doc async for doc in data] == [
+        assert data == [
             {"_id": p2.pk, "name": "WILSON JUNIOR"},
             {"_id": p1.pk, "name": "ISABELLA LUANNA"},
         ]
 
         pipeline = [{"$group": {"_id": None, "total": {"$sum": 1}, "avg": {"$avg": "$age"}}}]
         data = await Person.objects(age__gte=17, age__lte=40).order_by("-age").aggregate(pipeline)
-        assert [doc async for doc in data] == [{"_id": None, "avg": 29, "total": 2}]
+        assert data == [{"_id": None, "avg": 29, "total": 2}]
 
         pipeline = [{"$match": {"name": "Isabella Luanna"}}]
         data = await Person.objects().aggregate(pipeline)
-        assert [doc async for doc in data] == [{"_id": p1.pk, "age": 16, "name": "Isabella Luanna"}]
+        assert data == [{"_id": p1.pk, "age": 16, "name": "Isabella Luanna"}]
 
     async def test_queryset_aggregation_with_skip(self):
         class Person(Document):
@@ -72,7 +69,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects.skip(1).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [
+        assert data == [
             {"_id": p2.pk, "name": "WILSON JUNIOR"},
             {"_id": p3.pk, "name": "SANDRA MARA"},
         ]
@@ -94,24 +91,21 @@ class TestQuerysetAggregate(MongoDBTestCase):
         comment = "test_comment"
 
         async with db_ops_tracker() as q:
-            data = await AggPerson.objects.comment(comment).aggregate(pipeline)
-            _ = [doc async for doc in data]
+            _ = await AggPerson.objects.comment(comment).aggregate(pipeline)
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(length=1))[0]
             assert "hint" not in query_op["command"]
             assert query_op["command"]["comment"] == comment
             assert "collation" not in query_op["command"]
 
         async with db_ops_tracker() as q:
-            data = await AggPerson.objects.hint(index_name).aggregate(pipeline)
-            _ = [doc async for doc in data]
+            _ = await AggPerson.objects.hint(index_name).aggregate(pipeline)
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(length=1))[0]
             assert query_op["command"]["hint"] == "name_1"
             assert "comment" not in query_op["command"]
             assert "collation" not in query_op["command"]
 
         async with db_ops_tracker() as q:
-            data = await AggPerson.objects.collation(base).aggregate(pipeline)
-            _ = [doc async for doc in data]
+            _ = await AggPerson.objects.collation(base).aggregate(pipeline)
             query_op = (await q.db.system.profile.find({"ns": "mongoenginetest.agg_person"}).to_list(length=1))[0]
             assert "hint" not in query_op["command"]
             assert "comment" not in query_op["command"]
@@ -132,7 +126,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects.limit(1).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [{"_id": p1.pk, "name": "ISABELLA LUANNA"}]
+        assert data == [{"_id": p1.pk, "name": "ISABELLA LUANNA"}]
 
     async def test_queryset_aggregation_with_sort(self):
         class Person(Document):
@@ -149,7 +143,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects.order_by("name").aggregate(pipeline)
 
-        assert [doc async for doc in data] == [
+        assert data == [
             {"_id": p1.pk, "name": "ISABELLA LUANNA"},
             {"_id": p3.pk, "name": "SANDRA MARA"},
             {"_id": p2.pk, "name": "WILSON JUNIOR"},
@@ -169,14 +163,13 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects.skip(1).limit(1).aggregate(pipeline)
-        data = [doc async for doc in data]
 
         assert data == [{"_id": p2.pk, "name": "WILSON JUNIOR"}]
 
         # Make sure limit/skip chaining order has no impact
         data2 = await Person.objects.limit(1).skip(1).aggregate(pipeline)
 
-        assert data == [doc async for doc in data2]
+        assert data == data2
 
     async def test_queryset_aggregation_with_sort_with_limit(self):
         class Person(Document):
@@ -193,7 +186,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects.order_by("name").limit(2).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [
+        assert data == [
             {"_id": p1.pk, "name": "ISABELLA LUANNA"},
             {"_id": p3.pk, "name": "SANDRA MARA"},
         ]
@@ -202,7 +195,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}, {"$limit": 1}]
         data = await Person.objects.order_by("name").limit(2).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [{"_id": p1.pk, "name": "ISABELLA LUANNA"}]
+        assert data == [{"_id": p1.pk, "name": "ISABELLA LUANNA"}]
 
         pipeline = [
             {"$project": {"name": {"$toUpper": "$name"}}},
@@ -211,7 +204,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         ]
         data = await Person.objects.order_by("name").limit(2).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [{"_id": p3.pk, "name": "SANDRA MARA"}]
+        assert data == [{"_id": p3.pk, "name": "SANDRA MARA"}]
 
     async def test_queryset_aggregation_with_sort_with_skip(self):
         class Person(Document):
@@ -228,7 +221,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects.order_by("name").skip(2).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [{"_id": p2.pk, "name": "WILSON JUNIOR"}]
+        assert data == [{"_id": p2.pk, "name": "WILSON JUNIOR"}]
 
     async def test_queryset_aggregation_with_sort_with_skip_with_limit(self):
         class Person(Document):
@@ -245,7 +238,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects.order_by("name").skip(1).limit(1).aggregate(pipeline)
 
-        assert [doc async for doc in data] == [{"_id": p3.pk, "name": "SANDRA MARA"}]
+        assert data == [{"_id": p3.pk, "name": "SANDRA MARA"}]
 
     async def test_queryset_aggregation_old_interface_not_working(self):
         class Person(Document):
@@ -262,14 +255,14 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
         # Make sure old interface raises an error as we changed it >= 1.0
         with pytest.raises(TypeError, match="pipeline must be a list/tuple"):
-            await Person.objects.order_by("name").limit(2).aggregate(*_1_step_pipeline)
+            Person.objects.order_by("name").limit(2).aggregate(*_1_step_pipeline)
 
         _2_step_pipeline = [
             {"$project": {"name": {"$toUpper": "$name"}}},
             {"$limit": 1},
         ]
         with pytest.raises(TypeError, match="takes 2 positional arguments but 3 were given"):
-            await Person.objects.order_by("name").limit(2).aggregate(*_2_step_pipeline)
+            Person.objects.order_by("name").limit(2).aggregate(*_2_step_pipeline)
 
     async def test_queryset_aggregation_geonear_aggregation_on_pointfield(self):
         """test ensures that $geonear can be used as a 1-stage pipeline and that
@@ -295,7 +288,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
             }
         ]
         data = await Aggr.objects.aggregate(pipeline)
-        assert [doc async for doc in data] == [
+        assert data == [
             {"_id": agg1.id, "c": 0.0, "name": "X"},
             {"_id": agg2.id, "c": 0.0, "name": "Y"},
         ]
@@ -315,7 +308,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
         pipeline = [{"$project": {"name": {"$toUpper": "$name"}}}]
         data = await Person.objects().none().order_by("name").aggregate(pipeline)
 
-        assert [doc async for doc in data] == []
+        assert data == []
 
     async def test_aggregate_geo_near_used_as_initial_step_before_cls_implicit_step(self):
         class BaseClass(Document):
@@ -340,8 +333,7 @@ class TestQuerysetAggregate(MongoDBTestCase):
             }
         ]
         data = await Aggr.objects.aggregate(pipeline)
-        res = [doc async for doc in data]
-        assert res == [
+        assert data == [
             {"_cls": "BaseClass.Aggr", "_id": x.id, "c": 0.0, "name": "X"},
             {"_cls": "BaseClass.Aggr", "_id": y.id, "c": 0.0, "name": "Y"},
         ]
@@ -357,6 +349,59 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
         pipeline = [{"$collStats": {"count": {}}}]
         data = await SomeDoc.objects.aggregate(pipeline)
-        res = [doc async for doc in data]
-        assert len(res) == 1
-        assert res[0]["count"] == 2
+        assert len(data) == 1
+        assert data[0]["count"] == 2
+
+    async def test_aggregate_async_for_streaming(self):
+        """Test that async for iteration works for streaming consumption."""
+
+        class Person(Document):
+            name = StringField()
+            age = IntField()
+
+        await Person.drop_collection()
+
+        p1 = Person(name="Alice", age=25)
+        p2 = Person(name="Bob", age=30)
+        await Person.objects.insert([p1, p2])
+
+        pipeline = [{"$project": {"name": 1, "_id": 0}}, {"$sort": {"name": 1}}]
+        results = []
+        async for doc in Person.objects.aggregate(pipeline):
+            results.append(doc)
+
+        assert results == [{"name": "Alice"}, {"name": "Bob"}]
+
+    async def test_aggregate_to_list(self):
+        """Test the explicit to_list() method."""
+
+        class Person(Document):
+            name = StringField()
+            age = IntField()
+
+        await Person.drop_collection()
+
+        p1 = Person(name="Alice", age=25)
+        p2 = Person(name="Bob", age=30)
+        await Person.objects.insert([p1, p2])
+
+        pipeline = [{"$project": {"name": 1, "_id": 0}}, {"$sort": {"name": 1}}]
+        data = await Person.objects.aggregate(pipeline).to_list()
+
+        assert data == [{"name": "Alice"}, {"name": "Bob"}]
+
+    async def test_aggregate_get_cursor(self):
+        """Test that get_cursor() returns the raw AsyncCommandCursor."""
+        from pymongo.asynchronous.command_cursor import AsyncCommandCursor
+
+        class Person(Document):
+            name = StringField()
+
+        await Person.drop_collection()
+        await Person(name="Alice").save()
+
+        pipeline = [{"$project": {"name": 1, "_id": 0}}]
+        cursor = await Person.objects.aggregate(pipeline).get_cursor()
+
+        assert isinstance(cursor, AsyncCommandCursor)
+        assert await cursor.to_list() == [{"name": "Alice"}]

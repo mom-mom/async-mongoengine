@@ -105,7 +105,7 @@ qs.average(field)        → await qs.average(field)
 qs.item_frequencies(f)   → await qs.item_frequencies(f)
 qs.explain()             → await qs.explain()
 qs.to_json()             → await qs.to_json()
-qs.aggregate(pipeline)   → await qs.aggregate(pipeline)
+qs.aggregate(pipeline)   → qs.aggregate(pipeline)        # Returns AggregationResult (see §3.7)
 qs.map_reduce(m, r, out) → await qs.map_reduce(m, r, out)
 qs.using(alias)          → await qs.using(alias)
 qs.to_list()             → await qs.to_list()          # New
@@ -280,16 +280,35 @@ for doc in results:
     process(doc)
 ```
 
-### 3.7 `aggregate()` — returns `AsyncCommandCursor`
+### 3.7 `aggregate()` — returns `AggregationResult`
+
+`aggregate()` is no longer a coroutine. It returns an `AggregationResult` that
+supports `await` (list), `async for` (streaming), `.to_list()`, `.get_cursor()`,
+and `.typed(T)` for type narrowing.
 
 ```python
-# Before
+# Before (mongoengine — sync)
 for doc in MyDoc.objects.aggregate(pipeline):
     process(doc)
 
-# After
-async for doc in await MyDoc.objects.aggregate(pipeline):
+# After — await returns a list
+results = await MyDoc.objects.aggregate(pipeline)
+
+# After — async for streams documents
+async for doc in MyDoc.objects.aggregate(pipeline):
     await process(doc)
+
+# After — explicit to_list() / get_cursor()
+results = await MyDoc.objects.aggregate(pipeline).to_list()
+cursor = await MyDoc.objects.aggregate(pipeline).get_cursor()
+
+# After — type narrowing with typed()
+class CityCount(TypedDict):
+    _id: str
+    count: int
+
+results = await MyDoc.objects.aggregate(pipeline).typed(CityCount)
+# type checker sees: list[CityCount]
 ```
 
 ### 3.8 `MapReduceDocument.object` property — removed
@@ -505,7 +524,7 @@ Use this table to mechanically transform code. Search for the **Before** pattern
 | 28 | `.objects.sum(...)` | `await .objects.sum(...)` |
 | 29 | `.objects.average(...)` | `await .objects.average(...)` |
 | 30 | `.objects.item_frequencies(...)` | `await .objects.item_frequencies(...)` |
-| 31 | `.objects.aggregate(...)` | `await .objects.aggregate(...)` |
+| 31 | `.objects.aggregate(...)` | `.objects.aggregate(...)` → `AggregationResult` (await/async for) |
 | 32 | `.objects.map_reduce(...)` | `await .objects.map_reduce(...)` |
 | 33 | `.objects.explain()` | `await .objects.explain()` |
 | 34 | `.objects.to_json()` | `await .objects.to_json()` |
