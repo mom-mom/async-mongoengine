@@ -1,14 +1,20 @@
-import functools
-import inspect
-
 __all__ = (
     "pre_init",
     "post_init",
     "pre_save",
+    "pre_save_async",
     "pre_save_post_validation",
+    "pre_save_post_validation_async",
     "post_save",
+    "post_save_async",
     "pre_delete",
+    "pre_delete_async",
     "post_delete",
+    "post_delete_async",
+    "pre_bulk_insert",
+    "pre_bulk_insert_async",
+    "post_bulk_insert",
+    "post_bulk_insert_async",
 )
 
 signals_available = False
@@ -45,22 +51,20 @@ except ImportError:
         del _fail
 
 
-def _wrap_sync(func):
-    """Wrap a sync function as an async function for send_async compatibility."""
-
-    @functools.wraps(func)
-    async def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-# the namespace for code signals.  If you are not mongoengine code, do
-# not put signals in here.  Create your own namespace instead.
 _signals = Namespace()
 
+# ---------------------------------------------------------------------------
+# Sync signals — use .send(), register sync handlers with .connect()
+#
+# pre_init / post_init are SYNC-ONLY because they are emitted from
+# Document.__init__(), which is a regular (non-async) method.
+# There are no async variants for these two signals.
+# ---------------------------------------------------------------------------
 pre_init = _signals.signal("pre_init")
 post_init = _signals.signal("post_init")
+
+# The following sync signals are emitted alongside their async counterparts
+# in async contexts (save, delete, insert). Use these for sync handlers.
 pre_save = _signals.signal("pre_save")
 pre_save_post_validation = _signals.signal("pre_save_post_validation")
 post_save = _signals.signal("post_save")
@@ -68,3 +72,25 @@ pre_delete = _signals.signal("pre_delete")
 post_delete = _signals.signal("post_delete")
 pre_bulk_insert = _signals.signal("pre_bulk_insert")
 post_bulk_insert = _signals.signal("post_bulk_insert")
+
+# ---------------------------------------------------------------------------
+# Async signals — use await .send_async(), register async handlers with .connect()
+#
+# These are emitted right after the corresponding sync signal in async
+# contexts (Document.save, Document.delete, QuerySet.insert).
+# Register async handlers here when you need to await DB operations
+# inside a signal handler.
+#
+# Example:
+#     async def my_handler(sender, document, **kwargs):
+#         await document.reload()
+#
+#     signals.post_save_async.connect(my_handler, sender=MyDoc)
+# ---------------------------------------------------------------------------
+pre_save_async = _signals.signal("pre_save_async")
+pre_save_post_validation_async = _signals.signal("pre_save_post_validation_async")
+post_save_async = _signals.signal("post_save_async")
+pre_delete_async = _signals.signal("pre_delete_async")
+post_delete_async = _signals.signal("post_delete_async")
+pre_bulk_insert_async = _signals.signal("pre_bulk_insert_async")
+post_bulk_insert_async = _signals.signal("post_bulk_insert_async")

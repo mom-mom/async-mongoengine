@@ -2405,7 +2405,7 @@ class TestDocumentInstance(MongoDBTestCase):
                 editor = await Editor.objects.get(pk=document.editor.id)
                 await editor.update(dec__review_queue=1)
 
-        signals.pre_delete.connect(BlogPost.pre_delete, sender=BlogPost)
+        signals.pre_delete_async.connect(BlogPost.pre_delete, sender=BlogPost)
 
         await self.Person.drop_collection()
         await BlogPost.drop_collection()
