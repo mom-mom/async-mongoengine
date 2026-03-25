@@ -130,6 +130,12 @@ async def main():
 asyncio.run(main())
 ```
 
+## Migrating from mongoengine
+
+If you have an existing project using mongoengine, see the
+[Migration Guide](docs/migration-guide.md) for step-by-step instructions
+and a complete transformation rule reference.
+
 ## Development
 
 ```shell
