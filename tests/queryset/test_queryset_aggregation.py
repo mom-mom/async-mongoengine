@@ -405,3 +405,34 @@ class TestQuerysetAggregate(MongoDBTestCase):
 
         assert isinstance(cursor, AsyncCommandCursor)
         assert await cursor.to_list() == [{"name": "Alice"}]
+
+    async def test_aggregate_cannot_be_consumed_twice(self):
+        """AggregationResult is single-use — re-consumption raises RuntimeError."""
+
+        class Person(Document):
+            name = StringField()
+
+        await Person.drop_collection()
+        await Person(name="Alice").save()
+
+        pipeline = [{"$project": {"name": 1, "_id": 0}}]
+
+        # await then await again
+        agg = Person.objects.aggregate(pipeline)
+        await agg
+        with pytest.raises(RuntimeError, match="already been consumed"):
+            await agg
+
+        # await then async for
+        agg = Person.objects.aggregate(pipeline)
+        await agg
+        with pytest.raises(RuntimeError, match="already been consumed"):
+            async for _ in agg:
+                pass
+
+        # async for then await
+        agg = Person.objects.aggregate(pipeline)
+        async for _ in agg:
+            pass
+        with pytest.raises(RuntimeError, match="already been consumed"):
+            await agg

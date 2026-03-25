@@ -9,6 +9,7 @@ import pymongo
 import pymongo.errors
 from bson import SON, json_util
 from bson.code import Code
+from pymongo.asynchronous.command_cursor import AsyncCommandCursor
 from pymongo.collection import ReturnDocument
 from pymongo.common import validate_read_preference
 from pymongo.read_concern import ReadConcern
@@ -1398,7 +1399,7 @@ class BaseQuerySet[T]:
         self,
         pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...],
         **kwargs: Any,
-    ) -> AggregationResult:
+    ) -> AggregationResult[dict[str, Any]]:
         """Perform an aggregate function based on your queryset params.
 
         Returns an :class:`~mongoengine.queryset.aggregation.AggregationResult`
@@ -1435,7 +1436,7 @@ class BaseQuerySet[T]:
 
         return AggregationResult(self._do_aggregate(pipeline, **kwargs))
 
-    async def _do_aggregate(self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any):
+    async def _do_aggregate(self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any) -> AsyncCommandCursor:
         await self._ensure_collection()
 
         initial_pipeline: list[dict[str, Any]] = []
