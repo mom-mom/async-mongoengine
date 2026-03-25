@@ -205,7 +205,7 @@ await qs.to_list()                   # New — materialize queryset into a list
 await qs.using(alias)
 await qs.explain()
 await qs.to_json(...)
-await qs.aggregate(pipeline, **kwargs)
+qs.aggregate(pipeline, **kwargs)         # Returns AggregationResult (see below)
 await qs.map_reduce(map_f, reduce_f, output, ...)
 await qs.sum(field)
 await qs.average(field)
@@ -283,10 +283,31 @@ async def _get_async_cursor(self): ...  # New helper
 
 ### `aggregate()` Return Type
 
+`aggregate()` is a regular (non-async) method that returns an `AggregationResult`.
+The result supports multiple consumption patterns:
+
 ```python
-# Before: pymongo CommandCursor (sync iterable)
-# After: pymongo AsyncCommandCursor (async iterable)
-# Usage: async for doc in await qs.aggregate(pipeline): ...
+# await — returns a list of documents
+results = await qs.aggregate(pipeline)
+
+# async for — streams documents one by one
+async for doc in qs.aggregate(pipeline):
+    ...
+
+# explicit to_list()
+results = await qs.aggregate(pipeline).to_list()
+
+# raw AsyncCommandCursor access
+cursor = await qs.aggregate(pipeline).get_cursor()
+
+# type narrowing with typed()
+from typing import TypedDict
+
+class CityCount(TypedDict):
+    _id: str
+    count: int
+
+results = await qs.aggregate(pipeline).typed(CityCount)  # list[CityCount]
 ```
 
 ### QuerySetManager (`mongoengine/queryset/manager.py`)

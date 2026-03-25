@@ -458,15 +458,24 @@ An example of its use would be::
             {"$sort" : {"name" : -1}},
             {"$project": {"_id": 0, "name": {"$toUpper": "$name"}}}
             ]
-        data = await Person.objects().aggregate(pipeline)
+        results = await Person.objects().aggregate(pipeline)
 
-.. note::
+``aggregate()`` returns an :class:`~mongoengine.queryset.aggregation.AggregationResult`
+that supports multiple consumption patterns::
 
-    ``aggregate()`` returns an ``AsyncCommandCursor``. Use ``async for`` to
-    iterate over the results::
+        # await — returns a list
+        results = await Person.objects().aggregate(pipeline)
 
-        async for doc in await Person.objects().aggregate(pipeline):
+        # async for — streams documents
+        async for doc in Person.objects().aggregate(pipeline):
             print(doc)
+
+        # explicit to_list() / get_cursor()
+        results = await Person.objects().aggregate(pipeline).to_list()
+        cursor = await Person.objects().aggregate(pipeline).get_cursor()
+
+        # type narrowing
+        results = await Person.objects().aggregate(pipeline).typed(MyTypedDict)
 
 Query efficiency and performance
 ================================

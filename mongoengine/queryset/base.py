@@ -9,6 +9,7 @@ import pymongo
 import pymongo.errors
 from bson import SON, json_util
 from bson.code import Code
+from pymongo.asynchronous.command_cursor import AsyncCommandCursor
 from pymongo.collection import ReturnDocument
 from pymongo.common import validate_read_preference
 from pymongo.read_concern import ReadConcern
@@ -34,6 +35,7 @@ from mongoengine.pymongo_support import (
     count_documents,
 )
 from mongoengine.queryset import transform
+from mongoengine.queryset.aggregation import AggregationResult
 from mongoengine.queryset.field_list import QueryFieldList
 from mongoengine.queryset.visitor import Q, QNode
 
@@ -1393,8 +1395,28 @@ class BaseQuerySet[T]:
         son_data = json_util.loads(json_data)
         return [self._document._from_son(data) for data in son_data]
 
-    async def aggregate(self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any) -> Any:
-        """Perform an aggregate function based on your queryset params
+    def aggregate(
+        self,
+        pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+        **kwargs: Any,
+    ) -> AggregationResult[dict[str, Any]]:
+        """Perform an aggregate function based on your queryset params.
+
+        Returns an :class:`~mongoengine.queryset.aggregation.AggregationResult`
+        that can be consumed in multiple ways::
+
+            # as a list (await)
+            results = await qs.aggregate(pipeline)
+
+            # streaming (async for)
+            async for doc in qs.aggregate(pipeline):
+                ...
+
+            # explicit list
+            results = await qs.aggregate(pipeline).to_list()
+
+            # raw AsyncCommandCursor
+            cursor = await qs.aggregate(pipeline).get_cursor()
 
         If the queryset contains a query or skip/limit/sort or if the target Document class
         uses inheritance, this method will add steps prior to the provided pipeline in an arbitrary order.
@@ -1412,6 +1434,9 @@ class BaseQuerySet[T]:
         if not isinstance(pipeline, (tuple, list)):
             raise TypeError(f"Starting from 1.0 release pipeline must be a list/tuple, received: {type(pipeline)}")
 
+        return AggregationResult(self._do_aggregate(pipeline, **kwargs))
+
+    async def _do_aggregate(self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any) -> AsyncCommandCursor:
         await self._ensure_collection()
 
         initial_pipeline: list[dict[str, Any]] = []
@@ -1463,7 +1488,6 @@ class BaseQuerySet[T]:
 
         return await collection.aggregate(
             final_pipeline,
-            cursor={},
             session=_get_session(),
             **kwargs,
         )
