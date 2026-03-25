@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Any
 
 __all__ = (
     "NotRegistered",
@@ -83,23 +84,23 @@ class ValidationError(AssertionError):
         individual field.
     """
 
-    errors = {}
-    field_name = None
-    _message = None
+    errors: dict[str, Any] = {}
+    field_name: str | None = None
+    _message: str | None = None
 
-    def __init__(self, message="", **kwargs):
+    def __init__(self, message: str = "", **kwargs: Any) -> None:
         super().__init__(message)
         self.errors = kwargs.get("errors", {})
         self.field_name = kwargs.get("field_name")
         self.message = message
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.message)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.message},)"
 
-    def __getattribute__(self, name):
+    def __getattribute__(self, name: str) -> Any:
         message = super().__getattribute__(name)
         if name == "message":
             if self.field_name:
@@ -108,15 +109,15 @@ class ValidationError(AssertionError):
                 message = f"{message}({self._format_errors()})"
         return message
 
-    def _get_message(self):
+    def _get_message(self) -> str | None:
         return self._message
 
-    def _set_message(self, message):
+    def _set_message(self, message: str) -> None:
         self._message = message
 
     message = property(_get_message, _set_message)
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         """Returns a dictionary of all errors within a document
 
         Keys are field names or list indices and values are the
@@ -124,8 +125,8 @@ class ValidationError(AssertionError):
         errors for an embedded document or list.
         """
 
-        def build_dict(source):
-            errors_dict = {}
+        def build_dict(source: Any) -> dict[str, Any] | str:
+            errors_dict: dict[str, Any] = {}
             if isinstance(source, dict):
                 for field_name, error in source.items():
                     errors_dict[field_name] = build_dict(error)
@@ -139,12 +140,12 @@ class ValidationError(AssertionError):
         if not self.errors:
             return {}
 
-        return build_dict(self.errors)
+        return build_dict(self.errors)  # type: ignore[return-value]
 
-    def _format_errors(self):
+    def _format_errors(self) -> str:
         """Returns a string listing all errors within a document"""
 
-        def generate_key(value, prefix=""):
+        def generate_key(value: Any, prefix: str = "") -> str:
             if isinstance(value, list):
                 value = " ".join([generate_key(k) for k in value])
             elif isinstance(value, dict):
@@ -153,7 +154,7 @@ class ValidationError(AssertionError):
             results = f"{prefix}.{value}" if prefix else value
             return results
 
-        error_dict = defaultdict(list)
+        error_dict: defaultdict[str, list[str]] = defaultdict(list)
         for k, v in self.to_dict().items():
             error_dict[generate_key(v)].append(k)
         return " ".join([f"{k}: {v}" for k, v in error_dict.items()])

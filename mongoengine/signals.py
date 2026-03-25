@@ -1,3 +1,5 @@
+from typing import Any, NoReturn
+
 __all__ = (
     "pre_init",
     "post_init",
@@ -19,14 +21,10 @@ __all__ = (
 
 signals_available = False
 try:
-    from blinker import Namespace
+    from blinker import Namespace as Namespace  # pyright: ignore[reportAssignmentType]  # noqa: PLC0414
 
     signals_available = True
 except ImportError:
-
-    class Namespace:
-        def signal(self, name, doc=None):
-            return _FakeSignal(name, doc)
 
     class _FakeSignal:
         """If blinker is unavailable, create a fake class with the same
@@ -35,20 +33,24 @@ except ImportError:
         will just ignore the arguments and do nothing instead.
         """
 
-        def __init__(self, name, doc=None):
+        def __init__(self, name: str, doc: str | None = None) -> None:
             self.name = name
             self.__doc__ = doc
 
-        def _fail(self, *args, **kwargs):
+        def _fail(self, *args: Any, **kwargs: Any) -> NoReturn:
             raise RuntimeError("signalling support is unavailable because the blinker library is not installed.")
 
         send = lambda *a, **kw: None  # noqa
 
-        async def send_async(self, *a, **kw):
+        async def send_async(self, *a: Any, **kw: Any) -> None:
             return None
 
         connect = disconnect = has_receivers_for = receivers_for = temporarily_connected_to = _fail
         del _fail
+
+    class Namespace:  # type: ignore[no-redef]
+        def signal(self, name: str, doc: str | None = None) -> _FakeSignal:
+            return _FakeSignal(name, doc)
 
 
 _signals = Namespace()

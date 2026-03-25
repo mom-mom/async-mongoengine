@@ -2,24 +2,36 @@
 Helper functions, constants, and types to aid with PyMongo support.
 """
 
+from typing import Any
+
 import pymongo
 from bson import binary, json_util
+from pymongo.asynchronous.collection import AsyncCollection
+from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.collation import Collation
 
 from mongoengine import connection
 
-PYMONGO_VERSION = tuple(pymongo.version_tuple[:2])
+PYMONGO_VERSION: tuple[int, int] = tuple(pymongo.version_tuple[:2])  # type: ignore[assignment]
 
 LEGACY_JSON_OPTIONS = json_util.LEGACY_JSON_OPTIONS.with_options(
     uuid_representation=binary.UuidRepresentation.PYTHON_LEGACY,
 )
 
 
-async def count_documents(collection, filter, skip=None, limit=None, hint=None, collation=None):
+async def count_documents(
+    collection: AsyncCollection[Any],
+    filter: dict[str, Any],
+    skip: int | None = None,
+    limit: int | None = None,
+    hint: int | str | list[tuple[str, int]] | None = None,
+    collation: Collation | dict[str, Any] | None = None,
+) -> int:
     """Count documents using pymongo's count_documents"""
     if limit == 0:
         return 0
 
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
     if skip is not None:
         kwargs["skip"] = skip
     if limit is not None:
@@ -36,7 +48,10 @@ async def count_documents(collection, filter, skip=None, limit=None, hint=None, 
         return await collection.count_documents(filter=filter, session=connection._get_session(), **kwargs)
 
 
-async def list_collection_names(db, include_system_collections=False):
+async def list_collection_names(
+    db: AsyncDatabase[Any],
+    include_system_collections: bool = False,
+) -> list[str]:
     """List collection names using pymongo's list_collection_names"""
     collections = await db.list_collection_names(session=connection._get_session())
 
