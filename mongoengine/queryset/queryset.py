@@ -26,7 +26,7 @@ REPR_OUTPUT_SIZE = 20
 ITER_CHUNK_SIZE = 100
 
 
-class QuerySet(BaseQuerySet):
+class QuerySet[T](BaseQuerySet[T]):
     """The default queryset, that builds queries and handles a set of results
     returned from a query.
 
@@ -36,9 +36,9 @@ class QuerySet(BaseQuerySet):
 
     _has_more: bool = True
     _len: int | None = None
-    _result_cache: list[Any] | None = None
+    _result_cache: list[T] | None = None
 
-    async def __aiter__(self) -> AsyncIterator[Any]:
+    async def __aiter__(self) -> AsyncIterator[T]:
         """Async iteration utilises a results cache which iterates the cursor
         in batches of ``ITER_CHUNK_SIZE``.
 
@@ -69,7 +69,7 @@ class QuerySet(BaseQuerySet):
             for item in self._result_cache or []:
                 yield item
 
-    async def _iter_results(self) -> AsyncGenerator[Any]:
+    async def _iter_results(self) -> AsyncGenerator[T]:
         """An async generator for iterating over the result cache.
 
         Also populates the cache if there are more possible results to
@@ -103,7 +103,7 @@ class QuerySet(BaseQuerySet):
 
         try:
             for _ in range(ITER_CHUNK_SIZE):
-                doc: Any = await self.__anext__()
+                doc: T = await self.__anext__()
                 self._result_cache.append(doc)
         except StopAsyncIteration:
             self._has_more = False
@@ -126,12 +126,12 @@ class QuerySet(BaseQuerySet):
         if self._result_cache is not None:
             data = self._result_cache[: REPR_OUTPUT_SIZE + 1]
             if len(data) > REPR_OUTPUT_SIZE:
-                data[-1] = "...(remaining elements truncated)..."
+                data[-1] = "...(remaining elements truncated)..."  # type: ignore[assignment]
             return repr(data)
 
         return f"{self._document._class_name} async queryset"
 
-    def no_cache(self) -> "QuerySetNoCache":
+    def no_cache(self) -> "QuerySetNoCache[T]":
         """Convert to a non-caching queryset"""
         if self._result_cache is not None:
             raise OperationError("QuerySet already cached")
@@ -139,10 +139,10 @@ class QuerySet(BaseQuerySet):
         return self._clone_into(QuerySetNoCache(self._document, self._collection))  # type: ignore[arg-type,return-value]
 
 
-class QuerySetNoCache(BaseQuerySet):
+class QuerySetNoCache[T](BaseQuerySet[T]):
     """A non caching QuerySet"""
 
-    def cache(self) -> QuerySet:
+    def cache(self) -> QuerySet[T]:
         """Convert to a caching queryset"""
         return self._clone_into(QuerySet(self._document, self._collection))  # type: ignore[arg-type,return-value]
 
@@ -152,7 +152,7 @@ class QuerySetNoCache(BaseQuerySet):
             return ".. queryset mid-iteration .."
         return f"{self._document._class_name} async queryset (no cache)"
 
-    async def __aiter__(self) -> AsyncIterator[Any]:
+    async def __aiter__(self) -> AsyncIterator[T]:
         queryset = self
         if queryset._iter:
             queryset = self.clone()

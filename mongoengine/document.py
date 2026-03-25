@@ -1,5 +1,5 @@
 import re
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import pymongo
 from bson.dbref import DBRef
@@ -210,6 +210,11 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     This can be disabled by setting :attr:`strict` to ``False``
     in the :attr:`meta` dictionary.
     """
+
+    if TYPE_CHECKING:
+        from mongoengine.queryset.manager import QuerySetManager
+
+        objects: ClassVar[QuerySetManager[Self]]
 
     # my_metaclass is defined so that metaclass can be queried in Python 2 & 3
     my_metaclass = TopLevelDocumentMetaclass

@@ -47,12 +47,12 @@ DENY = 3
 PULL = 4
 
 
-class BaseQuerySet:
+class BaseQuerySet[T]:
     """A set of results returned from a query. Wraps a MongoDB cursor,
     providing :class:`~mongoengine.Document` objects as the results.
     """
 
-    _document: type[Any]
+    _document: type[T]
     _collection_obj: Any | None
     _mongo_query: dict[str, Any] | None
     _query_obj: Any
@@ -81,7 +81,7 @@ class BaseQuerySet:
     _empty: bool
     _select_related_depth: int
 
-    def __init__(self, document: type[Any], collection: Any | None) -> None:
+    def __init__(self, document: type[T], collection: Any | None) -> None:
         self._document = document
         self._collection_obj = collection
         self._mongo_query = None
@@ -217,7 +217,7 @@ class BaseQuerySet:
             "Integer index is not supported via []. Use 'await qs.get_item(index)' or 'await qs.first()' instead."
         )
 
-    async def get_item(self, index: int) -> Any:
+    async def get_item(self, index: int) -> T:
         """Async method to retrieve a document by integer index.
 
         >>> doc = await User.objects.get_item(0)
@@ -244,7 +244,7 @@ class BaseQuerySet:
     def __await__(self) -> Any:
         return self.to_list().__await__()
 
-    async def to_list(self) -> list[Any]:
+    async def to_list(self) -> list[T]:
         """Materialize this queryset into a list.
 
         >>> docs = await MyDoc.objects.to_list()
@@ -310,7 +310,7 @@ class BaseQuerySet:
 
         return queryset
 
-    async def get(self, *q_objs: QNode, **query: Any) -> Any:
+    async def get(self, *q_objs: QNode, **query: Any) -> T:
         """Retrieve the matching object raising
         :class:`~mongoengine.queryset.MultipleObjectsReturned` or
         `DocumentName.MultipleObjectsReturned` exception if multiple results
@@ -339,11 +339,11 @@ class BaseQuerySet:
         # If we were able to retrieve a 2nd doc, raise the MultipleObjectsReturned exception.
         raise queryset._document.MultipleObjectsReturned("2 or more items returned, instead of 1")
 
-    async def create(self, **kwargs: Any) -> Any:
+    async def create(self, **kwargs: Any) -> T:
         """Create new object. Returns the saved object instance."""
         return await self._document(**kwargs).save(force_insert=True)
 
-    async def first(self) -> Any | None:
+    async def first(self) -> T | None:
         """Retrieve the first object matching the query."""
         await self._ensure_collection()
         queryset = self.clone()
@@ -358,11 +358,11 @@ class BaseQuerySet:
 
     async def insert(
         self,
-        doc_or_docs: Any,
+        doc_or_docs: T | list[T],
         load_bulk: bool = True,
         write_concern: dict[str, Any] | None = None,
         signal_kwargs: dict[str, Any] | None = None,
-    ) -> Any:
+    ) -> T | list[T]:
         """bulk insert documents
 
         :param doc_or_docs: a document or list of documents to be inserted
@@ -439,7 +439,7 @@ class BaseQuerySet:
             raise OperationError(message % err)
 
         # Apply inserted_ids to documents
-        for doc, doc_id in zip(docs, ids):
+        for doc, doc_id in zip(docs, ids):  # type: ignore[arg-type]
             doc.pk = doc_id
 
         if not load_bulk:
@@ -453,7 +453,7 @@ class BaseQuerySet:
         results = [documents.get(obj_id) for obj_id in ids]
         signals.post_bulk_insert.send(self._document, documents=results, loaded=True, **signal_kwargs)
         await signals.post_bulk_insert_async.send_async(self._document, documents=results, loaded=True, **signal_kwargs)
-        return results[0] if return_one else results
+        return results[0] if return_one else results  # type: ignore[return-value]
 
     async def count(self, with_limit_and_skip: bool = False) -> int:
         """Count the selected elements in the query.
@@ -692,7 +692,7 @@ class BaseQuerySet:
         write_concern: dict[str, Any] | None = None,
         read_concern: dict[str, Any] | None = None,
         **update: Any,
-    ) -> Any:
+    ) -> T:
         """Overwrite or add the first document matched by the query.
 
         :param write_concern: Extra keyword arguments are passed down which
@@ -763,7 +763,7 @@ class BaseQuerySet:
         new: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
         **update: Any,
-    ) -> Any | None:
+    ) -> T | None:
         """Update and return the updated document.
 
         Returns either the document before or after modification based on `new`
@@ -831,7 +831,7 @@ class BaseQuerySet:
 
         return result
 
-    async def with_id(self, object_id: Any) -> Any | None:
+    async def with_id(self, object_id: Any) -> T | None:
         """Retrieve the object matching the id provided.  Uses `object_id` only
         and raises InvalidQueryError if a filter has been applied. Returns
         `None` if no document exists with that id.
@@ -1700,7 +1700,7 @@ class BaseQuerySet:
 
     # Iterator helpers
 
-    async def __anext__(self) -> Any:
+    async def __anext__(self) -> T:
         """Wrap the result in a :class:`~mongoengine.Document` object."""
         if self._none or self._empty:
             raise StopAsyncIteration

@@ -1,13 +1,13 @@
 from collections.abc import Callable
 from functools import partial
-from typing import Any
+from typing import Any, overload
 
 from mongoengine.queryset.queryset import QuerySet
 
 __all__ = ("queryset_manager", "QuerySetManager")
 
 
-class QuerySetManager:
+class QuerySetManager[T]:
     """
     The default QuerySet Manager.
 
@@ -21,11 +21,17 @@ class QuerySetManager:
     """
 
     get_queryset: Callable[..., Any] | None = None
-    default: type[QuerySet] = QuerySet
+    default: type[QuerySet[Any]] = QuerySet
 
     def __init__(self, queryset_func: Callable[..., Any] | None = None) -> None:
         if queryset_func:
             self.get_queryset = queryset_func
+
+    @overload
+    def __get__(self, instance: None, owner: type[T]) -> QuerySet[T]: ...
+
+    @overload
+    def __get__(self, instance: T, owner: type[T]) -> "QuerySetManager[T]": ...
 
     def __get__(self, instance: Any, owner: Any) -> Any:
         """Descriptor for instantiating a new QuerySet object when
@@ -37,8 +43,8 @@ class QuerySetManager:
 
         # owner is the document that contains the QuerySetManager
         # Use cached _collection (may be None; QuerySet will resolve lazily)
-        queryset_class: type[QuerySet] = owner._meta.get("queryset_class", self.default)
-        queryset: QuerySet = queryset_class(owner, owner._collection)
+        queryset_class: type[QuerySet[Any]] = owner._meta.get("queryset_class", self.default)
+        queryset: QuerySet[T] = queryset_class(owner, owner._collection)
         if self.get_queryset:
             arg_count: int = self.get_queryset.__code__.co_argcount
             if arg_count == 1:
@@ -50,7 +56,7 @@ class QuerySetManager:
         return queryset
 
 
-def queryset_manager(func: Callable[..., Any]) -> QuerySetManager:
+def queryset_manager(func: Callable[..., Any]) -> QuerySetManager[Any]:
     """Decorator that allows you to define custom QuerySet managers on
     :class:`~mongoengine.Document` classes. The manager must be a function that
     accepts a :class:`~mongoengine.Document` class as its first argument, and a
