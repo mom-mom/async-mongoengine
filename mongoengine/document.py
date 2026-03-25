@@ -449,7 +449,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         if self._meta.get("abstract"):
             raise InvalidDocumentError("Cannot save an abstract document.")
 
-        signals.pre_save.send(self.__class__, document=self, **signal_kwargs)
+        await signals.pre_save.send_async(self.__class__, document=self, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
 
         if write_concern is None:
             write_concern = {}
@@ -467,7 +467,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         doc_id = self.to_mongo(fields=[self._meta["id_field"]])
         created = "_id" not in doc_id or self._created or force_insert
 
-        signals.pre_save_post_validation.send(self.__class__, document=self, created=created, **signal_kwargs)
+        await signals.pre_save_post_validation.send_async(self.__class__, document=self, created=created, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
         # it might be refreshed by the pre_save_post_validation hook, e.g., for etag generation
         doc = self.to_mongo()
 
@@ -519,7 +519,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         if created or id_field not in self._meta.get("shard_key", []):
             self[id_field] = self._fields[id_field].to_python(object_id)
 
-        signals.post_save.send(self.__class__, document=self, created=created, **signal_kwargs)
+        await signals.post_save.send_async(self.__class__, document=self, created=created, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
 
         self._clear_changed_fields()
         self._created = False
@@ -707,14 +707,14 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             will force an fsync on the primary server.
         """
         signal_kwargs = signal_kwargs or {}
-        signals.pre_delete.send(self.__class__, document=self, **signal_kwargs)
+        await signals.pre_delete.send_async(self.__class__, document=self, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
 
         try:
             await self._qs.filter(**self._object_key).delete(write_concern=write_concern, _from_doc_delete=True)
         except pymongo.errors.OperationFailure as err:
             message = f"Could not delete document ({err.args})"
             raise OperationError(message)
-        signals.post_delete.send(self.__class__, document=self, **signal_kwargs)
+        await signals.post_delete.send_async(self.__class__, document=self, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
 
     async def switch_db(self, db_alias, keep_created=True):
         """

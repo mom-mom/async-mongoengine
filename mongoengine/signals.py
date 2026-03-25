@@ -1,3 +1,6 @@
+import functools
+import inspect
+
 __all__ = (
     "pre_init",
     "post_init",
@@ -34,8 +37,22 @@ except ImportError:
             raise RuntimeError("signalling support is unavailable because the blinker library is not installed.")
 
         send = lambda *a, **kw: None  # noqa
+
+        async def send_async(self, *a, **kw):
+            return None
+
         connect = disconnect = has_receivers_for = receivers_for = temporarily_connected_to = _fail
         del _fail
+
+
+def _wrap_sync(func):
+    """Wrap a sync function as an async function for send_async compatibility."""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 # the namespace for code signals.  If you are not mongoengine code, do

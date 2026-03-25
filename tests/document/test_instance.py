@@ -2384,7 +2384,6 @@ class TestDocumentInstance(MongoDBTestCase):
         await author.delete()
         assert await BlogPost.objects.count() == 0
 
-    @pytest.mark.skip(reason="blinker does not support async signal handlers; auto-dereference removed")
     async def test_reverse_delete_rule_cascade_triggers_pre_delete_signal(self):
         """Ensure the pre_delete signal is triggered upon a cascading
         deletion setup a blog post with content, an author and editor
@@ -2402,8 +2401,9 @@ class TestDocumentInstance(MongoDBTestCase):
 
             @classmethod
             async def pre_delete(cls, sender, document, **kwargs):
-                # decrement the docs-to-review count
-                await document.editor.update(dec__review_queue=1)
+                # decrement the docs-to-review count (no auto-dereference)
+                editor = await Editor.objects.get(pk=document.editor.id)
+                await editor.update(dec__review_queue=1)
 
         signals.pre_delete.connect(BlogPost.pre_delete, sender=BlogPost)
 

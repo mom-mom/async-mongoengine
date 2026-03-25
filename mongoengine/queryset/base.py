@@ -358,7 +358,7 @@ class BaseQuerySet:
         for doc in docs:
             await _generate_async_fields(doc)
 
-        signals.pre_bulk_insert.send(self._document, documents=docs, **signal_kwargs)
+        await signals.pre_bulk_insert.send_async(self._document, documents=docs, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
 
         raw = [doc.to_mongo() for doc in docs]
 
@@ -391,12 +391,12 @@ class BaseQuerySet:
             doc.pk = doc_id
 
         if not load_bulk:
-            signals.post_bulk_insert.send(self._document, documents=docs, loaded=False, **signal_kwargs)
+            await signals.post_bulk_insert.send_async(self._document, documents=docs, loaded=False, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
             return ids[0] if return_one else ids
 
         documents = await self.in_bulk(ids)
         results = [documents.get(obj_id) for obj_id in ids]
-        signals.post_bulk_insert.send(self._document, documents=results, loaded=True, **signal_kwargs)
+        await signals.post_bulk_insert.send_async(self._document, documents=results, loaded=True, _sync_wrapper=signals._wrap_sync, **signal_kwargs)
         return results[0] if return_one else results
 
     async def count(self, with_limit_and_skip=False):
