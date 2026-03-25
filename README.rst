@@ -1,82 +1,62 @@
-===========
-MongoEngine
-===========
-:Info: MongoEngine is an ORM-like layer on top of PyMongo.
-:Repository: https://github.com/MongoEngine/mongoengine
-:Author: Harry Marr (http://github.com/hmarr)
-:Maintainer: Bastien Gerard (http://github.com/bagerard)
+==================
+async-mongoengine
+==================
 
-.. image:: https://github.com/MongoEngine/mongoengine/actions/workflows/github-actions.yml/badge.svg?branch=master
-  :target: https://github.com/MongoEngine/mongoengine/actions
+.. warning::
 
-.. image:: https://coveralls.io/repos/github/MongoEngine/mongoengine/badge.svg?branch=master
-  :target: https://coveralls.io/github/MongoEngine/mongoengine?branch=master
+   This project is a fork of `MongoEngine <https://github.com/MongoEngine/mongoengine>`_
+   with native PyMongo async support (``AsyncMongoClient``). It does **not** use Motor.
 
-.. image:: https://img.shields.io/badge/code%20style-black-000000.svg
-  :target: https://github.com/ambv/black
+   **Important limitations:**
 
-.. image:: https://pepy.tech/badge/mongoengine/month
-  :target: https://pepy.tech/project/mongoengine
+   - Requires **Python 3.13+** and **MongoDB 7.0+**
+   - ``FileField`` and ``ImageField`` (GridFS) are **not supported**
+   - Auto-dereference for ``ReferenceField`` is **not supported**
 
-.. image:: https://img.shields.io/pypi/v/mongoengine.svg
-  :target: https://pypi.python.org/pypi/mongoengine
+   This project was written with the assistance of Claude (Anthropic). While it is
+   publicly available, it was primarily built for internal use. **No guarantees are
+   made regarding stability, backward compatibility, or long-term maintenance.**
 
-
-.. image:: https://readthedocs.org/projects/mongoengine-odm/badge/?version=latest
-  :target: https://readthedocs.org/projects/mongoengine-odm/builds/
+:Info: async-mongoengine is an async ORM-like layer on top of PyMongo.
+:Based on: `MongoEngine <https://github.com/MongoEngine/mongoengine>`_ by Harry Marr and Bastien Gerard
 
 About
 =====
-MongoEngine is a Python Object-Document Mapper for working with MongoDB.
-Documentation is available at https://mongoengine-odm.readthedocs.io - there
-is currently a `tutorial <https://mongoengine-odm.readthedocs.io/tutorial.html>`_,
-a `user guide <https://mongoengine-odm.readthedocs.io/guide/index.html>`_, and
-an `API reference <https://mongoengine-odm.readthedocs.io/apireference.html>`_.
+async-mongoengine is a Python Object-Document Mapper for working with MongoDB
+using native async/await. It is based on MongoEngine and uses PyMongo's built-in
+``AsyncMongoClient`` — no Motor dependency required.
 
-Supported MongoDB Versions
-==========================
-MongoEngine is currently tested against MongoDB v4.4, v5.0, v6.0, v7.0 and
-v8.0. Future versions should be supported as well, but aren't actively tested
-at the moment. Make sure to open an issue or submit a pull request if you
-experience any problems with a more recent MongoDB versions.
+Supported Versions
+==================
+- **Python**: 3.13+
+- **MongoDB**: 7.0+
+- **PyMongo**: 4.10+
 
 Installation
 ============
 We recommend the use of `virtualenv <https://virtualenv.pypa.io/>`_ and of
-`pip <https://pip.pypa.io/>`_. You can then use ``python -m pip install -U mongoengine``.
-You may also have `setuptools <http://peak.telecommunity.com/DevCenter/setuptools>`_
-and thus you can use ``easy_install -U mongoengine``. Another option is
-`pipenv <https://docs.pipenv.org/>`_. You can then use ``pipenv install mongoengine``
-to both create the virtual environment and install the package. Otherwise, you can
-download the source from `GitHub <https://github.com/MongoEngine/mongoengine>`_ and
-run ``python setup.py install``.
+`pip <https://pip.pypa.io/>`_.
 
-The support for Python2 was dropped with MongoEngine 0.20.0
+.. code-block:: shell
+
+    python -m pip install -U async-mongoengine
 
 Dependencies
 ============
-All of the dependencies can easily be installed via `python -m pip <https://pip.pypa.io/>`_.
-At the very least, you'll need these two packages to use MongoEngine:
+- pymongo>=4.10
 
-- pymongo>=3.12
+Optional:
 
-If you utilize a ``DateTimeField``, you might also use a more flexible date parser:
-
-- dateutil>=2.1.0
-
-If you need to use an ``ImageField`` or ``ImageGridFsProxy``:
-
-- Pillow>=7.0.0
-
-If you need to use signals:
-
-- blinker>=1.3
+- dateutil>=2.1.0 (for flexible ``DateTimeField`` parsing)
+- blinker>=1.3 (for signals support)
 
 Examples
 ========
-Some simple examples of what MongoEngine code looks like:
+Some simple examples of what async-mongoengine code looks like:
 
 .. code :: python
+
+    import asyncio
     import datetime
     from mongoengine import *
 
@@ -94,62 +74,46 @@ Some simple examples of what MongoEngine code looks like:
     class LinkPost(BlogPost):
         url = StringField(required=True)
 
-    # Create a text-based post
-    >>> post1 = TextPost(title='Using MongoEngine', content='See the tutorial')
-    >>> post1.tags = ['mongodb', 'mongoengine']
-    >>> post1.save()
+    async def main():
+        # Create a text-based post
+        post1 = TextPost(title='Using async-mongoengine', content='See the tutorial')
+        post1.tags = ['mongodb', 'mongoengine']
+        await post1.save()
 
-    # Create a link-based post
-    >>> post2 = LinkPost(title='MongoEngine Docs', url='hmarr.com/mongoengine')
-    >>> post2.tags = ['mongoengine', 'documentation']
-    >>> post2.save()
+        # Create a link-based post
+        post2 = LinkPost(title='async-mongoengine Docs', url='https://github.com/mom-mom/async-mongoengine')
+        post2.tags = ['mongoengine', 'documentation']
+        await post2.save()
 
-    # Iterate over all posts using the BlogPost superclass
-    >>> for post in BlogPost.objects:
-    ...     print('===', post.title, '===')
-    ...     if isinstance(post, TextPost):
-    ...         print(post.content)
-    ...     elif isinstance(post, LinkPost):
-    ...         print('Link:', post.url)
-    ...
+        # Iterate over all posts using the BlogPost superclass
+        async for post in BlogPost.objects:
+            print('===', post.title, '===')
+            if isinstance(post, TextPost):
+                print(post.content)
+            elif isinstance(post, LinkPost):
+                print('Link:', post.url)
 
-    # Count all blog posts and its subtypes
-    >>> BlogPost.objects.count()
-    2
-    >>> TextPost.objects.count()
-    1
-    >>> LinkPost.objects.count()
-    1
+        # Count all blog posts and its subtypes
+        print(await BlogPost.objects.count())   # 2
+        print(await TextPost.objects.count())   # 1
+        print(await LinkPost.objects.count())   # 1
 
-    # Count tagged posts
-    >>> BlogPost.objects(tags='mongoengine').count()
-    2
-    >>> BlogPost.objects(tags='mongodb').count()
-    1
+        # Count tagged posts
+        print(await BlogPost.objects(tags='mongoengine').count())  # 2
+        print(await BlogPost.objects(tags='mongodb').count())      # 1
+
+    asyncio.run(main())
 
 Tests
 =====
 To run the test suite, ensure you are running a local instance of MongoDB on
-the standard port and have ``pytest`` installed. Then, run ``pytest tests/``.
-
-To run the test suite on every supported Python and PyMongo version, you can
-use ``tox``. You'll need to make sure you have each supported Python version
-installed in your environment and then:
+the standard port and have ``pytest`` and ``pytest-asyncio`` installed. Then:
 
 .. code-block:: shell
 
-    # Install tox
-    $ python -m pip install tox
-    # Run the test suites
-    $ tox
+    pytest tests/
 
-Community
-=========
-- `MongoEngine Users mailing list
-  <http://groups.google.com/group/mongoengine-users>`_
-- `MongoEngine Developers mailing list
-  <http://groups.google.com/group/mongoengine-dev>`_
-
-Contributing
-============
-We welcome contributions! See the `Contribution guidelines <https://github.com/MongoEngine/mongoengine/blob/master/CONTRIBUTING.rst>`_
+Credits
+=======
+This project is based on `MongoEngine <https://github.com/MongoEngine/mongoengine>`_,
+originally created by Harry Marr and maintained by Bastien Gerard.
