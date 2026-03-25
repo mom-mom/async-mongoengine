@@ -9,19 +9,18 @@ See [docs/async/README.md](docs/async/README.md) for full API migration referenc
 
 ## Commands
 
-```shell
-# Python runtime (always use .venv)
-.venv/bin/python
+- If `uv run` fails with missing packages, run `uv sync --group dev` first.
 
+```shell
 # Run tests
-.venv/bin/python -m pytest tests/
+uv run pytest tests/
 
 # Run specific test
-.venv/bin/python -m pytest tests/path/to/test.py -k "test_name"
+uv run pytest tests/path/to/test.py -k "test_name"
 
 # Lint
-.venv/bin/python -m ruff check .
-.venv/bin/python -m ruff format .
+uv run ruff check .
+uv run ruff format .
 
 # Sync dependencies (after changing pyproject.toml)
 uv sync --group dev
