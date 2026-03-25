@@ -1,3 +1,5 @@
+from typing import Any, Self
+
 __all__ = ("QueryFieldList",)
 
 
@@ -7,7 +9,13 @@ class QueryFieldList:
     ONLY = 1
     EXCLUDE = 0
 
-    def __init__(self, fields=None, value=ONLY, always_include=None, _only_called=False):
+    def __init__(
+        self,
+        fields: set[str] | list[str] | None = None,
+        value: int | dict[str, Any] = ONLY,
+        always_include: set[str] | list[str] | None = None,
+        _only_called: bool = False,
+    ) -> None:
         """The QueryFieldList builder
 
         :param fields: A list of fields used in `.only()` or `.exclude()`
@@ -16,14 +24,14 @@ class QueryFieldList:
         :param _only_called: Has `.only()` been called?  If so its a set of fields
            otherwise it performs a union.
         """
-        self.value = value
-        self.fields = set(fields or [])
-        self.always_include = set(always_include or [])
-        self._id = None
-        self._only_called = _only_called
-        self.slice = {}
+        self.value: int | dict[str, Any] = value
+        self.fields: set[str] = set(fields or [])
+        self.always_include: set[str] = set(always_include or [])
+        self._id: int | None = None
+        self._only_called: bool = _only_called
+        self.slice: dict[str, Any] = {}
 
-    def __add__(self, f):
+    def __add__(self, f: Self) -> Self:
         if isinstance(f.value, dict):
             for field in f.fields:
                 self.slice[field] = f.value
@@ -64,10 +72,10 @@ class QueryFieldList:
             self._only_called = True
         return self
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.fields)
 
-    def as_dict(self):
+    def as_dict(self) -> dict[str, Any]:
         field_list = {field: self.value for field in self.fields}
         if self.slice:
             field_list.update(self.slice)
@@ -75,12 +83,12 @@ class QueryFieldList:
             field_list["_id"] = self._id
         return field_list
 
-    def reset(self):
+    def reset(self) -> None:
         self.fields = set()
         self.slice = {}
         self.value = self.ONLY
 
-    def _clean_slice(self):
+    def _clean_slice(self) -> None:
         if self.slice:
             for field in set(self.slice.keys()) - self.fields:
                 del self.slice[field]

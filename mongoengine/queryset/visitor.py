@@ -1,5 +1,6 @@
 import copy
 import warnings
+from typing import Any
 
 from mongoengine.errors import InvalidQueryError
 from mongoengine.queryset import transform
@@ -7,7 +8,7 @@ from mongoengine.queryset import transform
 __all__ = ("Q", "QNode")
 
 
-def warn_empty_is_deprecated():
+def warn_empty_is_deprecated() -> None:
     msg = "'empty' property is deprecated in favour of using 'not bool(filter)'"
     warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
@@ -15,11 +16,11 @@ def warn_empty_is_deprecated():
 class QNodeVisitor:
     """Base visitor class for visiting Q-object nodes in a query tree."""
 
-    def visit_combination(self, combination):
+    def visit_combination(self, combination: "QCombination") -> "QNode":
         """Called by QCombination objects."""
         return combination
 
-    def visit_query(self, query):
+    def visit_query(self, query: "Q") -> "QNode":
         """Called by (New)Q objects."""
         return query
 
@@ -33,7 +34,7 @@ class SimplificationVisitor(QNodeVisitor):
     into a single Q-object.
     """
 
-    def visit_combination(self, combination):
+    def visit_combination(self, combination: "QCombination") -> "QNode":
         if combination.operation == combination.AND:
             # The simplification only applies to 'simple' queries
             if all(isinstance(node, Q) for node in combination.children):
@@ -45,10 +46,10 @@ class SimplificationVisitor(QNodeVisitor):
                     pass
         return combination
 
-    def _query_conjunction(self, queries):
+    def _query_conjunction(self, queries: list[dict[str, Any]]) -> dict[str, Any]:
         """Merges query dicts - effectively &ing them together."""
-        query_ops = set()
-        combined_query = {}
+        query_ops: set[str] = set()
+        combined_query: dict[str, Any] = {}
         for query in queries:
             ops = set(query.keys())
             # Make sure that the same operation isn't applied more than once
@@ -67,34 +68,34 @@ class QueryCompilerVisitor(QNodeVisitor):
     dictionary.
     """
 
-    def __init__(self, document):
-        self.document = document
+    def __init__(self, document: Any) -> None:
+        self.document: Any = document
 
-    def visit_combination(self, combination):
+    def visit_combination(self, combination: "QCombination") -> dict[str, Any]:
         operator = "$and"
         if combination.operation == combination.OR:
             operator = "$or"
         return {operator: combination.children}
 
-    def visit_query(self, query):
+    def visit_query(self, query: "Q") -> dict[str, Any]:
         return transform.query(self.document, **query.query)
 
 
 class QNode:
     """Base class for nodes in query trees."""
 
-    AND = 0
-    OR = 1
+    AND: int = 0
+    OR: int = 1
 
-    def to_query(self, document):
+    def to_query(self, document: Any) -> dict[str, Any]:
         query = self.accept(SimplificationVisitor())
         query = query.accept(QueryCompilerVisitor(document))
         return query
 
-    def accept(self, visitor):
+    def accept(self, visitor: QNodeVisitor) -> Any:
         raise NotImplementedError
 
-    def _combine(self, other, operation):
+    def _combine(self, other: "QNode", operation: int) -> "QNode":
         """Combine this node with another node into a QCombination
         object.
         """
@@ -109,14 +110,14 @@ class QNode:
         return QCombination(operation, [self, other])
 
     @property
-    def empty(self):
+    def empty(self) -> bool:
         warn_empty_is_deprecated()
         return False
 
-    def __or__(self, other):
+    def __or__(self, other: "QNode") -> "QNode":
         return self._combine(other, self.OR)
 
-    def __and__(self, other):
+    def __and__(self, other: "QNode") -> "QNode":
         return self._combine(other, self.AND)
 
 
@@ -125,9 +126,9 @@ class QCombination(QNode):
     logical operator.
     """
 
-    def __init__(self, operation, children):
-        self.operation = operation
-        self.children = []
+    def __init__(self, operation: int, children: list["QNode"]) -> None:
+        self.operation: int = operation
+        self.children: list[QNode] = []
         for node in children:
             # If the child is a combination of the same type, we can merge its
             # children directly into this combinations children
@@ -136,14 +137,14 @@ class QCombination(QNode):
             else:
                 self.children.append(node)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         op = " & " if self.operation is self.AND else " | "
         return f"({op.join([repr(node) for node in self.children])})"
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.children)
 
-    def accept(self, visitor):
+    def accept(self, visitor: QNodeVisitor) -> Any:
         for i in range(len(self.children)):
             if isinstance(self.children[i], QNode):
                 self.children[i] = self.children[i].accept(visitor)
@@ -151,11 +152,11 @@ class QCombination(QNode):
         return visitor.visit_combination(self)
 
     @property
-    def empty(self):
+    def empty(self) -> bool:
         warn_empty_is_deprecated()
         return not bool(self.children)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         return (
             self.__class__ == other.__class__ and self.operation == other.operation and self.children == other.children
         )
@@ -166,22 +167,22 @@ class Q(QNode):
     query structures.
     """
 
-    def __init__(self, **query):
-        self.query = query
+    def __init__(self, **query: Any) -> None:
+        self.query: dict[str, Any] = query
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Q(**{repr(self.query)})"
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.query)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         return self.__class__ == other.__class__ and self.query == other.query
 
-    def accept(self, visitor):
+    def accept(self, visitor: QNodeVisitor) -> Any:
         return visitor.visit_query(self)
 
     @property
-    def empty(self):
+    def empty(self) -> bool:
         warn_empty_is_deprecated()
         return not bool(self.query)
