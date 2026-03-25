@@ -1381,3 +1381,53 @@ class TestDereference(MongoDBTestCase):
         bulk = await Group.objects.select_related().in_bulk([group.id])
         assert isinstance(bulk[group.id].owner, User)
         assert bulk[group.id].owner.name == "Alice"
+
+    async def test_select_related_with_to_list_and_no_cache(self):
+        """Ensure select_related works with to_list() and no_cache()."""
+
+        class User(Document):
+            name = StringField()
+
+        class Group(Document):
+            owner = ReferenceField(User)
+
+        await User.drop_collection()
+        await Group.drop_collection()
+
+        user = await User(name="Bob").save()
+        await Group(owner=user).save()
+
+        # to_list() without select_related
+        groups = await Group.objects.to_list()
+        assert len(groups) == 1
+
+        # __await__ (syntactic sugar for to_list)
+        groups = await Group.objects.select_related()
+        assert len(groups) == 1
+        assert isinstance(groups[0].owner, User)
+
+        # no_cache() + select_related
+        async for g in Group.objects.no_cache().select_related():
+            assert isinstance(g.owner, User)
+            assert g.owner.name == "Bob"
+
+    async def test_select_related_with_modify(self):
+        """Ensure select_related works with modify(new=True)."""
+
+        class User(Document):
+            name = StringField()
+
+        class Group(Document):
+            title = StringField()
+            owner = ReferenceField(User)
+
+        await User.drop_collection()
+        await Group.drop_collection()
+
+        user = await User(name="Carol").save()
+        await Group(title="old", owner=user).save()
+
+        result = await Group.objects.select_related().modify(new=True, set__title="new")
+        assert result.title == "new"
+        assert isinstance(result.owner, User)
+        assert result.owner.name == "Carol"

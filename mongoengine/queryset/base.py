@@ -301,7 +301,7 @@ class BaseQuerySet:
             # Check if there is another match
             await queryset.__anext__()
         except StopAsyncIteration:
-            if self._select_related_depth > 0 and not self._as_pymongo:
+            if self._select_related_depth > 0 and not self._as_pymongo and not self._scalar:
                 await self._dereference([result], max_depth=self._select_related_depth)
             return result
 
@@ -778,10 +778,8 @@ class BaseQuerySet:
 
         if result is not None:
             result = self._document._from_son(result)
-            if self._select_related_depth > 0:
-                await self._dereference(
-                    [result], max_depth=self._select_related_depth
-                )
+            if self._select_related_depth > 0 and not self._scalar:
+                await self._dereference([result], max_depth=self._select_related_depth)
 
         return result
 
@@ -819,7 +817,7 @@ class BaseQuerySet:
             async for doc in docs:
                 doc_map[doc["_id"]] = self._document._from_son(doc)
 
-        if self._select_related_depth > 0 and not self._as_pymongo and doc_map:
+        if self._select_related_depth > 0 and not self._as_pymongo and not self._scalar and doc_map:
             await self._dereference(
                 list(doc_map.values()),
                 max_depth=self._select_related_depth,

@@ -45,7 +45,7 @@ class QuerySet(BaseQuerySet):
         await self._ensure_collection()
         self._iter = True
 
-        if self._select_related_depth > 0 and not self._as_pymongo:
+        if self._select_related_depth > 0 and not self._as_pymongo and not self._scalar:
             # Populate full cache for bulk dereference (only on first iteration)
             if self._has_more:
                 while self._has_more:
@@ -155,7 +155,7 @@ class QuerySetNoCache(BaseQuerySet):
             queryset = self.clone()
         queryset._iter = True
 
-        if queryset._select_related_depth > 0 and not queryset._as_pymongo:
+        if queryset._select_related_depth > 0 and not queryset._as_pymongo and not queryset._scalar:
             docs = []
             async for doc in queryset._get_async_cursor():
                 if queryset._none or queryset._empty:
