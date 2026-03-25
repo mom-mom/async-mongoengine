@@ -436,3 +436,47 @@ class TestQuerysetAggregate(MongoDBTestCase):
             pass
         with pytest.raises(RuntimeError, match="already been consumed"):
             await agg
+
+        # anext then await
+        agg = Person.objects.aggregate(pipeline)
+        await anext(agg)
+        with pytest.raises(RuntimeError, match="already been consumed"):
+            await agg
+
+        # await then anext
+        agg = Person.objects.aggregate(pipeline)
+        await agg
+        with pytest.raises(RuntimeError, match="already been consumed"):
+            await anext(agg)
+
+    async def test_aggregate_anext(self):
+        """Test consuming results one-by-one via anext()."""
+
+        class Person(Document):
+            name = StringField()
+            age = IntField()
+
+        await Person.drop_collection()
+
+        p1 = Person(name="Alice", age=25)
+        p2 = Person(name="Bob", age=30)
+        await Person.objects.insert([p1, p2])
+
+        pipeline = [{"$project": {"name": 1, "_id": 0}}, {"$sort": {"name": 1}}]
+
+        # Consume one by one
+        agg = Person.objects.aggregate(pipeline)
+        first = await anext(agg)
+        assert first == {"name": "Alice"}
+        second = await anext(agg)
+        assert second == {"name": "Bob"}
+
+        # StopAsyncIteration when exhausted
+        with pytest.raises(StopAsyncIteration):
+            await anext(agg)
+
+        # Default value when exhausted
+        agg = Person.objects.aggregate(pipeline)
+        await anext(agg)
+        await anext(agg)
+        assert await anext(agg, None) is None

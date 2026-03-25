@@ -283,8 +283,8 @@ for doc in results:
 ### 3.7 `aggregate()` — returns `AggregationResult`
 
 `aggregate()` is no longer a coroutine. It returns an `AggregationResult` that
-supports `await` (list), `async for` (streaming), `.to_list()`, `.get_cursor()`,
-and `.typed(T)` for type narrowing.
+supports `await` (list), `async for` (streaming), `anext()` (one-by-one),
+`.to_list()`, `.get_cursor()`, and `.typed(T)` for type narrowing.
 
 ```python
 # Before (mongoengine — sync)
@@ -297,6 +297,10 @@ results = await MyDoc.objects.aggregate(pipeline)
 # After — async for streams documents
 async for doc in MyDoc.objects.aggregate(pipeline):
     await process(doc)
+
+# After — one-by-one via anext()
+result = MyDoc.objects.aggregate(pipeline)
+first = await anext(result)
 
 # After — explicit to_list() / get_cursor()
 results = await MyDoc.objects.aggregate(pipeline).to_list()

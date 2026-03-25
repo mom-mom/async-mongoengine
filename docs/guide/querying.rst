@@ -470,6 +470,10 @@ that supports multiple consumption patterns::
         async for doc in Person.objects().aggregate(pipeline):
             print(doc)
 
+        # one-by-one via anext()
+        result = Person.objects().aggregate(pipeline)
+        first = await anext(result)
+
         # explicit to_list() / get_cursor()
         results = await Person.objects().aggregate(pipeline).to_list()
         cursor = await Person.objects().aggregate(pipeline).get_cursor()

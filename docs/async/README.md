@@ -294,6 +294,11 @@ results = await qs.aggregate(pipeline)
 async for doc in qs.aggregate(pipeline):
     ...
 
+# one-by-one via anext()
+result = qs.aggregate(pipeline)
+first = await anext(result)
+second = await anext(result, None)  # default on exhaustion
+
 # explicit to_list()
 results = await qs.aggregate(pipeline).to_list()
 
