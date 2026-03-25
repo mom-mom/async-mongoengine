@@ -110,12 +110,20 @@ async def main():
 asyncio.run(main())
 ```
 
-## Tests
-
-Ensure you are running a local instance of MongoDB on the standard port and have `pytest` and `pytest-asyncio` installed.
+## Development
 
 ```shell
-pytest tests/
+# Clone and set up
+git clone https://github.com/mom-mom/async-mongoengine.git
+cd async-mongoengine
+uv sync --group dev
+
+# Run tests (requires local MongoDB)
+uv run pytest tests/
+
+# Lint
+uv run ruff check .
+uv run ruff format .
 ```
 
 ## Credits

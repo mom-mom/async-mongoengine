@@ -22,4 +22,7 @@ See [docs/async/README.md](docs/async/README.md) for full API migration referenc
 # Lint
 .venv/bin/python -m ruff check .
 .venv/bin/python -m ruff format .
+
+# Sync dependencies (after changing pyproject.toml)
+uv sync --group dev
 ```

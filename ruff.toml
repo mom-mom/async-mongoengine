@@ -1,9 +1,0 @@
-target-version = "py313"
-line-length = 120
-
-[lint]
-select = ["E", "F", "I", "UP", "W"]
-ignore = ["E501", "F403", "F405"]
-
-[lint.isort]
-known-first-party = ["mongoengine", "tests"]
