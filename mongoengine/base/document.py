@@ -318,11 +318,43 @@ class BaseDocument:
 
         signals.post_init.send(cls, document=self)
 
+    # Per-class precomputed init dispatch: set of field names that need
+    # custom __set__ (not BaseField.__set__ or ComplexBaseField.__set__).
+    # ComplexBaseField.__set__ only does EnumField conversion, so for
+    # fields without EnumField inner type, we skip __set__ entirely.
+    _init_needs_custom_set: frozenset[str] | None = None
+
+    @classmethod
+    def _build_init_dispatch(cls) -> frozenset[str]:
+        """Identify fields that truly need __set__ during init."""
+        _BaseField_set = BaseField.__set__
+        _ComplexField_set = ComplexBaseField.__set__
+        needs_set: set[str] = set()
+        for field_name, field in cls._fields.items():
+            field_set = type(field).__set__
+            if field_set is _BaseField_set:
+                continue  # plain BaseField — direct data write
+            if field_set is _ComplexField_set:
+                # ComplexBaseField only does EnumField conversion
+                # Skip __set__ if inner field is not EnumField
+                if field.field is not None:
+                    EnumField = ComplexBaseField._set_enum_field_type
+                    if EnumField is None:
+                        EnumField = _import_class("EnumField")
+                        ComplexBaseField._set_enum_field_type = EnumField
+                    if isinstance(field.field, EnumField):
+                        needs_set.add(field_name)
+                # else: no inner field or not EnumField — skip __set__
+                continue
+            # Other custom __set__ (e.g. BinaryField) — must delegate
+            needs_set.add(field_name)
+        return frozenset(needs_set)
+
     def _init_fast(self, values: dict[str, Any], _created: bool) -> None:
         """Fast __init__: writes directly to _data, bypasses __setattr__.
 
-        Delegates to field.__set__ only for fields with custom descriptors
-        (e.g. BinaryField, EnumField, ComplexBaseField).
+        Delegates to field.__set__ only for fields that truly need custom
+        descriptor logic (e.g. BinaryField, EnumField wrapping).
         """
         self._initialised = False
         self._created = True
@@ -338,14 +370,15 @@ class BaseDocument:
 
         data: dict[str, Any] = {}
         self._data = data
-        self._dynamic_fields = SON()
+        # Use plain dict for non-dynamic documents (avoids SON's O(n)
+        # list-backed key tracking overhead).
+        self._dynamic_fields = SON() if cls._dynamic else {}
 
-        EmbeddedDocumentCls = BaseDocument._init_embedded_doc_type
-        if EmbeddedDocumentCls is None:
-            EmbeddedDocumentCls = _import_class("EmbeddedDocument")
-            BaseDocument._init_embedded_doc_type = EmbeddedDocumentCls
-
-        _BaseField_set = BaseField.__set__
+        # Build per-class init dispatch on first use
+        needs_custom = cls.__dict__.get("_init_needs_custom_set")
+        if needs_custom is None:
+            needs_custom = cls._build_init_dispatch()
+            cls._init_needs_custom_set = needs_custom
 
         # Populate defaults for fields not in values
         for field_name, field in fields.items():
@@ -355,7 +388,7 @@ class BaseDocument:
             if default is not None:
                 if callable(default):
                     default = default()
-            if type(field).__set__ is not _BaseField_set:
+            if field_name in needs_custom:
                 field.__set__(self, default)
             else:
                 data[field_name] = default
@@ -369,7 +402,7 @@ class BaseDocument:
             if field:
                 if value is not None:
                     value = field.to_python(value)
-                if type(field).__set__ is not _BaseField_set:
+                if key in needs_custom:
                     field.__set__(self, value)
                 else:
                     if value is None and not field.null and field.default is not None:
@@ -383,6 +416,11 @@ class BaseDocument:
                 data[key] = value
 
         # Wire up _instance on embedded documents
+        EmbeddedDocumentCls = BaseDocument._init_embedded_doc_type
+        if EmbeddedDocumentCls is None:
+            EmbeddedDocumentCls = _import_class("EmbeddedDocument")
+            BaseDocument._init_embedded_doc_type = EmbeddedDocumentCls
+
         proxy = weakref.proxy(self)
         for value in data.values():
             if isinstance(value, EmbeddedDocumentCls):
@@ -582,14 +620,41 @@ class BaseDocument:
             cache[cls] = sig
         return sig
 
+    # Per-class precomputed to_mongo dispatch table.
+    # Each entry is (field_name, field, db_field, accepts_db, accepts_fields,
+    #                 is_auto_gen, is_null).
+    # Built lazily on first to_mongo() call per class.
+    _to_mongo_dispatch: tuple[tuple[str, Any, str, bool, bool, bool, bool], ...] | None = None
+
+    @classmethod
+    def _build_to_mongo_dispatch(cls) -> tuple[tuple[str, Any, str, bool, bool, bool, bool], ...]:
+        """Pre-compute per-field dispatch info for to_mongo."""
+        _get_sig = BaseDocument._get_to_mongo_sig
+        dispatch = []
+        for field_name in cls._fields_ordered:
+            field = cls._fields.get(field_name)
+            if field is None:
+                continue
+            accepts_db, accepts_fields = _get_sig(field)
+            dispatch.append(
+                (
+                    field_name,
+                    field,
+                    field.db_field,
+                    accepts_db,
+                    accepts_fields,
+                    field._auto_gen,
+                    field.null,
+                )
+            )
+        return tuple(dispatch)
+
     def to_mongo(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """Return as dict data ready for use with MongoDB."""
         _data = self._data
-        _fields = self._fields
         _is_dynamic = self._dynamic
-        _dynamic_fields = self._dynamic_fields if _is_dynamic else None
-        _get_sig = BaseDocument._get_to_mongo_sig
-        allow_inheritance = self._meta.get("allow_inheritance")
+
+        cls = self.__class__
 
         # Build root_fields filter only when fields is provided
         if fields:
@@ -603,21 +668,25 @@ class BaseDocument:
         data: dict[str, Any] = _MongoDict(_id=None)
 
         # Only add _cls when inheritance is enabled
-        if allow_inheritance:
+        if self._meta.get("allow_inheritance"):
             data["_cls"] = self._class_name
 
-        for field_name in self._fields_ordered:
+        # Use precomputed dispatch table (built once per class).
+        # Check via __dict__ to avoid inheriting parent's cached table.
+        dispatch = cls.__dict__.get("_to_mongo_dispatch")
+        if dispatch is None:
+            dispatch = cls._build_to_mongo_dispatch()
+            cls._to_mongo_dispatch = dispatch
+
+        _data_get = _data.get
+
+        for field_name, field, db_field, accepts_db, accepts_fields, is_auto_gen, is_null in dispatch:
             if root_fields is not None and field_name not in root_fields:
                 continue
 
-            value = _data.get(field_name)
-            field = _fields.get(field_name)
-
-            if field is None and _is_dynamic:
-                field = _dynamic_fields.get(field_name)
+            value = _data_get(field_name)
 
             if value is not None:
-                accepts_db, accepts_fields = _get_sig(field)
                 if fields and accepts_fields:
                     # Build sub-fields for this embedded field
                     key = field_name + "."
@@ -634,18 +703,51 @@ class BaseDocument:
 
             # Handle self-generating fields.
             # Skip if generate() is a coroutine function (async).
-            if value is None and field._auto_gen:
+            if value is None and is_auto_gen:
                 import inspect
 
                 if not inspect.iscoroutinefunction(field.generate):
                     value = field.generate()
                     _data[field_name] = value
 
-            if value is not None or field.null:
+            if value is not None or is_null:
                 if use_db_field:
-                    data[field.db_field] = value
+                    data[db_field] = value
                 else:
                     data[field.name] = value
+
+        # Handle dynamic fields (not in the precomputed dispatch)
+        if _is_dynamic:
+            _dynamic_fields = self._dynamic_fields
+            _get_sig = BaseDocument._get_to_mongo_sig
+            for field_name in self._fields_ordered:
+                if field_name in self._fields:
+                    continue  # already handled above
+                field = _dynamic_fields.get(field_name)
+                if field is None:
+                    continue
+                if root_fields is not None and field_name not in root_fields:
+                    continue
+                value = _data_get(field_name)
+                if value is not None:
+                    accepts_db, accepts_fields = _get_sig(field)
+                    if fields and accepts_fields:
+                        key = field_name + "."
+                        key_len = len(key)
+                        embedded_fields = [f[key_len:] for f in fields if f.startswith(key)]
+                        if accepts_db:
+                            value = field.to_mongo(value, use_db_field=use_db_field, fields=embedded_fields)
+                        else:
+                            value = field.to_mongo(value, fields=embedded_fields)
+                    elif accepts_db:
+                        value = field.to_mongo(value, use_db_field=use_db_field)
+                    else:
+                        value = field.to_mongo(value)
+                if value is not None or field.null:
+                    if use_db_field:
+                        data[field.db_field] = value
+                    else:
+                        data[field.name] = value
 
         return data
 
@@ -655,6 +757,38 @@ class BaseDocument:
     # Pre-computed list of (field_name, kind) for fields that may contain
     # embedded documents.  Built lazily on first _from_son call.
     _from_son_embedded_field_info: tuple[tuple[str, int], ...] | None = None
+
+    # Per-class precomputed validate dispatch table.
+    # Each entry is (field_name, field, is_embedded, is_required, is_auto_gen).
+    # Built lazily on first validate() call per class.
+    _validate_dispatch: tuple[tuple[str, Any, bool, bool, bool], ...] | None = None
+
+    @classmethod
+    def _build_validate_dispatch(cls) -> tuple[tuple[str, Any, bool, bool, bool], ...]:
+        """Pre-compute per-field dispatch info for validate."""
+        embedded_types = BaseDocument._validate_embedded_types
+        if embedded_types is None:
+            embedded_types = (
+                _import_class("EmbeddedDocumentField"),
+                _import_class("GenericEmbeddedDocumentField"),
+            )
+            BaseDocument._validate_embedded_types = embedded_types
+
+        dispatch = []
+        for name in cls._fields_ordered:
+            field = cls._fields.get(name)
+            if field is None:
+                continue
+            dispatch.append(
+                (
+                    name,
+                    field,
+                    isinstance(field, embedded_types),
+                    field.required,
+                    getattr(field, "_auto_gen", False),
+                )
+            )
+        return tuple(dispatch)
 
     def validate(self, clean: bool = True) -> None:
         """Ensure that all fields' values are valid and that required fields
@@ -671,25 +805,24 @@ class BaseDocument:
             except ValidationError as error:
                 errors[NON_FIELD_ERRORS] = error
 
-        # Cached import: resolve once, reuse across all validate() calls
-        embedded_types = BaseDocument._validate_embedded_types
-        if embedded_types is None:
-            embedded_types = (
-                _import_class("EmbeddedDocumentField"),
-                _import_class("GenericEmbeddedDocumentField"),
-            )
-            BaseDocument._validate_embedded_types = embedded_types
+        cls = self.__class__
 
-        # Inline iteration: avoid intermediate list allocation
-        _fields = self._fields
-        _dynamic_fields = self._dynamic_fields
+        # Use precomputed dispatch table (built once per class).
+        # Check via __dict__ to avoid inheriting parent's cached table.
+        dispatch = cls.__dict__.get("_validate_dispatch")
+        if dispatch is None:
+            dispatch = cls._build_validate_dispatch()
+            cls._validate_dispatch = dispatch
+
         _data = self._data
-        for name in self._fields_ordered:
-            field = _fields.get(name) or _dynamic_fields.get(name)
-            value = _data.get(name)
+        _data_get = _data.get
+
+        # Fast path for non-dynamic documents (most common)
+        for name, field, is_embedded, is_required, is_auto_gen in dispatch:
+            value = _data_get(name)
             if value is not None:
                 try:
-                    if isinstance(field, embedded_types):
+                    if is_embedded:
                         field._validate(value, clean=clean)
                     else:
                         field._validate(value)
@@ -697,8 +830,33 @@ class BaseDocument:
                     errors[field.name] = error.errors or error
                 except (ValueError, AttributeError, AssertionError) as error:
                     errors[field.name] = error
-            elif field.required and not getattr(field, "_auto_gen", False):
+            elif is_required and not is_auto_gen:
                 errors[field.name] = ValidationError("Field is required", field_name=field.name)
+
+        # Handle dynamic fields not in the precomputed dispatch
+        if self._dynamic:
+            # Cached import for embedded types
+            embedded_types = BaseDocument._validate_embedded_types
+            _dynamic_fields = self._dynamic_fields
+            for name in self._fields_ordered:
+                if name in self._fields:
+                    continue  # already handled
+                field = _dynamic_fields.get(name)
+                if field is None:
+                    continue
+                value = _data_get(name)
+                if value is not None:
+                    try:
+                        if isinstance(field, embedded_types):
+                            field._validate(value, clean=clean)
+                        else:
+                            field._validate(value)
+                    except ValidationError as error:
+                        errors[field.name] = error.errors or error
+                    except (ValueError, AttributeError, AssertionError) as error:
+                        errors[field.name] = error
+                elif field.required and not getattr(field, "_auto_gen", False):
+                    errors[field.name] = ValidationError("Field is required", field_name=field.name)
 
         if errors:
             pk = "None"
@@ -1087,11 +1245,14 @@ class BaseDocument:
 
         errors_dict: dict[str, Any] = {}
 
-        # Single pass: translate db_field → field_name and call to_python
+        # Single pass: translate db_field → field_name and call to_python.
+        # Note: PyMongo always returns string keys, so str(db_key) is
+        # skipped; the SON/dict from the driver already has str keys.
+        _reverse_get = reverse_map.get
+        _fields_get = fields.get
         for db_key, value in son.items():
-            db_key = str(db_key)
-            field_name = reverse_map.get(db_key, db_key)
-            field = fields.get(field_name)
+            field_name = _reverse_get(db_key, db_key)
+            field = _fields_get(field_name)
 
             if field is not None:
                 if value is not None:
@@ -1142,13 +1303,14 @@ class BaseDocument:
             BaseDocument._from_son_embedded_doc_type = EmbeddedDocument
 
         # Build the per-class embedded field info cache on first use.
-        embedded_field_info = cls._from_son_embedded_field_info
+        # Check via __dict__ to avoid inheriting parent's cached info.
+        embedded_field_info = cls.__dict__.get("_from_son_embedded_field_info")
         if embedded_field_info is None:
             embedded_field_info = _build_embedded_field_info(cls, EmbeddedDocument)
             cls._from_son_embedded_field_info = embedded_field_info
 
-        proxy = weakref.proxy(obj)
         if embedded_field_info:
+            proxy = weakref.proxy(obj)
             _from_son_set_instance_targeted(proxy, EmbeddedDocument, data, embedded_field_info)
         # If no embedded fields, skip _instance wiring entirely.
 

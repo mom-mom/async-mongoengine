@@ -1,4 +1,3 @@
-import operator
 import weakref
 from collections.abc import Callable, Iterable
 from typing import Any, NoReturn
@@ -421,29 +420,51 @@ class ComplexBaseField(BaseField):
                 val["_cls"] = cls.__name__
             return val
 
+        # Fast path: list/tuple with a sub-field — iterate directly
+        # instead of converting to dict, iterating, and sorting back.
+        if isinstance(value, (list, tuple)):
+            if self.field:
+                _safe_call = self.field._to_mongo_safe_call
+                return [_safe_call(item, use_db_field, fields) for item in value]
+            # No sub-field: process each element individually
+            result_list = []
+            for v in value:
+                if isinstance(v, Document):
+                    if v.pk is None:
+                        self.error("You can only reference documents once they have been saved to the database")
+                    meta = getattr(v, "_meta", {})
+                    if not meta.get("allow_inheritance"):
+                        result_list.append(GenericReferenceField().to_mongo(v))
+                    else:
+                        result_list.append(DBRef(v._get_collection_name(), v.pk))
+                elif hasattr(v, "to_mongo"):
+                    cls = v.__class__
+                    val = v.to_mongo(use_db_field, fields)
+                    if isinstance(v, (Document, EmbeddedDocument)):
+                        val["_cls"] = cls.__name__
+                    result_list.append(val)
+                else:
+                    result_list.append(self.to_mongo(v, use_db_field, fields))
+            return result_list
+
+        # Generic iterable (generator, set, deque, etc.) — convert to
+        # list, process, and return as list (not dict).
         is_list = False
         if not hasattr(value, "items"):
             try:
                 is_list = True
                 value = {k: v for k, v in enumerate(value)}
-            except TypeError:  # Not iterable return the value
+            except TypeError:
                 return value
 
         if self.field:
-            value_dict = {
-                key: self.field._to_mongo_safe_call(item, use_db_field, fields) for key, item in value.items()
-            }
+            value_dict = {key: self.field._to_mongo_safe_call(item, use_db_field, fields) for key, item in value.items()}
         else:
             value_dict = {}
             for k, v in value.items():
                 if isinstance(v, Document):
-                    # We need the id from the saved object to create the DBRef
                     if v.pk is None:
                         self.error("You can only reference documents once they have been saved to the database")
-
-                    # If it's a document that is not inheritable it won't have
-                    # any _cls data so make it a generic reference allows
-                    # us to dereference
                     meta = getattr(v, "_meta", {})
                     allow_inheritance = meta.get("allow_inheritance")
                     if not allow_inheritance:
@@ -454,14 +475,13 @@ class ComplexBaseField(BaseField):
                 elif hasattr(v, "to_mongo"):
                     cls = v.__class__
                     val = v.to_mongo(use_db_field, fields)
-                    # If it's a document that is not inherited add _cls
                     if isinstance(v, (Document, EmbeddedDocument)):
                         val["_cls"] = cls.__name__
                     value_dict[k] = val
                 else:
                     value_dict[k] = self.to_mongo(v, use_db_field, fields)
 
-        if is_list:  # Convert back to a list
+        if is_list:
             return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
 

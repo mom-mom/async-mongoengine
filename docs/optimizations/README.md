@@ -156,3 +156,5 @@ Why accepted or rejected. What was learned.
   `_from_son_set_instance` targeted field walk instead of recursive all-values walk (1.4-1.5x). Accepted.
 - [cached_imports_and_skip_display.md](attempts/cached_imports_and_skip_display.md) —
   Cache remaining `_import_class` calls + skip `__set_field_display` when no choices (8-13%). Accepted.
+- [precomputed_dispatch_and_init_bypass.md](attempts/precomputed_dispatch_and_init_bypass.md) —
+  Precomputed to_mongo/validate dispatch tables + __init__ ComplexBaseField bypass (1.1-1.5x). Accepted.
