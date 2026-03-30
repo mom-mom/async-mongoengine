@@ -90,21 +90,25 @@ no result files are committed or stored.
 
 ```
 benchmarks/
-  bench_baseline.py          # Comprehensive baseline (all core paths)
-  run_all.py                 # Runner: baseline + compare vs main via git
+  bench_baseline.py   # Pure-Python baseline (all core paths, no MongoDB)
+  bench_mongodb.py    # End-to-end with real MongoDB (save, find, update, aggregate)
+  run_all.py          # Runner: baseline + compare vs main via git
+                      #   --mongodb flag adds I/O benchmarks
 
 docs/optimizations/
-  README.md                  # This file
-  attempts/                  # One file per optimization attempt
-    <name>.md                # What was tried, results, accepted/rejected
+  README.md           # This file
+  attempts/           # One file per optimization attempt
+    <name>.md         # What was tried, results, accepted/rejected
 ```
 
 ## Benchmark Conventions
 
-- All benchmarks run **without a MongoDB instance** (pure Python paths).
-- Default parameters: `n=1000, repeat=5`.
+- `bench_baseline.py` runs **without MongoDB** (pure Python paths).
+  Default: `n=1000, repeat=5`.
+- `bench_mongodb.py` requires a **running MongoDB instance**.
+  Default: `n=100, repeat=3` (I/O-bound, smaller iterations).
 - Report **median** time and **best-of-N** speedup.
-- `gc.disable()` during timed loops, `gc.enable()` after.
+- `gc.disable()` during timed loops (baseline only), `gc.enable()` after.
 - Warm up before measuring (1 untimed call per operation).
 - Improvement threshold: **>10%** to be considered meaningful.
 
