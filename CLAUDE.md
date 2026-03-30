@@ -31,4 +31,13 @@ uv run pyright
 
 # Sync dependencies (after changing pyproject.toml)
 uv sync --group dev
+
+# Benchmarks (no MongoDB required)
+uv run python benchmarks/run_all.py          # run + compare current branch vs main (via git)
+uv run python benchmarks/run_all.py --no-compare  # current branch only
 ```
+
+## Performance Optimization
+
+See [docs/optimizations/README.md](docs/optimizations/README.md) for the
+optimization workflow, benchmark conventions, and a list of past attempts.
