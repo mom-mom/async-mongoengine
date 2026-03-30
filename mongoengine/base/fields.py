@@ -171,17 +171,31 @@ class BaseField:
         """Convert a Python type to a MongoDB-compatible type."""
         return self.to_python(value)
 
+    # Class-level cache: maps field class -> (accepts_use_db_field, accepts_fields)
+    _safe_call_sig_cache: dict[type, tuple[bool, bool]] = {}
+
     def _to_mongo_safe_call(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
-        """Helper method to call to_mongo with proper inputs."""
-        f_inputs = self.to_mongo.__code__.co_varnames
-        ex_vars: dict[str, Any] = {}
-        if "fields" in f_inputs:
-            ex_vars["fields"] = fields
+        """Helper method to call to_mongo with proper inputs.
 
-        if "use_db_field" in f_inputs:
-            ex_vars["use_db_field"] = use_db_field
+        Caches co_varnames introspection per field class to avoid
+        repeated code object inspection on every call.
+        """
+        cls = type(self)
+        cache = BaseField._safe_call_sig_cache
+        sig = cache.get(cls)
+        if sig is None:
+            f_inputs = self.to_mongo.__code__.co_varnames
+            sig = ("use_db_field" in f_inputs, "fields" in f_inputs)
+            cache[cls] = sig
+        accepts_db, accepts_fields = sig
 
-        return self.to_mongo(value, **ex_vars)
+        if accepts_fields:
+            if accepts_db:
+                return self.to_mongo(value, use_db_field=use_db_field, fields=fields)
+            return self.to_mongo(value, fields=fields)
+        elif accepts_db:
+            return self.to_mongo(value, use_db_field=use_db_field)
+        return self.to_mongo(value)
 
     def prepare_query_value(self, op: str, value: Any) -> Any:
         """Prepare a value that is being used in a query for PyMongo."""
@@ -265,6 +279,10 @@ class ComplexBaseField(BaseField):
     _to_python_base_doc_type: type | None = None
     _to_python_doc_type: type | None = None
 
+    # Cached import results for __set__ and __get__ (resolved once, reused).
+    _set_enum_field_type: type | None = None
+    _get_emb_doc_list_field_type: type | None = None
+
     def __init__(self, field: BaseField | None = None, **kwargs: Any) -> None:
         if field is not None and not isinstance(field, BaseField):
             raise TypeError(f"field argument must be a Field instance (e.g {self.__class__.__name__}(StringField()))")
@@ -274,12 +292,16 @@ class ComplexBaseField(BaseField):
     def __set__(self, instance: Any, value: Any) -> None:
         # Some fields e.g EnumField are converted upon __set__
         # So it is fair to mimic the same behavior when using e.g ListField(EnumField)
-        EnumField = _import_class("EnumField")
-        if self.field and isinstance(self.field, EnumField):
-            if isinstance(value, (list, tuple)):
-                value = [self.field.to_python(sub_val) for sub_val in value]
-            elif isinstance(value, dict):
-                value = {key: self.field.to_python(sub) for key, sub in value.items()}
+        if self.field:
+            EnumField = ComplexBaseField._set_enum_field_type
+            if EnumField is None:
+                EnumField = _import_class("EnumField")
+                ComplexBaseField._set_enum_field_type = EnumField
+            if isinstance(self.field, EnumField):
+                if isinstance(value, (list, tuple)):
+                    value = [self.field.to_python(sub_val) for sub_val in value]
+                elif isinstance(value, dict):
+                    value = {key: self.field.to_python(sub) for key, sub in value.items()}
 
         return super().__set__(instance, value)
 
@@ -289,12 +311,14 @@ class ComplexBaseField(BaseField):
             # Document class being used rather than a document object
             return self
 
-        EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
-
         value = super().__get__(instance, owner)
 
         # Convert lists / values so we can watch for any changes on them
         if isinstance(value, (list, tuple)):
+            EmbeddedDocumentListField = ComplexBaseField._get_emb_doc_list_field_type
+            if EmbeddedDocumentListField is None:
+                EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
+                ComplexBaseField._get_emb_doc_list_field_type = EmbeddedDocumentListField
             if issubclass(type(self), EmbeddedDocumentListField) and not isinstance(value, EmbeddedDocumentList):
                 value = EmbeddedDocumentList(value, instance, self.name)
             elif not isinstance(value, BaseList):

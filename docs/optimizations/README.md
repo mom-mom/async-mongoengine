@@ -154,3 +154,5 @@ Why accepted or rejected. What was learned.
   `_from_son` `object.__setattr__` + `to_python` direct list iteration (1.6-2x). Accepted.
 - [targeted_set_instance.md](attempts/targeted_set_instance.md) —
   `_from_son_set_instance` targeted field walk instead of recursive all-values walk (1.4-1.5x). Accepted.
+- [cached_imports_and_skip_display.md](attempts/cached_imports_and_skip_display.md) —
+  Cache remaining `_import_class` calls + skip `__set_field_display` when no choices (8-13%). Accepted.
