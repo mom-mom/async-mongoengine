@@ -165,11 +165,25 @@ def compare(current: dict[str, float], main_results: dict[str, float]) -> None:
     print()
 
 
+def run_mongodb(n: int, repeat: int) -> None:
+    """Run the MongoDB I/O benchmark if available."""
+    mongodb_bench = BENCH_DIR / "bench_mongodb.py"
+    if not mongodb_bench.exists():
+        return
+    try:
+        mod = load_module(mongodb_bench)
+        if hasattr(mod, "main"):
+            mod.main(n=n, repeat=repeat)  # type: ignore[attr-defined]
+    except Exception as e:
+        print(f"\n  MongoDB benchmark skipped: {e}\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run all benchmarks and compare vs main")
     parser.add_argument("--n", type=int, default=1000)
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--no-compare", action="store_true", help="Skip comparison against main")
+    parser.add_argument("--mongodb", action="store_true", help="Include MongoDB I/O benchmarks (requires running mongod)")
     args = parser.parse_args()
 
     print(f"Python {sys.version.split()[0]}")
@@ -185,6 +199,10 @@ def main() -> None:
 
     # --- Hypothesis benchmarks ---
     run_hypothesis_scripts(args.n, args.repeat)
+
+    # --- MongoDB I/O ---
+    if args.mongodb:
+        run_mongodb(min(args.n, 100), min(args.repeat, 3))
 
     # --- Compare vs main ---
     if not args.no_compare and branch != "master":
