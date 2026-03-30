@@ -1,8 +1,7 @@
-"""Benchmark: fast_from_son optimisation vs baseline _from_son.
+"""Benchmark: _from_son / from_json / validate performance.
 
-Measures the performance improvement of the optimised ``_from_son``
-implementation (``PERF_FLAGS["fast_from_son"] = True``) against the
-original path across two document complexity levels.
+Measures the current (optimised) implementation across two document
+complexity levels.  Useful for regression testing after future changes.
 
 Usage::
 
@@ -27,7 +26,6 @@ from typing import Any
 from bson import ObjectId
 
 import mongoengine
-from mongoengine.base.perf_config import PERF_FLAGS
 from mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
 
 # ---------------------------------------------------------------------------
@@ -36,7 +34,6 @@ from mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
 
 
 def _build_simple_classes() -> dict[str, type]:
-    """Simple: 6 fields, 1 embedded doc."""
     _ts = str(int(time.monotonic_ns()))
     ns: dict[str, Any] = {}
     exec(
@@ -68,7 +65,6 @@ def _build_simple_classes() -> dict[str, type]:
 
 
 def _build_complex_classes() -> dict[str, type]:
-    """Complex: 20+ fields, 3 levels of nesting, diverse field types."""
     _ts = str(int(time.monotonic_ns()))
     ns: dict[str, Any] = {}
     exec(
@@ -138,7 +134,7 @@ def _build_complex_classes() -> dict[str, type]:
 
 
 # ---------------------------------------------------------------------------
-# Sample data factories
+# Sample data
 # ---------------------------------------------------------------------------
 
 
@@ -272,7 +268,7 @@ def make_complex_son() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Timing helpers
+# Timing
 # ---------------------------------------------------------------------------
 
 
@@ -290,7 +286,7 @@ def _timed(fn: Callable[[], None], n: int) -> float:
 # Scenario runner
 # ---------------------------------------------------------------------------
 
-OP_NAMES = ["_from_son", "from_json"]
+OP_NAMES = ["validate", "_from_son", "from_json"]
 
 
 def run_scenario(
@@ -301,62 +297,37 @@ def run_scenario(
     n: int,
     repeat: int,
 ) -> None:
-    configs = [
-        ("baseline", False),
-        ("fast_from_son", True),
-    ]
-
-    all_results: dict[str, dict[str, list[float]]] = {}
-
-    print(f"\n{'=' * 66}")
+    print(f"\n{'=' * 56}")
     print(f"  {scenario_name}   (n={n}, repeat={repeat})")
-    print(f"{'=' * 66}\n")
+    print(f"{'=' * 56}\n")
 
-    for config_name, flag_value in configs:
-        sys.stdout.write(f"  {config_name:<20s} ... ")
-        sys.stdout.flush()
+    classes = build_fn()
+    doc_cls = classes["doc_cls"]
+    data = make_data_fn(classes)
+    son = make_son_fn()
+    doc = doc_cls(**data)
+    json_str = doc.to_json(json_options=LEGACY_JSON_OPTIONS)
 
-        PERF_FLAGS["fast_from_son"] = flag_value
-        classes = build_fn()
-        doc_cls = classes["doc_cls"]
+    # Warm up
+    doc.validate()
+    doc_cls._from_son(son)
+    doc_cls.from_json(json_str, json_options=LEGACY_JSON_OPTIONS)
 
-        son = make_son_fn()
-        data = make_data_fn(classes)
-        doc = doc_cls(**data)
-        json_str = doc.to_json(json_options=LEGACY_JSON_OPTIONS)
-
-        results: dict[str, list[float]] = {op: [] for op in OP_NAMES}
-        for _ in range(repeat):
-            results["_from_son"].append(
-                _timed(lambda: doc_cls._from_son(son), n),
-            )
-            results["from_json"].append(
-                _timed(lambda: doc_cls.from_json(json_str, json_options=LEGACY_JSON_OPTIONS), n),
-            )
-
-        all_results[config_name] = results
-        print("done")
-
-    PERF_FLAGS["fast_from_son"] = False
-
-    # --- Table ---
-    print()
-    print(f"  {'Operation':<14s}{'baseline':>14s}{'fast_from_son':>14s}{'speedup':>12s}")
-    print(f"  {'-' * 54}")
-
-    for op in OP_NAMES:
-        base_med = statistics.median(all_results["baseline"][op])
-        fast_med = statistics.median(all_results["fast_from_son"][op])
-        base_best = min(all_results["baseline"][op])
-        fast_best = min(all_results["fast_from_son"][op])
-        speedup = base_best / fast_best if fast_best > 0 else float("inf")
-        print(
-            f"  {op:<14s}"
-            f"{base_med * 1000:>11.2f}ms"
-            f"{fast_med * 1000:>11.2f}ms"
-            f"{speedup:>10.2f}x"
+    results: dict[str, list[float]] = {op: [] for op in OP_NAMES}
+    for _ in range(repeat):
+        results["validate"].append(_timed(doc.validate, n))
+        results["_from_son"].append(_timed(lambda: doc_cls._from_son(son), n))
+        results["from_json"].append(
+            _timed(lambda: doc_cls.from_json(json_str, json_options=LEGACY_JSON_OPTIONS), n),
         )
 
+    print(f"  {'Operation':<14s}{'median':>12s}{'best':>12s}{'ops/sec':>12s}")
+    print(f"  {'-' * 50}")
+    for op in OP_NAMES:
+        med = statistics.median(results[op])
+        best = min(results[op])
+        ops = n / best if best > 0 else float("inf")
+        print(f"  {op:<14s}{med * 1000:>9.2f}ms{best * 1000:>9.2f}ms{ops:>10.0f}")
     print()
 
 
@@ -366,7 +337,7 @@ def run_scenario(
 
 
 def main(n: int = 1000, repeat: int = 5) -> None:
-    print(f"fast_from_son benchmark — Python {sys.version.split()[0]}")
+    print(f"Performance benchmark — Python {sys.version.split()[0]}")
 
     run_scenario(
         "Simple (6 fields, 1 embedded doc)",
@@ -374,12 +345,10 @@ def main(n: int = 1000, repeat: int = 5) -> None:
         n, repeat,
     )
     run_scenario(
-        "Complex (20 fields, 3-level nesting, lists of embedded docs)",
+        "Complex (20 fields, 3-level nesting)",
         _build_complex_classes, make_complex_data, make_complex_son,
         n, repeat,
     )
-
-    print("Speedup = best-of-N / best-of-N.")
 
 
 if __name__ == "__main__":
