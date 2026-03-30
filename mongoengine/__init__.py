@@ -12,6 +12,7 @@ from mongoengine import (
 # mongoengine, e.g. instead of `from mongoengine.connection import connect`,
 # users can simply use `from mongoengine import connect`, or even
 # `from mongoengine import *` and then `connect('testdb')`.
+from mongoengine.base.perf_config import PERF_FLAGS  # noqa: F401
 from mongoengine.connection import *  # noqa: F401
 from mongoengine.document import *  # noqa: F401
 from mongoengine.errors import *  # noqa: F401

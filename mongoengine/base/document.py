@@ -24,6 +24,7 @@ from mongoengine.errors import (
     OperationError,
     ValidationError,
 )
+from mongoengine.base.perf_config import PERF_FLAGS as _PERF_FLAGS
 from mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
 
 __all__ = ("BaseDocument", "NON_FIELD_ERRORS")
@@ -767,6 +768,13 @@ class BaseDocument:
         # class if unavailable
         class_name = son.get("_cls", cls._class_name)
 
+        # Return correct subclass for document type
+        if class_name != cls._class_name:
+            cls = _DocumentRegistry.get(class_name)
+
+        if _PERF_FLAGS["fast_from_son"]:
+            return cls._from_son_fast(son, created)
+
         # Convert SON to a data dict, making sure each key is a string and
         # corresponds to the right db field.
         # This is needed as _from_son is currently called both from BaseDocument.__init__
@@ -776,10 +784,6 @@ class BaseDocument:
             key = str(key)
             key = cls._db_field_map.get(key, key)
             data[key] = value
-
-        # Return correct subclass for document type
-        if class_name != cls._class_name:
-            cls = _DocumentRegistry.get(class_name)
 
         errors_dict: dict[str, Any] = {}
 
@@ -808,6 +812,68 @@ class BaseDocument:
         obj = cls(__auto_convert=False, _created=created, **data)
         obj._changed_fields = []
 
+        return obj
+
+    @classmethod
+    def _from_son_fast(cls, son: dict[str, Any], created: bool = False) -> Self:
+        """Optimised _from_son that bypasses __init__.
+
+        Avoids intermediate dict copies, signal dispatch, and redundant
+        field iteration by writing directly to the instance's ``_data``.
+        """
+        obj = cls.__new__(cls)  # type: ignore[arg-type]
+
+        # Initialise slots that __init__ would normally set
+        obj._initialised = False
+        obj._created = created
+        obj._dynamic_fields = SON()
+        obj._auto_id_field = cls._meta.get("id_field")
+        obj._db_field_map = cls._db_field_map
+
+        fields = cls._fields
+        reverse_map = cls._reverse_db_field_map  # {db_field: field_name}
+
+        if cls.STRICT and not cls._dynamic:
+            obj._data = StrictDict.create(allowed_keys=cls._fields_ordered)()
+        else:
+            obj._data = {}
+
+        errors_dict: dict[str, Any] = {}
+
+        # Single pass: translate db_field → field_name and call to_python
+        for db_key, value in son.items():
+            db_key = str(db_key)
+            field_name = reverse_map.get(db_key, db_key)
+            field = fields.get(field_name)
+
+            if field is not None:
+                if value is not None:
+                    try:
+                        value = field.to_python(value)
+                    except (AttributeError, ValueError) as e:
+                        errors_dict[field_name] = e
+                        continue
+                obj._data[field_name] = value
+            elif not cls.STRICT:
+                # Keep extra keys for non-strict / dynamic documents
+                obj._data[field_name] = value
+
+        if errors_dict:
+            errors = "\n".join([f"Field '{k}' - {v}" for k, v in errors_dict.items()])
+            msg = f"Invalid data to create a `{cls._class_name}` instance.\n{errors}"
+            raise InvalidDocumentError(msg)
+
+        # Set defaults for fields missing from son
+        for field_name in cls._fields_ordered:
+            if field_name not in obj._data:
+                field = fields[field_name]
+                default = field.default
+                if callable(default):
+                    default = default()
+                obj._data[field_name] = default
+
+        obj._changed_fields = []
+        obj._initialised = True
         return obj
 
     @classmethod
