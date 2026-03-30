@@ -788,10 +788,7 @@ class BaseDocument:
 
         # Fall back to __init__ path if pre_init/post_init signals have
         # receivers, since the fast path skips signal dispatch.
-        if (
-            signals.pre_init.has_receivers_for(cls)
-            or signals.post_init.has_receivers_for(cls)
-        ):
+        if signals.pre_init.has_receivers_for(cls) or signals.post_init.has_receivers_for(cls):
             return cls._from_son_via_init(son, created)
 
         obj = cls.__new__(cls)  # type: ignore[arg-type]
