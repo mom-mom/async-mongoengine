@@ -50,10 +50,6 @@ NON_FIELD_ERRORS = "__all__"
 # Keys that may appear in a SON dict but are not user-defined fields.
 _KNOWN_EXTRA_KEYS = frozenset({"_cls", "_text_score"})
 
-# Feature flag: when True, __init__ writes directly to _data bypassing
-# __setattr__ and field descriptors for non-dynamic, non-STRICT documents.
-FAST_INIT = True
-
 # Module-level set of keys allowed in addition to declared fields
 _INIT_ALLOWED_EXTRA_KEYS = frozenset(("id", "pk", "_cls", "_text_score"))
 
@@ -139,28 +135,26 @@ class BaseDocument:
         __auto_convert: bool = values.pop("__auto_convert", True)
         _created: bool = values.pop("_created", True)
 
-        # Fast path: bypass __setattr__ and field descriptors entirely.
-        # Requirements: FAST_INIT flag on, non-dynamic, non-STRICT, no
-        # signal receivers, and auto_convert enabled.
         cls = self.__class__
+
+        # Fast path: bypass __setattr__ and field descriptors for
+        # non-dynamic, non-STRICT documents without signal receivers.
         if (
-            FAST_INIT
-            and not self._dynamic
+            not self._dynamic
             and not self.STRICT
             and __auto_convert
             and not signals.pre_init.has_receivers_for(cls)
             and not signals.post_init.has_receivers_for(cls)
         ):
-            self._fast_init(values, _created)
+            self._init_fast(values, _created)
             return
 
+        # Legacy path: full __setattr__ with signals, dynamic fields, STRICT.
         self._initialised = False
         self._created = True
 
         signals.pre_init.send(cls, document=self, values=values)
 
-        # Check if there are undefined fields supplied to the constructor,
-        # if so raise an Exception.
         if not self._dynamic and (self._meta.get("strict", True) or _created):
             _undefined_fields = set(values.keys()) - set(
                 list(self._fields.keys()) + ["id", "pk", "_cls", "_text_score"]
@@ -176,8 +170,6 @@ class BaseDocument:
 
         self._dynamic_fields = SON()
 
-        # Assign default values for fields
-        # not set in the constructor
         for field_name in self._fields:
             if field_name in values:
                 continue
@@ -187,7 +179,6 @@ class BaseDocument:
         if "_cls" not in values:
             self._cls = self._class_name  # pyright: ignore[reportGeneralTypeIssues]
 
-        # Set actual values
         dynamic_data: dict[str, Any] = {}
         for key, value in values.items():
             field = self._fields.get(key)
@@ -200,10 +191,8 @@ class BaseDocument:
                 if self._dynamic:
                     dynamic_data[key] = value
                 else:
-                    # For strict Document
                     self._data[key] = value
 
-        # Set any get_<field>_display methods
         self.__set_field_display()
 
         if self._dynamic:
@@ -211,20 +200,16 @@ class BaseDocument:
             for key, value in dynamic_data.items():
                 setattr(self, key, value)
 
-        # Flag initialised
         self._initialised = True
         self._created = _created
 
         signals.post_init.send(cls, document=self)
 
-    def _fast_init(self, values: dict[str, Any], _created: bool) -> None:
-        """Fast __init__ path: bypasses __setattr__ overhead and batches
-        embedded document _instance wiring.
+    def _init_fast(self, values: dict[str, Any], _created: bool) -> None:
+        """Fast __init__: writes directly to _data, bypasses __setattr__.
 
-        Only used for non-dynamic, non-STRICT documents without signal
-        receivers.  Calls field.__set__ directly for fields with custom
-        __set__ (e.g. BinaryField, EnumField, ComplexBaseField) to
-        preserve field-specific conversion logic.
+        Delegates to field.__set__ only for fields with custom descriptors
+        (e.g. BinaryField, EnumField, ComplexBaseField).
         """
         self._initialised = False
         self._created = True
@@ -232,7 +217,6 @@ class BaseDocument:
         cls = self.__class__
         fields = cls._fields
 
-        # Validate: reject undefined fields for strict documents
         if cls._meta.get("strict", True) or _created:
             undefined = set(values.keys()) - set(fields.keys()) - _INIT_ALLOWED_EXTRA_KEYS
             if undefined:
@@ -243,16 +227,14 @@ class BaseDocument:
         self._data = data
         self._dynamic_fields = SON()
 
-        # Cache EmbeddedDocument class for _instance wiring
         EmbeddedDocumentCls = BaseDocument._init_embedded_doc_type
         if EmbeddedDocumentCls is None:
             EmbeddedDocumentCls = _import_class("EmbeddedDocument")
             BaseDocument._init_embedded_doc_type = EmbeddedDocumentCls
 
-        # 1. Populate defaults for fields not in values.
-        #    Use field descriptor __set__ for fields with custom logic
-        #    (e.g. EnumField, ComplexDateTimeField) to ensure proper conversion.
         _BaseField_set = BaseField.__set__
+
+        # Populate defaults for fields not in values
         for field_name, field in fields.items():
             if field_name in values:
                 continue
@@ -265,39 +247,29 @@ class BaseDocument:
             else:
                 data[field_name] = default
 
-        # 2. Set _cls when allow_inheritance is True
         if "_cls" in fields and "_cls" not in values:
             data["_cls"] = cls._class_name
 
-        # 3. Set supplied values with to_python conversion.
-        #    For fields with custom __set__ (BinaryField, EnumField, etc.),
-        #    delegate to the descriptor to preserve conversion logic.
-        #    For standard BaseField fields, write directly to _data.
-        #    id/pk go through setattr to honor Document.pk property.
+        # Set supplied values with to_python conversion
         for key, value in values.items():
             field = fields.get(key)
             if field:
                 if value is not None:
                     value = field.to_python(value)
-
-                # Check if field has custom __set__ beyond BaseField
                 if type(field).__set__ is not _BaseField_set:
                     field.__set__(self, value)
                 else:
-                    # Inline BaseField.__set__ null handling
-                    if value is None:
-                        if not field.null and field.default is not None:
-                            value = field.default
-                            if callable(value):
-                                value = value()
+                    if value is None and not field.null and field.default is not None:
+                        value = field.default
+                        if callable(value):
+                            value = value()
                     data[key] = value
             elif key in ("id", "pk", "_cls"):
-                # Use setattr to honor Document.pk property setter
                 setattr(self, key, value)
             else:
                 data[key] = value
 
-        # 4. Wire up _instance on embedded documents (batch)
+        # Wire up _instance on embedded documents
         proxy = weakref.proxy(self)
         for value in data.values():
             if isinstance(value, EmbeddedDocumentCls):
@@ -307,10 +279,7 @@ class BaseDocument:
                     if isinstance(v, EmbeddedDocumentCls):
                         v._instance = proxy
 
-        # 5. Set up get_<field>_display methods
         self.__set_field_display()
-
-        # 6. Finalize
         self._initialised = True
         self._created = _created
 
@@ -485,76 +454,6 @@ class BaseDocument:
 
         return self._data["_text_score"]
 
-    # Feature flag: when True, use the optimized to_mongo that replaces SON
-    # with plain dict and caches per-field co_varnames introspection.
-    _fast_to_mongo: bool = True
-
-    def to_mongo(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
-        """
-        Return as SON data ready for use with MongoDB.
-        """
-        if self._fast_to_mongo:
-            return self._to_mongo_fast(use_db_field, fields)
-        return self._to_mongo_legacy(use_db_field, fields)
-
-    def _to_mongo_legacy(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
-        """Original to_mongo implementation using SON."""
-        fields = fields or []
-
-        data = SON()
-        data["_id"] = None
-        data["_cls"] = self._class_name
-
-        # only root fields ['test1.a', 'test2'] => ['test1', 'test2']
-        root_fields = {f.split(".")[0] for f in fields}
-
-        for field_name in self:
-            if root_fields and field_name not in root_fields:
-                continue
-
-            value = self._data.get(field_name, None)
-            field = self._fields.get(field_name)
-
-            if field is None and self._dynamic:
-                field = self._dynamic_fields.get(field_name)
-
-            if value is not None:
-                f_inputs = field.to_mongo.__code__.co_varnames
-                ex_vars: dict[str, Any] = {}
-                if fields and "fields" in f_inputs:
-                    key = f"{field_name}."
-                    embedded_fields = [i.replace(key, "") for i in fields if i.startswith(key)]
-
-                    ex_vars["fields"] = embedded_fields
-
-                if "use_db_field" in f_inputs:
-                    ex_vars["use_db_field"] = use_db_field
-
-                value = field.to_mongo(value, **ex_vars)
-
-            # Handle self generating fields.
-            # Skip if generate() is a coroutine function (async) — those
-            # must be pre-generated before to_mongo() is called (e.g. in
-            # Document.save()).
-            if value is None and field._auto_gen:
-                import inspect
-
-                if not inspect.iscoroutinefunction(field.generate):
-                    value = field.generate()
-                    self._data[field_name] = value
-
-            if value is not None or field.null:
-                if use_db_field:
-                    data[field.db_field] = value
-                else:
-                    data[field.name] = value
-
-        # Only add _cls if allow_inheritance is True
-        if not self._meta.get("allow_inheritance"):
-            data.pop("_cls")
-
-        return data
-
     # Per-field cache: maps field class -> (accepts_use_db_field, accepts_fields)
     _to_mongo_sig_cache: dict[type, tuple[bool, bool]] = {}
 
@@ -570,8 +469,8 @@ class BaseDocument:
             cache[cls] = sig
         return sig
 
-    def _to_mongo_fast(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
-        """Optimized to_mongo: plain dict instead of SON, cached co_varnames."""
+    def to_mongo(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
+        """Return as dict data ready for use with MongoDB."""
         _data = self._data
         _fields = self._fields
         _is_dynamic = self._dynamic

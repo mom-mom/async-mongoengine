@@ -253,11 +253,6 @@ class BaseField:
         self._set_owner_document(owner_document)
 
 
-FAST_TO_PYTHON = True
-"""When True, ComplexBaseField.to_python uses a fast path that processes
-lists directly instead of converting list→dict→sorted list."""
-
-
 class ComplexBaseField(BaseField):
     """Handles complex fields, such as lists / dictionaries.
 
@@ -312,61 +307,10 @@ class ComplexBaseField(BaseField):
         return value
 
     def to_python(self, value: Any) -> Any:
-        """Convert a MongoDB-compatible type to a Python type."""
-        if FAST_TO_PYTHON:
-            return self._to_python_fast(value)
-        return self._to_python_legacy(value)
+        """Convert a MongoDB-compatible type to a Python type.
 
-    def _to_python_legacy(self, value: Any) -> Any:
-        """Original to_python implementation (list→dict→sorted list)."""
-        if isinstance(value, str):
-            return value
-
-        if hasattr(value, "to_python"):
-            return value.to_python()
-
-        BaseDocument = _import_class("BaseDocument")
-        if isinstance(value, BaseDocument):
-            # Something is wrong, return the value as it is
-            return value
-
-        is_list = False
-        if not hasattr(value, "items"):
-            try:
-                is_list = True
-                value = {idx: v for idx, v in enumerate(value)}
-            except TypeError:  # Not iterable return the value
-                return value
-
-        if self.field:
-            value_dict = {key: self.field.to_python(item) for key, item in value.items()}
-        else:
-            Document = _import_class("Document")
-            value_dict = {}
-            for k, v in value.items():
-                if isinstance(v, Document):
-                    # We need the id from the saved object to create the DBRef
-                    if v.pk is None:
-                        self.error("You can only reference documents once they have been saved to the database")
-                    collection = v._get_collection_name()
-                    value_dict[k] = DBRef(collection, v.pk)
-                elif hasattr(v, "to_python"):
-                    value_dict[k] = v.to_python()
-                else:
-                    value_dict[k] = self.to_python(v)
-
-        if is_list:  # Convert back to a list
-            return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
-        return value_dict
-
-    def _to_python_fast(self, value: Any) -> Any:
-        """Optimized to_python: handles lists directly without dict conversion.
-
-        The legacy implementation converts every list to a dict (via
-        enumerate), processes items, then sorts the dict back into a list.
-        This fast path processes lists in-place, avoiding the intermediate
-        dict allocation and O(n log n) sort.  Cached _import_class calls
-        eliminate repeated module lookups.
+        Processes lists directly (no list→dict→sort conversion) and
+        caches _import_class lookups.
         """
         if isinstance(value, str):
             return value
@@ -398,7 +342,7 @@ class ComplexBaseField(BaseField):
                 elif hasattr(v, "to_python"):
                     result.append(v.to_python())
                 else:
-                    result.append(self._to_python_fast(v))
+                    result.append(self.to_python(v))
             return result
 
         # -- Dict path --
@@ -418,7 +362,7 @@ class ComplexBaseField(BaseField):
                 elif hasattr(v, "to_python"):
                     value_dict[k] = v.to_python()
                 else:
-                    value_dict[k] = self._to_python_fast(v)
+                    value_dict[k] = self.to_python(v)
             return value_dict
 
         # Non-iterable scalar — return as-is

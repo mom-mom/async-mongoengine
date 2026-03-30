@@ -118,3 +118,9 @@ Why accepted or rejected. What was learned.
 
 - [deserialization_and_validation.md](attempts/deserialization_and_validation.md) —
   `_from_son` rewrite (2x) and `validate()` inline iteration (1.5x). Accepted.
+- [to_mongo_dict_replacement.md](attempts/to_mongo_dict_replacement.md) —
+  `to_mongo()` SON→dict + cached co_varnames (2x). Accepted.
+- [fast_init.md](attempts/fast_init.md) —
+  `__init__` fast path bypassing `__setattr__` (1.2-1.4x). Accepted.
+- [from_son_setattr_bypass.md](attempts/from_son_setattr_bypass.md) —
+  `_from_son` `object.__setattr__` + `to_python` direct list iteration (1.6-2x). Accepted.
