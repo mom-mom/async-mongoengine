@@ -11,8 +11,8 @@ master
         ├── perf/<name>           ← sub-branch per optimization
         │     → PR to perf/optimizations → code review → squash merge
         ├── perf/<name>
-        │     → PR to perf/optimizations → code review → squash merge
-        └── ...
+        │     → ...
+        └── perf/cleanup          ← flag removal + artifact cleanup
 ```
 
 Each optimization is a single squash-merged commit on `perf/optimizations`.
@@ -23,43 +23,67 @@ as one PR (preserving individual optimization commits).
 
 ```
 1. Identify bottleneck
-   Run benchmarks/run_all.py to profile current performance.
+   Run `uv run python benchmarks/run_all.py` to profile current
+   performance and compare against main.
    Read source code for the slowest operations.
 
-2. Hypothesis
-   Write benchmarks/bench_hypothesis_<name>.py with flag-gated
-   on/off comparison.
+2. Implement (flag-gated, on sub-branch perf/<name>)
+   - Gate behind a simple flag (class attr, module-level bool, etc.)
+   - All existing tests must pass with the flag both on and off
+   - Write a hypothesis benchmark if the baseline doesn't cover
+     the specific scenario well enough
 
-3. Implement (flag-gated, on sub-branch perf/<name>)
-   All existing tests must pass with the flag both on and off.
+3. Measure
+   Run benchmarks/run_all.py to verify:
+     - No regression on existing operations
+     - >10% improvement on the target operation
 
-4. Measure
-   Run benchmarks/run_all.py:
-     - bench_baseline.py must show no regression vs main
-     - bench_hypothesis_<name>.py must show improvement
-
-5. PR + Code Review
+4. PR + Code Review
    Create PR from perf/<name> → perf/optimizations.
    Get code review. Fix issues.
 
-6a. Accept (improvement confirmed)
+5a. Accept (improvement confirmed)
      - Squash merge to perf/optimizations
      - Record in docs/optimizations/attempts/<name>.md
 
-6b. Reject (no improvement or regression)
+5b. Reject (no improvement or regression)
      - Close PR
      - Record in docs/optimizations/attempts/<name>.md
        (why it failed — prevents re-attempting the same idea)
 
-7. Clean up: remove flag, merge hypothesis benchmark into baseline
-   if accepted. Go to 1.
+6. Repeat 1-5 until no more >10% improvements are found.
+
+7. Cleanup
+   On a separate perf/cleanup branch:
+     - Remove all feature flags, delete legacy code paths
+     - Remove hypothesis benchmarks (baseline covers them)
+     - Update attempt list in this README
+   Squash merge to perf/optimizations.
 ```
+
+## Agent Usage
+
+Optimization agents can be launched to autonomously identify
+bottlenecks, implement, and benchmark. The orchestrator (human or
+main Claude session) handles:
+
+- Creating sub-branches from `perf/optimizations`
+- Reviewing agent output and applying changes
+- Running code review agents on PRs
+- Deciding accept/reject
+
+**Worktree constraint**: Agent worktrees created with
+`isolation: "worktree"` default to master, not the current branch.
+To ensure agents work from `perf/optimizations`, either:
+
+- Include `git checkout perf/optimizations && git pull` in the agent
+  prompt, or
+- Manually apply agent results onto the correct base branch
 
 ## Version Control
 
-Git is the single source of truth for all benchmark history and
-optimization attempts. `run_all.py` compares the current branch
-against main by checking out main in a temporary git worktree —
+Git is the single source of truth. `run_all.py` compares the current
+branch against main by checking out main in a temporary git worktree —
 no result files are committed or stored.
 
 ## Directory Structure
@@ -67,7 +91,6 @@ no result files are committed or stored.
 ```
 benchmarks/
   bench_baseline.py          # Comprehensive baseline (all core paths)
-  bench_hypothesis_<name>.py # Temporary per-hypothesis benchmarks
   run_all.py                 # Runner: baseline + compare vs main via git
 
 docs/optimizations/
@@ -83,6 +106,7 @@ docs/optimizations/
 - Report **median** time and **best-of-N** speedup.
 - `gc.disable()` during timed loops, `gc.enable()` after.
 - Warm up before measuring (1 untimed call per operation).
+- Improvement threshold: **>10%** to be considered meaningful.
 
 ## Attempt Documentation Template
 

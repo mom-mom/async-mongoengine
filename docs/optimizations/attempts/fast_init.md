@@ -1,72 +1,39 @@
 # Fast __init__ Path
 
-**Status:** Accept
+- **Date**: 2026-03-30
+- **Status**: Accepted
+- **PR**: #15
 
-## Bottleneck
+## Hypothesis
 
-`Document.__init__` spends significant time in `__setattr__` and field
-descriptor `__set__` overhead:
+`Document.__init__` spent ~50% of its time in `__setattr__` and field
+descriptor overhead. Each field assignment triggered dynamic field
+checks, shard key validation, try/except for state flags, and
+`_import_class("EmbeddedDocument")` calls in `BaseField.__set__`.
 
-- `__setattr__` is called ~30k times per 2000 inits (14k for field values,
-  16k for internal attributes like `_initialised`, `_created`, etc.)
-- Each call checks dynamic field status, shard key immutability, and
-  `_created`/`_initialised` state via try/except
-- `BaseField.__set__` calls `_import_class("EmbeddedDocument")` on every
-  single field assignment (14k calls)
-- Change tracking runs even though `_initialised=False` guards it
+## Approaches Tried
 
-## Approach
-
-Add a fast `__init__` path (`_fast_init`) that bypasses `__setattr__`
-entirely for the common case: non-dynamic, non-STRICT documents without
-signal receivers.
-
-The fast path:
-1. Writes defaults directly to `_data` dict
-2. Calls `field.to_python()` for type conversion
-3. For fields with custom `__set__` (e.g. `BinaryField`, `ComplexBaseField`),
-   delegates to the field descriptor to preserve conversion logic
-4. For standard `BaseField` fields, inlines the null-handling logic and
-   writes directly to `_data`
-5. Batches `_instance` wiring for embedded documents at the end
-6. Caches `_import_class("EmbeddedDocument")` result
-
-Gated behind `FAST_INIT = True` flag in `mongoengine.base.document`.
+| Approach | Result | Reason |
+|----------|--------|--------|
+| `_init_fast` bypassing `__setattr__` | **1.2-1.4x faster** | Writes directly to `_data`, delegates to `field.__set__` only for fields with custom descriptors |
 
 ## Benchmark Results
 
-Python 3.13.5, Apple Silicon. Median of 5 runs, 1000 iterations each.
+**Simple Document (6 fields):**
 
-**Simple Document (6 fields, 1 embedded doc):**
-
-| Config | median | best | speedup |
-|--------|--------|------|---------|
-| FAST_INIT=False | 10.82ms | 9.59ms | 1.00x |
-| **FAST_INIT=True** | **7.55ms** | **7.40ms** | **1.43x** |
+| Operation | before | after | speedup |
+|-----------|--------|-------|---------|
+| `__init__` | 10.82ms | 7.55ms | **1.43x** |
 
 **Complex Document (20 fields, 3-level nesting):**
 
-| Config | median | best | speedup |
-|--------|--------|------|---------|
-| FAST_INIT=False | 26.41ms | 26.03ms | 1.00x |
-| **FAST_INIT=True** | **22.56ms** | **22.28ms** | **1.17x** |
+| Operation | before | after | speedup |
+|-----------|--------|-------|---------|
+| `__init__` | 26.41ms | 22.56ms | **1.17x** |
 
-No regressions on existing benchmarks (validate, _from_son, from_json).
+## Decision
 
-## Test Results
-
-All 1108 tests pass with FAST_INIT=True (the optimized default).
-The flag can be set to False to revert to the original behavior.
-
-## Cleanup Needed
-
-- Remove `FAST_INIT` flag and the conditional in `__init__` once stable
-- The `_init_embedded_doc_type` class attribute can remain for caching
-- Consider further optimization of `ComplexBaseField.__set__` which
-  calls `_import_class("EnumField")` on every invocation
-
-## Files Changed
-
-- `mongoengine/base/document.py` — added `FAST_INIT` flag, `_fast_init`
-  method, `_init_embedded_doc_type` cache, imported `BaseField`
-- `benchmarks/bench_hypothesis_fast_init.py` — hypothesis benchmark
+Accepted. Fast path is default for non-dynamic, non-STRICT documents
+without signal receivers. Falls back to legacy `__init__` path when
+any of these conditions apply (dynamic, STRICT, signals, or
+`__auto_convert=False`).
