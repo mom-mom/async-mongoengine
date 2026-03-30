@@ -29,6 +29,22 @@ from mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
 
 __all__ = ("BaseDocument", "NON_FIELD_ERRORS")
 
+
+class _MongoDict(dict):
+    """A plain dict with a to_dict() method for SON compatibility.
+
+    SON (bson.son.SON) maintains key order via an internal list, making
+    __setitem__/pop/update O(n).  Python 3.7+ dicts are insertion-ordered
+    and much faster.  This subclass adds only the to_dict() convenience
+    method that existing code may call on to_mongo() return values.
+    """
+
+    __slots__ = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self)
+
+
 NON_FIELD_ERRORS = "__all__"
 
 # Keys that may appear in a SON dict but are not user-defined fields.
@@ -221,7 +237,7 @@ class BaseDocument:
         return data
 
     def __setstate__(self, data: dict[str, Any]) -> None:
-        if isinstance(data["_data"], SON):
+        if isinstance(data["_data"], (SON, _MongoDict)):
             data["_data"] = self.__class__._from_son(data["_data"])._data
         for k in (
             "_changed_fields",
@@ -321,10 +337,20 @@ class BaseDocument:
 
         return self._data["_text_score"]
 
+    # Feature flag: when True, use the optimized to_mongo that replaces SON
+    # with plain dict and caches per-field co_varnames introspection.
+    _fast_to_mongo: bool = True
+
     def to_mongo(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """
         Return as SON data ready for use with MongoDB.
         """
+        if self._fast_to_mongo:
+            return self._to_mongo_fast(use_db_field, fields)
+        return self._to_mongo_legacy(use_db_field, fields)
+
+    def _to_mongo_legacy(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
+        """Original to_mongo implementation using SON."""
         fields = fields or []
 
         data = SON()
@@ -378,6 +404,88 @@ class BaseDocument:
         # Only add _cls if allow_inheritance is True
         if not self._meta.get("allow_inheritance"):
             data.pop("_cls")
+
+        return data
+
+    # Per-field cache: maps field class -> (accepts_use_db_field, accepts_fields)
+    _to_mongo_sig_cache: dict[type, tuple[bool, bool]] = {}
+
+    @staticmethod
+    def _get_to_mongo_sig(field: Any) -> tuple[bool, bool]:
+        """Return (accepts_use_db_field, accepts_fields) for a field's to_mongo."""
+        cls = type(field)
+        cache = BaseDocument._to_mongo_sig_cache
+        sig = cache.get(cls)
+        if sig is None:
+            varnames = field.to_mongo.__code__.co_varnames
+            sig = ("use_db_field" in varnames, "fields" in varnames)
+            cache[cls] = sig
+        return sig
+
+    def _to_mongo_fast(self, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
+        """Optimized to_mongo: plain dict instead of SON, cached co_varnames."""
+        _data = self._data
+        _fields = self._fields
+        _is_dynamic = self._dynamic
+        _dynamic_fields = self._dynamic_fields if _is_dynamic else None
+        _get_sig = BaseDocument._get_to_mongo_sig
+        allow_inheritance = self._meta.get("allow_inheritance")
+
+        # Build root_fields filter only when fields is provided
+        if fields:
+            root_fields = {f.split(".", 1)[0] for f in fields}
+        else:
+            root_fields = None
+
+        # Use _MongoDict (plain dict + to_dict()) instead of SON.
+        # Python 3.7+ dicts preserve insertion order, and PyMongo
+        # accepts plain dicts.
+        data: dict[str, Any] = _MongoDict(_id=None)
+
+        # Only add _cls when inheritance is enabled
+        if allow_inheritance:
+            data["_cls"] = self._class_name
+
+        for field_name in self._fields_ordered:
+            if root_fields is not None and field_name not in root_fields:
+                continue
+
+            value = _data.get(field_name)
+            field = _fields.get(field_name)
+
+            if field is None and _is_dynamic:
+                field = _dynamic_fields.get(field_name)
+
+            if value is not None:
+                accepts_db, accepts_fields = _get_sig(field)
+                if fields and accepts_fields:
+                    # Build sub-fields for this embedded field
+                    key = field_name + "."
+                    key_len = len(key)
+                    embedded_fields = [f[key_len:] for f in fields if f.startswith(key)]
+                    if accepts_db:
+                        value = field.to_mongo(value, use_db_field=use_db_field, fields=embedded_fields)
+                    else:
+                        value = field.to_mongo(value, fields=embedded_fields)
+                elif accepts_db:
+                    value = field.to_mongo(value, use_db_field=use_db_field)
+                else:
+                    value = field.to_mongo(value)
+
+            # Handle self-generating fields.
+            # Skip if generate() is a coroutine function (async).
+            if value is None and field._auto_gen:
+                import inspect
+
+                if not inspect.iscoroutinefunction(field.generate):
+                    value = field.generate()
+                    _data[field_name] = value
+
+            if value is not None or field.null:
+                if use_db_field:
+                    data[field.db_field] = value
+                else:
+                    data[field.name] = value
 
         return data
 

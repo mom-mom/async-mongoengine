@@ -344,11 +344,21 @@ class ComplexBaseField(BaseField):
             return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
 
+    # Cached import results for to_mongo (resolved once, reused).
+    _to_mongo_doc_type: type | None = None
+    _to_mongo_emb_type: type | None = None
+    _to_mongo_gen_ref_type: type | None = None
+
     def to_mongo(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """Convert a Python type to a MongoDB-compatible type."""
-        Document = _import_class("Document")
-        EmbeddedDocument = _import_class("EmbeddedDocument")
-        GenericReferenceField = _import_class("GenericReferenceField")
+        # Use cached imports instead of calling _import_class every time
+        if ComplexBaseField._to_mongo_doc_type is None:
+            ComplexBaseField._to_mongo_doc_type = _import_class("Document")
+            ComplexBaseField._to_mongo_emb_type = _import_class("EmbeddedDocument")
+            ComplexBaseField._to_mongo_gen_ref_type = _import_class("GenericReferenceField")
+        Document = ComplexBaseField._to_mongo_doc_type
+        EmbeddedDocument = ComplexBaseField._to_mongo_emb_type
+        GenericReferenceField = ComplexBaseField._to_mongo_gen_ref_type
 
         if isinstance(value, str):
             return value
