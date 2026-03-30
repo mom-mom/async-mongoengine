@@ -32,7 +32,7 @@ __all__ = ("BaseDocument", "NON_FIELD_ERRORS")
 NON_FIELD_ERRORS = "__all__"
 
 # Keys that may appear in a SON dict but are not user-defined fields.
-_KNOWN_EXTRA_KEYS = frozenset({"_id", "_cls", "_text_score"})
+_KNOWN_EXTRA_KEYS = frozenset({"_cls", "_text_score"})
 
 try:
     GEOHAYSTACK = pymongo.GEOHAYSTACK
@@ -381,8 +381,9 @@ class BaseDocument:
 
         return data
 
-    # Cached _import_class results for validate().
+    # Cached _import_class results.
     _validate_embedded_types: tuple[type, ...] | None = None
+    _from_son_embedded_doc_type: type | None = None
 
     def validate(self, clean: bool = True) -> None:
         """Ensure that all fields' values are valid and that required fields
@@ -854,7 +855,11 @@ class BaseDocument:
         # Wire up _instance on embedded documents so change tracking
         # and nested access work correctly (replicates what the field
         # descriptor __set__ does during normal __init__).
-        EmbeddedDocument = _import_class("EmbeddedDocument")
+        EmbeddedDocument = cls._from_son_embedded_doc_type
+        if EmbeddedDocument is None:
+            EmbeddedDocument = _import_class("EmbeddedDocument")
+            BaseDocument._from_son_embedded_doc_type = EmbeddedDocument
+
         proxy = weakref.proxy(obj)
 
         def _set_instance(val: Any) -> None:
@@ -869,6 +874,9 @@ class BaseDocument:
 
         for value in obj._data.values():
             _set_instance(value)
+
+        # Set up get_<field>_display methods for fields with choices
+        obj.__set_field_display()
 
         # For dynamic documents, unlock and use setattr for non-field
         # keys so that DynamicField descriptors are created properly.
