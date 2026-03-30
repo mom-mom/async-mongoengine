@@ -223,6 +223,9 @@ class BaseDocument:
             BaseDocument._init_embedded_doc_type = EmbeddedDocumentCls
 
         # 1. Populate defaults for fields not in values.
+        #    Use field descriptor __set__ for fields with custom logic
+        #    (e.g. EnumField, ComplexDateTimeField) to ensure proper conversion.
+        _BaseField_set = BaseField.__set__
         for field_name, field in fields.items():
             if field_name in values:
                 continue
@@ -230,9 +233,10 @@ class BaseDocument:
             if default is not None:
                 if callable(default):
                     default = default()
-                data[field_name] = default
+            if type(field).__set__ is not _BaseField_set:
+                field.__set__(self, default)
             else:
-                data[field_name] = None
+                data[field_name] = default
 
         # 2. Set _cls when allow_inheritance is True
         if "_cls" in fields and "_cls" not in values:
@@ -242,7 +246,7 @@ class BaseDocument:
         #    For fields with custom __set__ (BinaryField, EnumField, etc.),
         #    delegate to the descriptor to preserve conversion logic.
         #    For standard BaseField fields, write directly to _data.
-        _BaseField_set = BaseField.__set__
+        #    id/pk go through setattr to honor Document.pk property.
         for key, value in values.items():
             field = fields.get(key)
             if field:
@@ -260,8 +264,9 @@ class BaseDocument:
                             if callable(value):
                                 value = value()
                     data[key] = value
-            elif key in _INIT_ALLOWED_EXTRA_KEYS:
-                object.__setattr__(self, key, value)
+            elif key in ("id", "pk", "_cls"):
+                # Use setattr to honor Document.pk property setter
+                setattr(self, key, value)
             else:
                 data[key] = value
 
