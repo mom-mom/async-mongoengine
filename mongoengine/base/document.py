@@ -48,42 +48,17 @@ class _MongoDict(dict):
 NON_FIELD_ERRORS = "__all__"
 
 # Keys that may appear in a SON dict but are not user-defined fields.
+# Used in _from_son to silently accept internal BSON keys.
 _KNOWN_EXTRA_KEYS = frozenset({"_cls", "_text_score"})
 
-# Module-level set of keys allowed in addition to declared fields
+# Keys allowed in __init__ kwargs beyond declared fields.
+# Superset of _KNOWN_EXTRA_KEYS — also allows "id"/"pk" aliases.
 _INIT_ALLOWED_EXTRA_KEYS = frozenset(("id", "pk", "_cls", "_text_score"))
 
 try:
     GEOHAYSTACK = pymongo.GEOHAYSTACK
 except AttributeError:
     GEOHAYSTACK = None
-
-
-def _from_son_set_instance(
-    proxy: Any,
-    embedded_type: type,
-    data: dict[str, Any],
-) -> None:
-    """Wire up _instance on embedded docs inside *data*.
-
-    Defined at module level so a new closure is not created on every
-    ``_from_son`` call.  Uses ``object.__setattr__`` to bypass the
-    custom ``__setattr__`` on the embedded document.
-    """
-    _osetattr = object.__setattr__
-
-    def _recurse(val: Any) -> None:
-        if isinstance(val, embedded_type):
-            _osetattr(val, "_instance", proxy)
-        elif isinstance(val, (list, tuple)):
-            for item in val:
-                _recurse(item)
-        elif isinstance(val, dict):
-            for item in val.values():
-                _recurse(item)
-
-    for value in data.values():
-        _recurse(value)
 
 
 # Field-kind constants for _from_son_set_instance_targeted.
