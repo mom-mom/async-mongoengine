@@ -63,6 +63,33 @@ except AttributeError:
     GEOHAYSTACK = None
 
 
+def _from_son_set_instance(
+    proxy: Any,
+    embedded_type: type,
+    data: dict[str, Any],
+) -> None:
+    """Wire up _instance on embedded docs inside *data*.
+
+    Defined at module level so a new closure is not created on every
+    ``_from_son`` call.  Uses ``object.__setattr__`` to bypass the
+    custom ``__setattr__`` on the embedded document.
+    """
+    _osetattr = object.__setattr__
+
+    def _recurse(val: Any) -> None:
+        if isinstance(val, embedded_type):
+            _osetattr(val, "_instance", proxy)
+        elif isinstance(val, (list, tuple)):
+            for item in val:
+                _recurse(item)
+        elif isinstance(val, dict):
+            for item in val.values():
+                _recurse(item)
+
+    for value in data.values():
+        _recurse(value)
+
+
 class BaseDocument:
     # TODO simplify how `_changed_fields` is used.
     # Currently, handling of `_changed_fields` seems unnecessarily convoluted:
@@ -1022,20 +1049,26 @@ class BaseDocument:
 
         obj = cls.__new__(cls)  # type: ignore[arg-type]
 
-        # Initialise slots that __init__ would normally set
-        obj._initialised = False
-        obj._created = created
-        obj._dynamic_fields = SON()
-        obj._auto_id_field = cls._meta.get("id_field")
-        obj._db_field_map = cls._db_field_map
+        # Use object.__setattr__ to bypass the expensive custom
+        # __setattr__ which checks dynamic fields, shard keys, and
+        # _created/_initialised state on every call.
+        _osetattr = object.__setattr__
+        _osetattr(obj, "_initialised", False)
+        _osetattr(obj, "_created", created)
+        # Use a plain dict instead of SON() for _dynamic_fields when
+        # not dynamic — avoids SON's O(n) list-backed key tracking.
+        _osetattr(obj, "_dynamic_fields", SON() if cls._dynamic else {})
+        _osetattr(obj, "_auto_id_field", cls._meta.get("id_field"))
+        _osetattr(obj, "_db_field_map", cls._db_field_map)
 
         fields = cls._fields
         reverse_map = cls._reverse_db_field_map  # {db_field: field_name}
 
         if cls.STRICT and not cls._dynamic:
-            obj._data = StrictDict.create(allowed_keys=cls._fields_ordered)()
+            data = StrictDict.create(allowed_keys=cls._fields_ordered)()
         else:
-            obj._data = {}
+            data = {}
+        _osetattr(obj, "_data", data)
 
         errors_dict: dict[str, Any] = {}
 
@@ -1059,17 +1092,17 @@ class BaseDocument:
                         value = field.default
                         if callable(value):
                             value = value()
-                obj._data[field_name] = value
+                data[field_name] = value
             elif field_name in _KNOWN_EXTRA_KEYS:
                 # Internal keys (_cls, _text_score) — store silently
-                obj._data[field_name] = value
+                data[field_name] = value
             else:
                 # Extra key not in declared fields — store for dynamic /
                 # non-strict docs; raise for strict non-dynamic docs.
                 if not cls._dynamic and (cls._meta.get("strict", True) or created):
                     msg = f'The fields "{{{field_name}}}" do not exist on the document "{cls._class_name}"'
                     raise FieldDoesNotExist(msg)
-                obj._data[field_name] = value
+                data[field_name] = value
 
         if errors_dict:
             errors = "\n".join([f"Field '{k}' - {v}" for k, v in errors_dict.items()])
@@ -1078,12 +1111,12 @@ class BaseDocument:
 
         # Set defaults for fields missing from son
         for field_name in cls._fields_ordered:
-            if field_name not in obj._data:
+            if field_name not in data:
                 field = fields[field_name]
                 default = field.default
                 if callable(default):
                     default = default()
-                obj._data[field_name] = default
+                data[field_name] = default
 
         # Wire up _instance on embedded documents so change tracking
         # and nested access work correctly (replicates what the field
@@ -1094,24 +1127,7 @@ class BaseDocument:
             BaseDocument._from_son_embedded_doc_type = EmbeddedDocument
 
         proxy = weakref.proxy(obj)
-
-        def _set_instance(val: Any) -> None:
-            """Recursively set _instance on embedded docs.
-
-            Must recurse into lists (ListField/EmbeddedDocumentListField)
-            and dicts (MapField, DictField) to reach nested embedded docs.
-            """
-            if isinstance(val, EmbeddedDocument):
-                val._instance = proxy
-            elif isinstance(val, (list, tuple)):
-                for item in val:
-                    _set_instance(item)
-            elif isinstance(val, dict):
-                for item in val.values():
-                    _set_instance(item)
-
-        for value in obj._data.values():
-            _set_instance(value)
+        _from_son_set_instance(proxy, EmbeddedDocument, data)
 
         # Set up get_<field>_display methods for fields with choices
         obj.__set_field_display()
@@ -1119,14 +1135,14 @@ class BaseDocument:
         # For dynamic documents, unlock and use setattr for non-field
         # keys so that DynamicField descriptors are created properly.
         if cls._dynamic:
-            obj._dynamic_lock = False  # pyright: ignore[reportGeneralTypeIssues]
-            for key in list(obj._data):
+            _osetattr(obj, "_dynamic_lock", False)
+            for key in list(data):
                 if key not in fields:
-                    value = obj._data.pop(key)
+                    value = data.pop(key)
                     setattr(obj, key, value)
 
-        obj._changed_fields = []
-        obj._initialised = True
+        _osetattr(obj, "_changed_fields", [])
+        _osetattr(obj, "_initialised", True)
         return obj
 
     @classmethod
