@@ -16,7 +16,7 @@ from mongoengine.base.datastructures import (
     LazyReference,
     StrictDict,
 )
-from mongoengine.base.fields import ComplexBaseField
+from mongoengine.base.fields import BaseField, ComplexBaseField
 from mongoengine.common import _import_class
 from mongoengine.errors import (
     FieldDoesNotExist,
@@ -50,6 +50,13 @@ NON_FIELD_ERRORS = "__all__"
 # Keys that may appear in a SON dict but are not user-defined fields.
 _KNOWN_EXTRA_KEYS = frozenset({"_cls", "_text_score"})
 
+# Feature flag: when True, __init__ writes directly to _data bypassing
+# __setattr__ and field descriptors for non-dynamic, non-STRICT documents.
+FAST_INIT = True
+
+# Module-level set of keys allowed in addition to declared fields
+_INIT_ALLOWED_EXTRA_KEYS = frozenset(("id", "pk", "_cls", "_text_score"))
+
 try:
     GEOHAYSTACK = pymongo.GEOHAYSTACK
 except AttributeError:
@@ -82,6 +89,9 @@ class BaseDocument:
     _dynamic_lock: bool = True
     STRICT: bool = False
 
+    # Cached _import_class result for EmbeddedDocument (used in fast __init__)
+    _init_embedded_doc_type: type | None = None
+
     def __init__(self, *args: Any, **values: Any) -> None:
         """
         Initialise a document or an embedded document.
@@ -93,9 +103,6 @@ class BaseDocument:
         :param _created: Indicates whether this is a brand new document
             or whether it's already been persisted before. Defaults to true.
         """
-        self._initialised = False
-        self._created = True
-
         if args:
             raise TypeError(
                 "Instantiating a document with positional arguments is not "
@@ -103,10 +110,27 @@ class BaseDocument:
             )
 
         __auto_convert: bool = values.pop("__auto_convert", True)
-
         _created: bool = values.pop("_created", True)
 
-        signals.pre_init.send(self.__class__, document=self, values=values)
+        # Fast path: bypass __setattr__ and field descriptors entirely.
+        # Requirements: FAST_INIT flag on, non-dynamic, non-STRICT, no
+        # signal receivers, and auto_convert enabled.
+        cls = self.__class__
+        if (
+            FAST_INIT
+            and not self._dynamic
+            and not self.STRICT
+            and __auto_convert
+            and not signals.pre_init.has_receivers_for(cls)
+            and not signals.post_init.has_receivers_for(cls)
+        ):
+            self._fast_init(values, _created)
+            return
+
+        self._initialised = False
+        self._created = True
+
+        signals.pre_init.send(cls, document=self, values=values)
 
         # Check if there are undefined fields supplied to the constructor,
         # if so raise an Exception.
@@ -164,7 +188,104 @@ class BaseDocument:
         self._initialised = True
         self._created = _created
 
-        signals.post_init.send(self.__class__, document=self)
+        signals.post_init.send(cls, document=self)
+
+    def _fast_init(self, values: dict[str, Any], _created: bool) -> None:
+        """Fast __init__ path: bypasses __setattr__ overhead and batches
+        embedded document _instance wiring.
+
+        Only used for non-dynamic, non-STRICT documents without signal
+        receivers.  Calls field.__set__ directly for fields with custom
+        __set__ (e.g. BinaryField, EnumField, ComplexBaseField) to
+        preserve field-specific conversion logic.
+        """
+        self._initialised = False
+        self._created = True
+
+        cls = self.__class__
+        fields = cls._fields
+
+        # Validate: reject undefined fields for strict documents
+        if cls._meta.get("strict", True) or _created:
+            undefined = set(values.keys()) - set(fields.keys()) - _INIT_ALLOWED_EXTRA_KEYS
+            if undefined:
+                msg = f'The fields "{undefined}" do not exist on the document "{cls._class_name}"'
+                raise FieldDoesNotExist(msg)
+
+        data: dict[str, Any] = {}
+        self._data = data
+        self._dynamic_fields = SON()
+
+        # Cache EmbeddedDocument class for _instance wiring
+        EmbeddedDocumentCls = BaseDocument._init_embedded_doc_type
+        if EmbeddedDocumentCls is None:
+            EmbeddedDocumentCls = _import_class("EmbeddedDocument")
+            BaseDocument._init_embedded_doc_type = EmbeddedDocumentCls
+
+        # 1. Populate defaults for fields not in values.
+        #    Use field descriptor __set__ for fields with custom logic
+        #    (e.g. EnumField, ComplexDateTimeField) to ensure proper conversion.
+        _BaseField_set = BaseField.__set__
+        for field_name, field in fields.items():
+            if field_name in values:
+                continue
+            default = field.default
+            if default is not None:
+                if callable(default):
+                    default = default()
+            if type(field).__set__ is not _BaseField_set:
+                field.__set__(self, default)
+            else:
+                data[field_name] = default
+
+        # 2. Set _cls when allow_inheritance is True
+        if "_cls" in fields and "_cls" not in values:
+            data["_cls"] = cls._class_name
+
+        # 3. Set supplied values with to_python conversion.
+        #    For fields with custom __set__ (BinaryField, EnumField, etc.),
+        #    delegate to the descriptor to preserve conversion logic.
+        #    For standard BaseField fields, write directly to _data.
+        #    id/pk go through setattr to honor Document.pk property.
+        for key, value in values.items():
+            field = fields.get(key)
+            if field:
+                if value is not None:
+                    value = field.to_python(value)
+
+                # Check if field has custom __set__ beyond BaseField
+                if type(field).__set__ is not _BaseField_set:
+                    field.__set__(self, value)
+                else:
+                    # Inline BaseField.__set__ null handling
+                    if value is None:
+                        if not field.null and field.default is not None:
+                            value = field.default
+                            if callable(value):
+                                value = value()
+                    data[key] = value
+            elif key in ("id", "pk", "_cls"):
+                # Use setattr to honor Document.pk property setter
+                setattr(self, key, value)
+            else:
+                data[key] = value
+
+        # 4. Wire up _instance on embedded documents (batch)
+        proxy = weakref.proxy(self)
+        for value in data.values():
+            if isinstance(value, EmbeddedDocumentCls):
+                value._instance = proxy
+            elif isinstance(value, (list, tuple)):
+                for v in value:
+                    if isinstance(v, EmbeddedDocumentCls):
+                        v._instance = proxy
+
+        # 5. Set up get_<field>_display methods
+        self.__set_field_display()
+
+        # 6. Finalize
+        self._initialised = True
+        self._created = _created
 
     def __delattr__(self, *args: Any, **kwargs: Any) -> None:
         """Handle deletions of fields"""
