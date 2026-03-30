@@ -723,14 +723,22 @@ class EmbeddedDocumentField(BaseField):
         return self.document_type_obj  # type: ignore[return-value]
 
     def to_python(self, value: Any) -> Any:
-        if not isinstance(value, self.document_type):
-            return self.document_type._from_son(value)
+        doc_type = self.document_type_obj
+        # After first access, document_type_obj is the resolved class.
+        # Fall back to the property only when it's still a string (lazy).
+        if isinstance(doc_type, str):
+            doc_type = self.document_type
+        if not isinstance(value, doc_type):
+            return doc_type._from_son(value)
         return value
 
     def to_mongo(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
-        if not isinstance(value, self.document_type):
+        doc_type = self.document_type_obj
+        if isinstance(doc_type, str):
+            doc_type = self.document_type
+        if not isinstance(value, doc_type):
             return value
-        return self.document_type.to_mongo(value, use_db_field, fields)
+        return doc_type.to_mongo(value, use_db_field, fields)
 
     def validate(self, value: Any, clean: bool = True) -> None:
         """Make sure that the document instance is an instance of the
