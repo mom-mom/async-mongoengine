@@ -378,6 +378,9 @@ class BaseDocument:
 
         return data
 
+    # Cached _import_class results for validate().
+    _validate_embedded_types: tuple[type, ...] | None = None
+
     def validate(self, clean: bool = True) -> None:
         """Ensure that all fields' values are valid and that required fields
         are present.
@@ -393,22 +396,25 @@ class BaseDocument:
             except ValidationError as error:
                 errors[NON_FIELD_ERRORS] = error
 
-        # Get a list of tuples of field names and their current values
-        fields = [
-            (
-                self._fields.get(name, self._dynamic_fields.get(name)),
-                self._data.get(name),
+        # Cached import: resolve once, reuse across all validate() calls
+        embedded_types = BaseDocument._validate_embedded_types
+        if embedded_types is None:
+            embedded_types = (
+                _import_class("EmbeddedDocumentField"),
+                _import_class("GenericEmbeddedDocumentField"),
             )
-            for name in self._fields_ordered
-        ]
+            BaseDocument._validate_embedded_types = embedded_types
 
-        EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
-        GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
-
-        for field, value in fields:
+        # Inline iteration: avoid intermediate list allocation
+        _fields = self._fields
+        _dynamic_fields = self._dynamic_fields
+        _data = self._data
+        for name in self._fields_ordered:
+            field = _fields.get(name) or _dynamic_fields.get(name)
+            value = _data.get(name)
             if value is not None:
                 try:
-                    if isinstance(field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)):
+                    if isinstance(field, embedded_types):
                         field._validate(value, clean=clean)
                     else:
                         field._validate(value)
