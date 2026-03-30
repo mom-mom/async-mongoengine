@@ -433,6 +433,8 @@ class ComplexBaseField(BaseField):
                 if isinstance(v, Document):
                     if v.pk is None:
                         self.error("You can only reference documents once they have been saved to the database")
+                    # Non-inheritable docs lack _cls, so use GenericReferenceField
+                    # to allow proper dereferencing.
                     meta = getattr(v, "_meta", {})
                     if not meta.get("allow_inheritance"):
                         result_list.append(GenericReferenceField().to_mongo(v))
@@ -441,6 +443,8 @@ class ComplexBaseField(BaseField):
                 elif hasattr(v, "to_mongo"):
                     cls = v.__class__
                     val = v.to_mongo(use_db_field, fields)
+                    # Attach _cls for Document/EmbeddedDocument so
+                    # deserialization can resolve the correct subclass.
                     if isinstance(v, (Document, EmbeddedDocument)):
                         val["_cls"] = cls.__name__
                     result_list.append(val)
@@ -466,6 +470,8 @@ class ComplexBaseField(BaseField):
                 if isinstance(v, Document):
                     if v.pk is None:
                         self.error("You can only reference documents once they have been saved to the database")
+                    # Non-inheritable docs lack _cls, so use GenericReferenceField
+                    # to allow proper dereferencing.
                     meta = getattr(v, "_meta", {})
                     allow_inheritance = meta.get("allow_inheritance")
                     if not allow_inheritance:
@@ -476,6 +482,8 @@ class ComplexBaseField(BaseField):
                 elif hasattr(v, "to_mongo"):
                     cls = v.__class__
                     val = v.to_mongo(use_db_field, fields)
+                    # Attach _cls for Document/EmbeddedDocument so
+                    # deserialization can resolve the correct subclass.
                     if isinstance(v, (Document, EmbeddedDocument)):
                         val["_cls"] = cls.__name__
                     value_dict[k] = val
