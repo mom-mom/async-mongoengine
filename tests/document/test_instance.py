@@ -3473,6 +3473,36 @@ class TestDocumentInstance(MongoDBTestCase):
         assert p.name == "new name"
         assert p.id == "12345"
 
+    async def test_from_son_null_replaced_by_default(self):
+        """Ensure _from_son replaces BSON null with field default when null=False."""
+
+        class Doc(Document):
+            name = StringField(default="fallback")
+            count = IntField(default=0)
+
+        doc = Doc._from_son({"name": None, "count": None})
+        assert doc.name == "fallback"
+        assert doc.count == 0
+
+    async def test_from_son_null_kept_when_null_true(self):
+        """Ensure _from_son keeps None when field has null=True."""
+
+        class Doc(Document):
+            name = StringField(null=True, default="fallback")
+
+        doc = Doc._from_son({"name": None})
+        assert doc.name is None
+
+    async def test_from_son_created_true_rejects_extra_keys_on_non_strict(self):
+        """Ensure _from_son(created=True) rejects undefined fields even when strict=False."""
+
+        class Doc(Document):
+            name = StringField()
+            meta = {"strict": False}
+
+        with pytest.raises(FieldDoesNotExist):
+            Doc._from_son({"name": "ok", "extra": "bad"}, created=True)
+
     async def test_from_json_created_false_without_an_id(self):
         class Person(Document):
             name = StringField()

@@ -1,5 +1,6 @@
 import numbers
 import warnings
+import weakref
 from functools import partial
 from typing import Any, Self
 
@@ -29,6 +30,9 @@ from mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
 __all__ = ("BaseDocument", "NON_FIELD_ERRORS")
 
 NON_FIELD_ERRORS = "__all__"
+
+# Keys that may appear in a SON dict but are not user-defined fields.
+_KNOWN_EXTRA_KEYS = frozenset({"_cls", "_text_score"})
 
 try:
     GEOHAYSTACK = pymongo.GEOHAYSTACK
@@ -377,6 +381,10 @@ class BaseDocument:
 
         return data
 
+    # Cached _import_class results.
+    _validate_embedded_types: tuple[type, ...] | None = None
+    _from_son_embedded_doc_type: type | None = None
+
     def validate(self, clean: bool = True) -> None:
         """Ensure that all fields' values are valid and that required fields
         are present.
@@ -392,22 +400,25 @@ class BaseDocument:
             except ValidationError as error:
                 errors[NON_FIELD_ERRORS] = error
 
-        # Get a list of tuples of field names and their current values
-        fields = [
-            (
-                self._fields.get(name, self._dynamic_fields.get(name)),
-                self._data.get(name),
+        # Cached import: resolve once, reuse across all validate() calls
+        embedded_types = BaseDocument._validate_embedded_types
+        if embedded_types is None:
+            embedded_types = (
+                _import_class("EmbeddedDocumentField"),
+                _import_class("GenericEmbeddedDocumentField"),
             )
-            for name in self._fields_ordered
-        ]
+            BaseDocument._validate_embedded_types = embedded_types
 
-        EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
-        GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
-
-        for field, value in fields:
+        # Inline iteration: avoid intermediate list allocation
+        _fields = self._fields
+        _dynamic_fields = self._dynamic_fields
+        _data = self._data
+        for name in self._fields_ordered:
+            field = _fields.get(name) or _dynamic_fields.get(name)
+            value = _data.get(name)
             if value is not None:
                 try:
-                    if isinstance(field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)):
+                    if isinstance(field, embedded_types):
                         field._validate(value, clean=clean)
                     else:
                         field._validate(value)
@@ -759,7 +770,11 @@ class BaseDocument:
 
     @classmethod
     def _from_son(cls, son: dict[str, Any], created: bool = False) -> Self:
-        """Create an instance of a Document (subclass) from a PyMongo SON (dict)"""
+        """Create an instance of a Document (subclass) from a PyMongo SON (dict).
+
+        Bypasses ``__init__`` and writes directly to ``_data`` in a single
+        pass, using ``_reverse_db_field_map`` for O(1) key translation.
+        """
         if son and not isinstance(son, dict):
             raise ValueError(f"The source SON object needs to be of type 'dict' but a '{type(son)}' was found")
 
@@ -767,25 +782,143 @@ class BaseDocument:
         # class if unavailable
         class_name = son.get("_cls", cls._class_name)
 
-        # Convert SON to a data dict, making sure each key is a string and
-        # corresponds to the right db field.
-        # This is needed as _from_son is currently called both from BaseDocument.__init__
-        # and from EmbeddedDocumentField.to_python
+        # Return correct subclass for document type
+        if class_name != cls._class_name:
+            cls = _DocumentRegistry.get(class_name)
+
+        # Fall back to __init__ path if pre_init/post_init signals have
+        # receivers, since the fast path skips signal dispatch.
+        if signals.pre_init.has_receivers_for(cls) or signals.post_init.has_receivers_for(cls):
+            return cls._from_son_via_init(son, created)
+
+        obj = cls.__new__(cls)  # type: ignore[arg-type]
+
+        # Initialise slots that __init__ would normally set
+        obj._initialised = False
+        obj._created = created
+        obj._dynamic_fields = SON()
+        obj._auto_id_field = cls._meta.get("id_field")
+        obj._db_field_map = cls._db_field_map
+
+        fields = cls._fields
+        reverse_map = cls._reverse_db_field_map  # {db_field: field_name}
+
+        if cls.STRICT and not cls._dynamic:
+            obj._data = StrictDict.create(allowed_keys=cls._fields_ordered)()
+        else:
+            obj._data = {}
+
+        errors_dict: dict[str, Any] = {}
+
+        # Single pass: translate db_field → field_name and call to_python
+        for db_key, value in son.items():
+            db_key = str(db_key)
+            field_name = reverse_map.get(db_key, db_key)
+            field = fields.get(field_name)
+
+            if field is not None:
+                if value is not None:
+                    try:
+                        value = field.to_python(value)
+                    except (AttributeError, ValueError) as e:
+                        errors_dict[field_name] = e
+                        continue
+                else:
+                    # Replicate BaseField.__set__ null handling:
+                    # replace None with default when null=False.
+                    if not field.null and field.default is not None:
+                        value = field.default
+                        if callable(value):
+                            value = value()
+                obj._data[field_name] = value
+            elif field_name in _KNOWN_EXTRA_KEYS:
+                # Internal keys (_cls, _text_score) — store silently
+                obj._data[field_name] = value
+            else:
+                # Extra key not in declared fields — store for dynamic /
+                # non-strict docs; raise for strict non-dynamic docs.
+                if not cls._dynamic and (cls._meta.get("strict", True) or created):
+                    msg = f'The fields "{{{field_name}}}" do not exist on the document "{cls._class_name}"'
+                    raise FieldDoesNotExist(msg)
+                obj._data[field_name] = value
+
+        if errors_dict:
+            errors = "\n".join([f"Field '{k}' - {v}" for k, v in errors_dict.items()])
+            msg = f"Invalid data to create a `{cls._class_name}` instance.\n{errors}"
+            raise InvalidDocumentError(msg)
+
+        # Set defaults for fields missing from son
+        for field_name in cls._fields_ordered:
+            if field_name not in obj._data:
+                field = fields[field_name]
+                default = field.default
+                if callable(default):
+                    default = default()
+                obj._data[field_name] = default
+
+        # Wire up _instance on embedded documents so change tracking
+        # and nested access work correctly (replicates what the field
+        # descriptor __set__ does during normal __init__).
+        EmbeddedDocument = cls._from_son_embedded_doc_type
+        if EmbeddedDocument is None:
+            EmbeddedDocument = _import_class("EmbeddedDocument")
+            BaseDocument._from_son_embedded_doc_type = EmbeddedDocument
+
+        proxy = weakref.proxy(obj)
+
+        def _set_instance(val: Any) -> None:
+            """Recursively set _instance on embedded docs.
+
+            Must recurse into lists (ListField/EmbeddedDocumentListField)
+            and dicts (MapField, DictField) to reach nested embedded docs.
+            """
+            if isinstance(val, EmbeddedDocument):
+                val._instance = proxy
+            elif isinstance(val, (list, tuple)):
+                for item in val:
+                    _set_instance(item)
+            elif isinstance(val, dict):
+                for item in val.values():
+                    _set_instance(item)
+
+        for value in obj._data.values():
+            _set_instance(value)
+
+        # Set up get_<field>_display methods for fields with choices
+        obj.__set_field_display()
+
+        # For dynamic documents, unlock and use setattr for non-field
+        # keys so that DynamicField descriptors are created properly.
+        if cls._dynamic:
+            obj._dynamic_lock = False  # pyright: ignore[reportGeneralTypeIssues]
+            for key in list(obj._data):
+                if key not in fields:
+                    value = obj._data.pop(key)
+                    setattr(obj, key, value)
+
+        obj._changed_fields = []
+        obj._initialised = True
+        return obj
+
+    @classmethod
+    def _from_son_via_init(cls, son: dict[str, Any], created: bool = False) -> Self:
+        """Fallback _from_son that goes through __init__.
+
+        Used when pre_init / post_init signal receivers are registered,
+        since the fast path skips signal dispatch.
+        """
+        # Convert SON to a data dict, making sure each key is a string
+        # and corresponds to the right db field.
         data: dict[str, Any] = {}
         for key, value in son.items():
             key = str(key)
             key = cls._db_field_map.get(key, key)
             data[key] = value
 
-        # Return correct subclass for document type
-        if class_name != cls._class_name:
-            cls = _DocumentRegistry.get(class_name)
-
         errors_dict: dict[str, Any] = {}
-
         fields = cls._fields
 
-        # Apply field-name / db-field conversion
+        # Apply field-name / db-field conversion and to_python
         for field_name, field in fields.items():
             if field.db_field in data:
                 value = data[field.db_field]
@@ -807,7 +940,6 @@ class BaseDocument:
 
         obj = cls(__auto_convert=False, _created=created, **data)
         obj._changed_fields = []
-
         return obj
 
     @classmethod
