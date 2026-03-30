@@ -32,7 +32,7 @@ implementation performed multiple passes over the data:
 | Key translation | `_db_field_map.get(key)` then second pass with `del` | `_reverse_db_field_map.get(key)` in single pass |
 | Dict copies | 2-3 intermediate dicts | 0 copies — writes directly to `_data` |
 | Field iteration | 4-5 passes total | 2 passes (son items + missing defaults) |
-| Signals | `pre_init` / `post_init` fired | Skipped (not needed for DB loads) |
+| Signals | `pre_init` / `post_init` fired | Skipped unless signal receivers are registered (auto-fallback) |
 
 ### Benchmark Results
 
@@ -54,11 +54,11 @@ Python 3.13.5, Apple Silicon. Median of 5 runs, 1000 iterations each.
 
 ### Trade-offs
 
-- **`pre_init` / `post_init` signals are not fired** for documents
-  loaded from the database. These are rarely used for DB loads.
-- **`get_FOO_display()` methods** are not set up (the
-  `__set_field_display` call is skipped). If you use `choices` with
-  display values, verify behavior.
+- **`pre_init` / `post_init` signals**: The fast path automatically
+  falls back to the `__init__`-based path when signal receivers are
+  registered, so signals work transparently.
+- **`get_FOO_display()` methods** are set up via `__set_field_display`
+  in the fast path, so `choices` fields work correctly.
 
 ### Approaches Evaluated and Rejected
 

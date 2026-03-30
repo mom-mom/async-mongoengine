@@ -826,6 +826,13 @@ class BaseDocument:
                     except (AttributeError, ValueError) as e:
                         errors_dict[field_name] = e
                         continue
+                else:
+                    # Replicate BaseField.__set__ null handling:
+                    # replace None with default when null=False.
+                    if not field.null and field.default is not None:
+                        value = field.default
+                        if callable(value):
+                            value = value()
                 obj._data[field_name] = value
             elif field_name in _KNOWN_EXTRA_KEYS:
                 # Internal keys (_cls, _text_score) — store silently
@@ -833,7 +840,7 @@ class BaseDocument:
             else:
                 # Extra key not in declared fields — store for dynamic /
                 # non-strict docs; raise for strict non-dynamic docs.
-                if not cls._dynamic and cls._meta.get("strict", True):
+                if not cls._dynamic and (cls._meta.get("strict", True) or created):
                     msg = f'The fields "{{{field_name}}}" do not exist on the document "{cls._class_name}"'
                     raise FieldDoesNotExist(msg)
                 obj._data[field_name] = value
