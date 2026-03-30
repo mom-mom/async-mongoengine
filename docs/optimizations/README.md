@@ -158,3 +158,5 @@ Why accepted or rejected. What was learned.
   Cache remaining `_import_class` calls + skip `__set_field_display` when no choices (8-13%). Accepted.
 - [precomputed_dispatch_and_init_bypass.md](attempts/precomputed_dispatch_and_init_bypass.md) —
   Precomputed to_mongo/validate dispatch tables + __init__ ComplexBaseField bypass (1.1-1.5x). Accepted.
+- [extreme_approaches.md](attempts/extreme_approaches.md) —
+  orjson, Rust/C extension, to_python identity skip, __slots__, msgspec. All rejected.
