@@ -253,6 +253,11 @@ class BaseField:
         self._set_owner_document(owner_document)
 
 
+FAST_TO_PYTHON = True
+"""When True, ComplexBaseField.to_python uses a fast path that processes
+lists directly instead of converting list→dict→sorted list."""
+
+
 class ComplexBaseField(BaseField):
     """Handles complex fields, such as lists / dictionaries.
 
@@ -260,6 +265,10 @@ class ComplexBaseField(BaseField):
     Handles the lazy dereferencing of a queryset by lazily dereferencing all
     items in a list / dict rather than one at a time.
     """
+
+    # Cached import results for to_python (resolved once, reused).
+    _to_python_base_doc_type: type | None = None
+    _to_python_doc_type: type | None = None
 
     def __init__(self, field: BaseField | None = None, **kwargs: Any) -> None:
         if field is not None and not isinstance(field, BaseField):
@@ -304,6 +313,12 @@ class ComplexBaseField(BaseField):
 
     def to_python(self, value: Any) -> Any:
         """Convert a MongoDB-compatible type to a Python type."""
+        if FAST_TO_PYTHON:
+            return self._to_python_fast(value)
+        return self._to_python_legacy(value)
+
+    def _to_python_legacy(self, value: Any) -> Any:
+        """Original to_python implementation (list→dict→sorted list)."""
         if isinstance(value, str):
             return value
 
@@ -343,6 +358,71 @@ class ComplexBaseField(BaseField):
         if is_list:  # Convert back to a list
             return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
+
+    def _to_python_fast(self, value: Any) -> Any:
+        """Optimized to_python: handles lists directly without dict conversion.
+
+        The legacy implementation converts every list to a dict (via
+        enumerate), processes items, then sorts the dict back into a list.
+        This fast path processes lists in-place, avoiding the intermediate
+        dict allocation and O(n log n) sort.  Cached _import_class calls
+        eliminate repeated module lookups.
+        """
+        if isinstance(value, str):
+            return value
+
+        if hasattr(value, "to_python"):
+            return value.to_python()
+
+        # Cache BaseDocument import
+        if ComplexBaseField._to_python_base_doc_type is None:
+            ComplexBaseField._to_python_base_doc_type = _import_class("BaseDocument")
+        if isinstance(value, ComplexBaseField._to_python_base_doc_type):
+            return value
+
+        # -- List path (most common: ListField, EmbeddedDocumentListField) --
+        if isinstance(value, (list, tuple)):
+            field = self.field
+            if field is not None:
+                return [field.to_python(item) for item in value]
+            # No sub-field: recurse per-element (rare, e.g. untyped ListField)
+            if ComplexBaseField._to_python_doc_type is None:
+                ComplexBaseField._to_python_doc_type = _import_class("Document")
+            _Document = ComplexBaseField._to_python_doc_type
+            result = []
+            for v in value:
+                if isinstance(v, _Document):
+                    if v.pk is None:
+                        self.error("You can only reference documents once they have been saved to the database")
+                    result.append(DBRef(v._get_collection_name(), v.pk))
+                elif hasattr(v, "to_python"):
+                    result.append(v.to_python())
+                else:
+                    result.append(self._to_python_fast(v))
+            return result
+
+        # -- Dict path --
+        if hasattr(value, "items"):
+            field = self.field
+            if field is not None:
+                return {key: field.to_python(item) for key, item in value.items()}
+            if ComplexBaseField._to_python_doc_type is None:
+                ComplexBaseField._to_python_doc_type = _import_class("Document")
+            _Document = ComplexBaseField._to_python_doc_type
+            value_dict = {}
+            for k, v in value.items():
+                if isinstance(v, _Document):
+                    if v.pk is None:
+                        self.error("You can only reference documents once they have been saved to the database")
+                    value_dict[k] = DBRef(v._get_collection_name(), v.pk)
+                elif hasattr(v, "to_python"):
+                    value_dict[k] = v.to_python()
+                else:
+                    value_dict[k] = self._to_python_fast(v)
+            return value_dict
+
+        # Non-iterable scalar — return as-is
+        return value
 
     # Cached import results for to_mongo (resolved once, reused).
     _to_mongo_doc_type: type | None = None
