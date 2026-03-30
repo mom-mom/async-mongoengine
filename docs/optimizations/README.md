@@ -3,39 +3,56 @@
 This document defines the process for proposing, benchmarking, and
 landing (or rejecting) performance optimizations in async-mongoengine.
 
+## Branching Strategy
+
+```
+master
+  └── perf/optimizations          ← main optimization branch (1 PR to master)
+        ├── perf/<name>           ← sub-branch per optimization
+        │     → PR to perf/optimizations → code review → squash merge
+        ├── perf/<name>
+        │     → PR to perf/optimizations → code review → squash merge
+        └── ...
+```
+
+Each optimization is a single squash-merged commit on `perf/optimizations`.
+When all optimizations are done, `perf/optimizations` is merged to master
+as one PR (preserving individual optimization commits).
+
 ## Flow
 
 ```
-1. Baseline benchmark
-   Run benchmarks/run_all.py on a feature branch.
-   It automatically checks out main via git worktree and runs
-   the same benchmark there for comparison.
+1. Identify bottleneck
+   Run benchmarks/run_all.py to profile current performance.
+   Read source code for the slowest operations.
 
 2. Hypothesis
-   Identify a bottleneck and form a hypothesis.
    Write benchmarks/bench_hypothesis_<name>.py with flag-gated
    on/off comparison.
 
-3. Implement (flag-gated)
-   All existing tests must pass with the flag off (default).
+3. Implement (flag-gated, on sub-branch perf/<name>)
+   All existing tests must pass with the flag both on and off.
 
 4. Measure
    Run benchmarks/run_all.py:
      - bench_baseline.py must show no regression vs main
      - bench_hypothesis_<name>.py must show improvement
 
-5a. Accept (improvement confirmed)
-     - Remove flag, make default
-     - Add regression tests
-     - Merge hypothesis benchmark into bench_baseline.py
+5. PR + Code Review
+   Create PR from perf/<name> → perf/optimizations.
+   Get code review. Fix issues.
+
+6a. Accept (improvement confirmed)
+     - Squash merge to perf/optimizations
      - Record in docs/optimizations/attempts/<name>.md
 
-5b. Reject (no improvement or regression)
-     - Revert code changes
+6b. Reject (no improvement or regression)
+     - Close PR
      - Record in docs/optimizations/attempts/<name>.md
        (why it failed — prevents re-attempting the same idea)
 
-6. Go to 2
+7. Clean up: remove flag, merge hypothesis benchmark into baseline
+   if accepted. Go to 1.
 ```
 
 ## Version Control
