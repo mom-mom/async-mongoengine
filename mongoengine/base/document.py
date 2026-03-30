@@ -870,6 +870,11 @@ class BaseDocument:
         proxy = weakref.proxy(obj)
 
         def _set_instance(val: Any) -> None:
+            """Recursively set _instance on embedded docs.
+
+            Must recurse into lists (ListField/EmbeddedDocumentListField)
+            and dicts (MapField, DictField) to reach nested embedded docs.
+            """
             if isinstance(val, EmbeddedDocument):
                 val._instance = proxy
             elif isinstance(val, (list, tuple)):
@@ -905,6 +910,8 @@ class BaseDocument:
         Used when pre_init / post_init signal receivers are registered,
         since the fast path skips signal dispatch.
         """
+        # Convert SON to a data dict, making sure each key is a string
+        # and corresponds to the right db field.
         data: dict[str, Any] = {}
         for key, value in son.items():
             key = str(key)
@@ -914,6 +921,7 @@ class BaseDocument:
         errors_dict: dict[str, Any] = {}
         fields = cls._fields
 
+        # Apply field-name / db-field conversion and to_python
         for field_name, field in fields.items():
             if field.db_field in data:
                 value = data[field.db_field]
@@ -929,6 +937,7 @@ class BaseDocument:
             msg = f"Invalid data to create a `{cls._class_name}` instance.\n{errors}"
             raise InvalidDocumentError(msg)
 
+        # In STRICT documents, remove any keys that aren't in cls._fields
         if cls.STRICT:
             data = {k: v for k, v in data.items() if k in cls._fields}
 
