@@ -223,6 +223,11 @@ class BaseDocument:
     # Cached _import_class result for EmbeddedDocument (used in fast __init__)
     _init_embedded_doc_type: type | None = None
 
+    # Pre-computed flag: True if any field on this class has choices.
+    # Set lazily on first __set_field_display call.  When False, the
+    # method returns immediately without iterating _fields.
+    _has_choices_fields: bool | None = None
+
     def __init__(self, *args: Any, **values: Any) -> None:
         """
         Initialise a document or an embedded document.
@@ -1553,14 +1558,25 @@ class BaseDocument:
     def __set_field_display(self) -> None:
         """For each field that specifies choices, create a
         get_<field>_display method.
+
+        Skips iteration entirely when no fields on the class have choices
+        (common case), using a lazily-computed class-level flag.
         """
-        fields_with_choices = [(n, f) for n, f in self._fields.items() if f.choices]
-        for attr_name, field in fields_with_choices:
-            setattr(
-                self,
-                f"get_{attr_name}_display",
-                partial(self.__get_field_display, field=field),
-            )
+        cls = self.__class__
+        has_choices = cls._has_choices_fields
+        if has_choices is None:
+            has_choices = any(f.choices for f in cls._fields.values())
+            cls._has_choices_fields = has_choices
+        if not has_choices:
+            return
+
+        for attr_name, field in cls._fields.items():
+            if field.choices:
+                setattr(
+                    self,
+                    f"get_{attr_name}_display",
+                    partial(self.__get_field_display, field=field),
+                )
 
     def __get_field_display(self, field: Any) -> Any:
         """Return the display value for a choice field"""
