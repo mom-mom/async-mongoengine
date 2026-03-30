@@ -152,3 +152,5 @@ Why accepted or rejected. What was learned.
   `__init__` fast path bypassing `__setattr__` (1.2-1.4x). Accepted.
 - [from_son_setattr_bypass.md](attempts/from_son_setattr_bypass.md) —
   `_from_son` `object.__setattr__` + `to_python` direct list iteration (1.6-2x). Accepted.
+- [targeted_set_instance.md](attempts/targeted_set_instance.md) —
+  `_from_son_set_instance` targeted field walk instead of recursive all-values walk (1.4-1.5x). Accepted.
