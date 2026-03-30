@@ -86,6 +86,114 @@ def _from_son_set_instance(
         _recurse(value)
 
 
+# Field-kind constants for _from_son_set_instance_targeted.
+_EMB_DIRECT = 0  # EmbeddedDocumentField — value is a single embedded doc
+_EMB_LIST = 1  # EmbeddedDocumentListField — value is a list of embedded docs
+_EMB_GENERIC = 2  # GenericEmbeddedDocumentField / other — needs recursive walk
+
+
+def _from_son_set_instance_targeted(
+    proxy: Any,
+    embedded_type: type,
+    data: dict[str, Any],
+    embedded_field_info: tuple[tuple[str, int], ...],
+) -> None:
+    """Wire up _instance on embedded docs, visiting only fields that may
+    contain embedded documents.
+
+    *embedded_field_info* is a tuple of ``(field_name, kind)`` pairs
+    pre-computed per document class, where *kind* is one of the
+    ``_EMB_*`` constants above.
+
+    This avoids the O(N) recursive walk over every value in *data*
+    (strings, ints, plain lists, etc.) that the generic version performs.
+    """
+    _osetattr = object.__setattr__
+
+    for field_name, kind in embedded_field_info:
+        value = data.get(field_name)
+        if value is None:
+            continue
+
+        if kind == _EMB_DIRECT:
+            # Single embedded document
+            if isinstance(value, embedded_type):
+                _osetattr(value, "_instance", proxy)
+        elif kind == _EMB_LIST:
+            # List of embedded documents
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    if isinstance(item, embedded_type):
+                        _osetattr(item, "_instance", proxy)
+        else:
+            # Generic / unknown — fall back to recursive walk
+            _recurse_set_instance(value, proxy, embedded_type, _osetattr)
+
+
+def _recurse_set_instance(
+    val: Any,
+    proxy: Any,
+    embedded_type: type,
+    _osetattr: Any = object.__setattr__,
+) -> None:
+    """Recursive fallback for generic embedded doc fields."""
+    if isinstance(val, embedded_type):
+        _osetattr(val, "_instance", proxy)
+    elif isinstance(val, (list, tuple)):
+        for item in val:
+            _recurse_set_instance(item, proxy, embedded_type, _osetattr)
+    elif isinstance(val, dict):
+        for item in val.values():
+            _recurse_set_instance(item, proxy, embedded_type, _osetattr)
+
+
+def _field_may_contain_embedded(field: BaseField, embedded_type: type) -> bool:
+    """Return True if *field* could hold embedded document instances."""
+    EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
+    GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
+
+    if isinstance(field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)):
+        return True
+    # ComplexBaseField subclasses (ListField, DictField, MapField, etc.)
+    # may wrap an inner field that contains embedded docs.
+    if isinstance(field, ComplexBaseField) and field.field is not None:
+        return _field_may_contain_embedded(field.field, embedded_type)
+    return False
+
+
+def _build_embedded_field_info(
+    cls: type,
+    embedded_type: type,
+) -> tuple[tuple[str, int], ...]:
+    """Build a tuple of (field_name, kind) for fields that may contain
+    embedded documents.
+
+    Called once per document class, result is cached on the class.
+    """
+    EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
+    EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
+    GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
+
+    info: list[tuple[str, int]] = []
+    for field_name, field in cls._fields.items():
+        if isinstance(field, EmbeddedDocumentField):
+            info.append((field_name, _EMB_DIRECT))
+        elif isinstance(field, EmbeddedDocumentListField):
+            info.append((field_name, _EMB_LIST))
+        elif isinstance(field, GenericEmbeddedDocumentField):
+            # Generic embedded fields need recursive walk
+            info.append((field_name, _EMB_GENERIC))
+        elif isinstance(field, ComplexBaseField) and _field_may_contain_embedded(field, embedded_type):
+            # ComplexBaseField wrapping embedded docs (e.g. MapField(EmbeddedDocumentField),
+            # DictField(EmbeddedDocumentField), ListField(EmbeddedDocumentField),
+            # MapField(MapField(EmbeddedDocumentField)), etc.)
+            info.append((field_name, _EMB_GENERIC))
+        # For dynamic documents, there could be additional embedded docs
+        # in non-declared fields, but _from_son handles dynamic fields
+        # separately via setattr, which triggers __set__ on the descriptor.
+    return tuple(info)
+
+
 class BaseDocument:
     # TODO simplify how `_changed_fields` is used.
     # Currently, handling of `_changed_fields` seems unnecessarily convoluted:
@@ -539,6 +647,9 @@ class BaseDocument:
     # Cached _import_class results.
     _validate_embedded_types: tuple[type, ...] | None = None
     _from_son_embedded_doc_type: type | None = None
+    # Pre-computed list of (field_name, kind) for fields that may contain
+    # embedded documents.  Built lazily on first _from_son call.
+    _from_son_embedded_field_info: tuple[tuple[str, int], ...] | None = None
 
     def validate(self, clean: bool = True) -> None:
         """Ensure that all fields' values are valid and that required fields
@@ -1025,8 +1136,16 @@ class BaseDocument:
             EmbeddedDocument = _import_class("EmbeddedDocument")
             BaseDocument._from_son_embedded_doc_type = EmbeddedDocument
 
+        # Build the per-class embedded field info cache on first use.
+        embedded_field_info = cls._from_son_embedded_field_info
+        if embedded_field_info is None:
+            embedded_field_info = _build_embedded_field_info(cls, EmbeddedDocument)
+            cls._from_son_embedded_field_info = embedded_field_info
+
         proxy = weakref.proxy(obj)
-        _from_son_set_instance(proxy, EmbeddedDocument, data)
+        if embedded_field_info:
+            _from_son_set_instance_targeted(proxy, EmbeddedDocument, data, embedded_field_info)
+        # If no embedded fields, skip _instance wiring entirely.
 
         # Set up get_<field>_display methods for fields with choices
         obj.__set_field_display()
