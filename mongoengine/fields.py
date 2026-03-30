@@ -785,10 +785,11 @@ class GenericEmbeddedDocumentField(BaseField):
         return value
 
     def validate(self, value: Any, clean: bool = True) -> None:
-        if self.choices and isinstance(value, SON):
-            for choice in self.choices:
-                if value["_cls"] == choice._class_name:
-                    return
+        if self.choices and isinstance(value, (SON, dict)):
+            if "_cls" in value:
+                for choice in self.choices:
+                    if value["_cls"] == choice._class_name:
+                        return
 
         if not isinstance(value, EmbeddedDocument):
             self.error("Invalid embedded document instance provided to an GenericEmbeddedDocumentField")
