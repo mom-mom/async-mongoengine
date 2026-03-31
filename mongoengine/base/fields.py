@@ -171,17 +171,31 @@ class BaseField:
         """Convert a Python type to a MongoDB-compatible type."""
         return self.to_python(value)
 
+    # Class-level cache: maps field class -> (accepts_use_db_field, accepts_fields)
+    _safe_call_sig_cache: dict[type, tuple[bool, bool]] = {}
+
     def _to_mongo_safe_call(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
-        """Helper method to call to_mongo with proper inputs."""
-        f_inputs = self.to_mongo.__code__.co_varnames
-        ex_vars: dict[str, Any] = {}
-        if "fields" in f_inputs:
-            ex_vars["fields"] = fields
+        """Helper method to call to_mongo with proper inputs.
 
-        if "use_db_field" in f_inputs:
-            ex_vars["use_db_field"] = use_db_field
+        Caches co_varnames introspection per field class to avoid
+        repeated code object inspection on every call.
+        """
+        cls = type(self)
+        cache = BaseField._safe_call_sig_cache
+        sig = cache.get(cls)
+        if sig is None:
+            f_inputs = self.to_mongo.__code__.co_varnames
+            sig = ("use_db_field" in f_inputs, "fields" in f_inputs)
+            cache[cls] = sig
+        accepts_db, accepts_fields = sig
 
-        return self.to_mongo(value, **ex_vars)
+        if accepts_fields:
+            if accepts_db:
+                return self.to_mongo(value, use_db_field=use_db_field, fields=fields)
+            return self.to_mongo(value, fields=fields)
+        elif accepts_db:
+            return self.to_mongo(value, use_db_field=use_db_field)
+        return self.to_mongo(value)
 
     def prepare_query_value(self, op: str, value: Any) -> Any:
         """Prepare a value that is being used in a query for PyMongo."""
@@ -261,6 +275,14 @@ class ComplexBaseField(BaseField):
     items in a list / dict rather than one at a time.
     """
 
+    # Cached import results for to_python (resolved once, reused).
+    _to_python_base_doc_type: type | None = None
+    _to_python_doc_type: type | None = None
+
+    # Cached import results for __set__ and __get__ (resolved once, reused).
+    _set_enum_field_type: type | None = None
+    _get_emb_doc_list_field_type: type | None = None
+
     def __init__(self, field: BaseField | None = None, **kwargs: Any) -> None:
         if field is not None and not isinstance(field, BaseField):
             raise TypeError(f"field argument must be a Field instance (e.g {self.__class__.__name__}(StringField()))")
@@ -270,12 +292,16 @@ class ComplexBaseField(BaseField):
     def __set__(self, instance: Any, value: Any) -> None:
         # Some fields e.g EnumField are converted upon __set__
         # So it is fair to mimic the same behavior when using e.g ListField(EnumField)
-        EnumField = _import_class("EnumField")
-        if self.field and isinstance(self.field, EnumField):
-            if isinstance(value, (list, tuple)):
-                value = [self.field.to_python(sub_val) for sub_val in value]
-            elif isinstance(value, dict):
-                value = {key: self.field.to_python(sub) for key, sub in value.items()}
+        if self.field:
+            EnumField = ComplexBaseField._set_enum_field_type
+            if EnumField is None:
+                EnumField = _import_class("EnumField")
+                ComplexBaseField._set_enum_field_type = EnumField
+            if isinstance(self.field, EnumField):
+                if isinstance(value, (list, tuple)):
+                    value = [self.field.to_python(sub_val) for sub_val in value]
+                elif isinstance(value, dict):
+                    value = {key: self.field.to_python(sub) for key, sub in value.items()}
 
         return super().__set__(instance, value)
 
@@ -285,12 +311,14 @@ class ComplexBaseField(BaseField):
             # Document class being used rather than a document object
             return self
 
-        EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
-
         value = super().__get__(instance, owner)
 
         # Convert lists / values so we can watch for any changes on them
         if isinstance(value, (list, tuple)):
+            EmbeddedDocumentListField = ComplexBaseField._get_emb_doc_list_field_type
+            if EmbeddedDocumentListField is None:
+                EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
+                ComplexBaseField._get_emb_doc_list_field_type = EmbeddedDocumentListField
             if issubclass(type(self), EmbeddedDocumentListField) and not isinstance(value, EmbeddedDocumentList):
                 value = EmbeddedDocumentList(value, instance, self.name)
             elif not isinstance(value, BaseList):
@@ -303,52 +331,82 @@ class ComplexBaseField(BaseField):
         return value
 
     def to_python(self, value: Any) -> Any:
-        """Convert a MongoDB-compatible type to a Python type."""
+        """Convert a MongoDB-compatible type to a Python type.
+
+        Processes lists directly (no list→dict→sort conversion) and
+        caches _import_class lookups.
+        """
         if isinstance(value, str):
             return value
 
         if hasattr(value, "to_python"):
             return value.to_python()
 
-        BaseDocument = _import_class("BaseDocument")
-        if isinstance(value, BaseDocument):
-            # Something is wrong, return the value as it is
+        # Cache BaseDocument import
+        if ComplexBaseField._to_python_base_doc_type is None:
+            ComplexBaseField._to_python_base_doc_type = _import_class("BaseDocument")
+        if isinstance(value, ComplexBaseField._to_python_base_doc_type):
             return value
 
-        is_list = False
-        if not hasattr(value, "items"):
-            try:
-                is_list = True
-                value = {idx: v for idx, v in enumerate(value)}
-            except TypeError:  # Not iterable return the value
-                return value
-
-        if self.field:
-            value_dict = {key: self.field.to_python(item) for key, item in value.items()}
-        else:
-            Document = _import_class("Document")
-            value_dict = {}
-            for k, v in value.items():
-                if isinstance(v, Document):
-                    # We need the id from the saved object to create the DBRef
+        # -- List path (most common: ListField, EmbeddedDocumentListField) --
+        if isinstance(value, (list, tuple)):
+            field = self.field
+            if field is not None:
+                return [field.to_python(item) for item in value]
+            # No sub-field: recurse per-element (rare, e.g. untyped ListField)
+            if ComplexBaseField._to_python_doc_type is None:
+                ComplexBaseField._to_python_doc_type = _import_class("Document")
+            _Document = ComplexBaseField._to_python_doc_type
+            result = []
+            for v in value:
+                if isinstance(v, _Document):
                     if v.pk is None:
                         self.error("You can only reference documents once they have been saved to the database")
-                    collection = v._get_collection_name()
-                    value_dict[k] = DBRef(collection, v.pk)
+                    result.append(DBRef(v._get_collection_name(), v.pk))
+                elif hasattr(v, "to_python"):
+                    result.append(v.to_python())
+                else:
+                    result.append(self.to_python(v))
+            return result
+
+        # -- Dict path --
+        if hasattr(value, "items"):
+            field = self.field
+            if field is not None:
+                return {key: field.to_python(item) for key, item in value.items()}
+            if ComplexBaseField._to_python_doc_type is None:
+                ComplexBaseField._to_python_doc_type = _import_class("Document")
+            _Document = ComplexBaseField._to_python_doc_type
+            value_dict = {}
+            for k, v in value.items():
+                if isinstance(v, _Document):
+                    if v.pk is None:
+                        self.error("You can only reference documents once they have been saved to the database")
+                    value_dict[k] = DBRef(v._get_collection_name(), v.pk)
                 elif hasattr(v, "to_python"):
                     value_dict[k] = v.to_python()
                 else:
                     value_dict[k] = self.to_python(v)
+            return value_dict
 
-        if is_list:  # Convert back to a list
-            return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
-        return value_dict
+        # Non-iterable scalar — return as-is
+        return value
+
+    # Cached import results for to_mongo (resolved once, reused).
+    _to_mongo_doc_type: type | None = None
+    _to_mongo_emb_type: type | None = None
+    _to_mongo_gen_ref_type: type | None = None
 
     def to_mongo(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """Convert a Python type to a MongoDB-compatible type."""
-        Document = _import_class("Document")
-        EmbeddedDocument = _import_class("EmbeddedDocument")
-        GenericReferenceField = _import_class("GenericReferenceField")
+        # Use cached imports instead of calling _import_class every time
+        if ComplexBaseField._to_mongo_doc_type is None:
+            ComplexBaseField._to_mongo_doc_type = _import_class("Document")
+            ComplexBaseField._to_mongo_emb_type = _import_class("EmbeddedDocument")
+            ComplexBaseField._to_mongo_gen_ref_type = _import_class("GenericReferenceField")
+        Document = ComplexBaseField._to_mongo_doc_type
+        EmbeddedDocument = ComplexBaseField._to_mongo_emb_type
+        GenericReferenceField = ComplexBaseField._to_mongo_gen_ref_type
 
         if isinstance(value, str):
             return value
@@ -363,29 +421,57 @@ class ComplexBaseField(BaseField):
                 val["_cls"] = cls.__name__
             return val
 
+        # Fast path: list/tuple with a sub-field — iterate directly
+        # instead of converting to dict, iterating, and sorting back.
+        if isinstance(value, (list, tuple)):
+            if self.field:
+                _safe_call = self.field._to_mongo_safe_call
+                return [_safe_call(item, use_db_field, fields) for item in value]
+            # No sub-field: process each element individually
+            result_list = []
+            for v in value:
+                if isinstance(v, Document):
+                    if v.pk is None:
+                        self.error("You can only reference documents once they have been saved to the database")
+                    # Non-inheritable docs lack _cls, so use GenericReferenceField
+                    # to allow proper dereferencing.
+                    meta = getattr(v, "_meta", {})
+                    if not meta.get("allow_inheritance"):
+                        result_list.append(GenericReferenceField().to_mongo(v))
+                    else:
+                        result_list.append(DBRef(v._get_collection_name(), v.pk))
+                elif hasattr(v, "to_mongo"):
+                    cls = v.__class__
+                    val = v.to_mongo(use_db_field, fields)
+                    # Attach _cls for Document/EmbeddedDocument so
+                    # deserialization can resolve the correct subclass.
+                    if isinstance(v, (Document, EmbeddedDocument)):
+                        val["_cls"] = cls.__name__
+                    result_list.append(val)
+                else:
+                    result_list.append(self.to_mongo(v, use_db_field, fields))
+            return result_list
+
+        # Generic iterable (generator, set, deque, etc.) — convert to
+        # list, process, and return as list (not dict).
         is_list = False
         if not hasattr(value, "items"):
             try:
                 is_list = True
                 value = {k: v for k, v in enumerate(value)}
-            except TypeError:  # Not iterable return the value
+            except TypeError:
                 return value
 
         if self.field:
-            value_dict = {
-                key: self.field._to_mongo_safe_call(item, use_db_field, fields) for key, item in value.items()
-            }
+            value_dict = {key: self.field._to_mongo_safe_call(item, use_db_field, fields) for key, item in value.items()}
         else:
             value_dict = {}
             for k, v in value.items():
                 if isinstance(v, Document):
-                    # We need the id from the saved object to create the DBRef
                     if v.pk is None:
                         self.error("You can only reference documents once they have been saved to the database")
-
-                    # If it's a document that is not inheritable it won't have
-                    # any _cls data so make it a generic reference allows
-                    # us to dereference
+                    # Non-inheritable docs lack _cls, so use GenericReferenceField
+                    # to allow proper dereferencing.
                     meta = getattr(v, "_meta", {})
                     allow_inheritance = meta.get("allow_inheritance")
                     if not allow_inheritance:
@@ -396,14 +482,15 @@ class ComplexBaseField(BaseField):
                 elif hasattr(v, "to_mongo"):
                     cls = v.__class__
                     val = v.to_mongo(use_db_field, fields)
-                    # If it's a document that is not inherited add _cls
+                    # Attach _cls for Document/EmbeddedDocument so
+                    # deserialization can resolve the correct subclass.
                     if isinstance(v, (Document, EmbeddedDocument)):
                         val["_cls"] = cls.__name__
                     value_dict[k] = val
                 else:
                     value_dict[k] = self.to_mongo(v, use_db_field, fields)
 
-        if is_list:  # Convert back to a list
+        if is_list:
             return [v for _, v in sorted(value_dict.items(), key=operator.itemgetter(0))]
         return value_dict
 
