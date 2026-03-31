@@ -145,9 +145,13 @@ async def run_io_benchmarks(n: int, repeat: int) -> dict[str, dict[str, float]]:
     for r in range(repeat):
         print(f"  Run {r + 1}/{repeat}... ", end="", flush=True)
 
-        # save: create new documents
+        # save: create new documents (use incrementing counter so each
+        # iteration produces a unique document, not the same index)
+        save_counter = [SEED_SIZE + r * n]
+
         async def bench_save() -> None:
-            doc = make_employee(SEED_SIZE + r * n)
+            doc = make_employee(save_counter[0])
+            save_counter[0] += 1
             doc.id = None  # force new insert
             await doc.save()
 

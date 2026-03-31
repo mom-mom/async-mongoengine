@@ -3777,6 +3777,89 @@ class TestDocumentInstance(MongoDBTestCase):
         )
 
 
+    async def test_from_son_respects_custom_init(self):
+        """_from_son must call user-defined __init__ so that runtime
+        attributes set during construction are present on the instance."""
+
+        class UserWithInit(Document):
+            name = StringField()
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.runtime_flag = "initialized"
+
+        # Direct construction sets the attribute
+        direct = UserWithInit(name="alice")
+        assert direct.runtime_flag == "initialized"
+
+        # _from_son must also call __init__ and set the attribute
+        loaded = UserWithInit._from_son({"name": "alice"})
+        assert loaded.runtime_flag == "initialized"
+
+    async def test_init_respects_custom_setattr(self):
+        """Fast __init__ path must fall back to legacy path when the
+        subclass overrides __setattr__, so the override is honoured."""
+
+        class TrackedDoc(Document):
+            name = StringField()
+
+            def __init__(self, *args, **kwargs):
+                self._set_log = []
+                super().__init__(*args, **kwargs)
+
+            def __setattr__(self, key, value):
+                if not key.startswith("_"):
+                    self._set_log.append(key)
+                super().__setattr__(key, value)
+
+        doc = TrackedDoc(name="test")
+        assert "name" in doc._set_log
+
+    async def test_from_son_respects_custom_setattr(self):
+        """_from_son must fall back to __init__ path when the subclass
+        overrides __setattr__."""
+
+        class TrackedDoc2(Document):
+            name = StringField()
+
+            def __init__(self, *args, **kwargs):
+                self._set_log = []
+                super().__init__(*args, **kwargs)
+
+            def __setattr__(self, key, value):
+                if not key.startswith("_"):
+                    self._set_log.append(key)
+                super().__setattr__(key, value)
+
+        loaded = TrackedDoc2._from_son({"name": "alice"})
+        assert "name" in loaded._set_log
+
+    async def test_choices_display_with_inheritance(self):
+        """_has_choices_fields cache must not leak from parent to child.
+        A child class that adds a choices field must still get
+        get_<field>_display() even if the parent was instantiated first."""
+
+        class ParentDoc(Document):
+            name = StringField()
+            meta = {"allow_inheritance": True}
+
+        class ChildDoc(ParentDoc):
+            status = StringField(choices=[("a", "Active"), ("i", "Inactive")])
+
+        # Instantiate parent first to cache _has_choices_fields=False on parent
+        _parent = ParentDoc(name="parent")
+
+        # Child must still get the display method
+        child = ChildDoc(name="child", status="a")
+        assert hasattr(child, "get_status_display")
+        assert child.get_status_display() == "Active"
+
+        # Also verify via _from_son
+        child2 = ChildDoc._from_son({"name": "child2", "status": "a"})
+        assert hasattr(child2, "get_status_display")
+        assert child2.get_status_display() == "Active"
+
+
 class ObjectKeyTestCase(MongoDBTestCase):
     async def test_object_key_simple_document(self):
         class Book(Document):

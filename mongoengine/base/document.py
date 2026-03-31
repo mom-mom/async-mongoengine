@@ -169,6 +169,25 @@ def _build_embedded_field_info(
     return tuple(info)
 
 
+# Lazily populated set of __init__ methods belonging to framework classes
+# (BaseDocument, EmbeddedDocument).  Used by _has_custom_init() to detect
+# user-defined __init__ overrides without importing EmbeddedDocument eagerly.
+_framework_init_methods: frozenset | None = None
+
+
+def _has_custom_init(cls: type) -> bool:
+    """Return True if *cls* defines a user-level ``__init__`` override.
+
+    Framework classes (BaseDocument, EmbeddedDocument) are excluded so that
+    the fast path is used for the common case where no custom __init__ exists.
+    """
+    global _framework_init_methods
+    if _framework_init_methods is None:
+        EmbeddedDocument = _import_class("EmbeddedDocument")
+        _framework_init_methods = frozenset({BaseDocument.__init__, EmbeddedDocument.__init__})
+    return cls.__init__ not in _framework_init_methods
+
+
 class BaseDocument:
     # TODO simplify how `_changed_fields` is used.
     # Currently, handling of `_changed_fields` seems unnecessarily convoluted:
@@ -226,13 +245,15 @@ class BaseDocument:
         cls = self.__class__
 
         # Fast path: bypass __setattr__ and field descriptors for
-        # non-dynamic, non-STRICT documents without signal receivers.
+        # non-dynamic, non-STRICT documents without signal receivers
+        # and without user-defined __setattr__ overrides.
         if (
             not self._dynamic
             and not self.STRICT
             and __auto_convert
             and not signals.pre_init.has_receivers_for(cls)
             and not signals.post_init.has_receivers_for(cls)
+            and cls.__setattr__ is BaseDocument.__setattr__
         ):
             self._init_fast(values, _created)
             return
@@ -390,19 +411,24 @@ class BaseDocument:
             else:
                 data[key] = value
 
-        # Wire up _instance on embedded documents
+        # Wire up _instance on embedded documents (lazily create proxy
+        # only when an embedded document is actually found).
         EmbeddedDocumentCls = BaseDocument._init_embedded_doc_type
         if EmbeddedDocumentCls is None:
             EmbeddedDocumentCls = _import_class("EmbeddedDocument")
             BaseDocument._init_embedded_doc_type = EmbeddedDocumentCls
 
-        proxy = weakref.proxy(self)
+        proxy = None
         for value in data.values():
             if isinstance(value, EmbeddedDocumentCls):
+                if proxy is None:
+                    proxy = weakref.proxy(self)
                 value._instance = proxy
             elif isinstance(value, (list, tuple)):
                 for v in value:
                     if isinstance(v, EmbeddedDocumentCls):
+                        if proxy is None:
+                            proxy = weakref.proxy(self)
                         v._instance = proxy
 
         self.__set_field_display()
@@ -1190,9 +1216,16 @@ class BaseDocument:
         if class_name != cls._class_name:
             cls = _DocumentRegistry.get(class_name)
 
-        # Fall back to __init__ path if pre_init/post_init signals have
-        # receivers, since the fast path skips signal dispatch.
-        if signals.pre_init.has_receivers_for(cls) or signals.post_init.has_receivers_for(cls):
+        # Fall back to __init__ path if:
+        #  - pre_init/post_init signals have receivers (fast path skips signals)
+        #  - user subclass overrides __init__ (fast path uses __new__, skips it)
+        #  - user subclass overrides __setattr__ (fast path bypasses it)
+        if (
+            signals.pre_init.has_receivers_for(cls)
+            or signals.post_init.has_receivers_for(cls)
+            or _has_custom_init(cls)
+            or cls.__setattr__ is not BaseDocument.__setattr__
+        ):
             return cls._from_son_via_init(son, created)
 
         obj = cls.__new__(cls)  # type: ignore[arg-type]
@@ -1251,7 +1284,7 @@ class BaseDocument:
                 # Extra key not in declared fields — store for dynamic /
                 # non-strict docs; raise for strict non-dynamic docs.
                 if not cls._dynamic and (cls._meta.get("strict", True) or created):
-                    msg = f'The fields "{{{field_name}}}" do not exist on the document "{cls._class_name}"'
+                    msg = f'The field "{field_name}" does not exist on the document "{cls._class_name}"'
                     raise FieldDoesNotExist(msg)
                 data[field_name] = value
 
@@ -1700,7 +1733,9 @@ class BaseDocument:
         (common case), using a lazily-computed class-level flag.
         """
         cls = self.__class__
-        has_choices = cls._has_choices_fields
+        # Use __dict__.get to avoid inheriting a parent's cached value —
+        # a child class may add choice fields that the parent lacks.
+        has_choices = cls.__dict__.get("_has_choices_fields")
         if has_choices is None:
             has_choices = any(f.choices for f in cls._fields.values())
             cls._has_choices_fields = has_choices
