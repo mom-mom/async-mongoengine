@@ -22,7 +22,6 @@ import decimal
 import statistics
 import sys
 import time
-import uuid
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -40,10 +39,7 @@ from mongoengine.fields import (
     IntField,
     ListField,
     StringField,
-    URLField,
-    UUIDField,
 )
-
 
 # ---------------------------------------------------------------------------
 # Documents

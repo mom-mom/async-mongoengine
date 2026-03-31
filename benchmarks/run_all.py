@@ -45,13 +45,14 @@ def load_module(path: Path) -> object:
 def run_baseline(n: int, repeat: int) -> dict[str, float]:
     """Run bench_baseline.py and return flattened results dict."""
     mod = load_module(BENCH_DIR / "bench_baseline.py")
-    simple = mod.run_scenario("Simple", mod.build_simple, mod.simple_kwargs, mod.simple_son, n, repeat)  # type: ignore[attr-defined]
-    mod.print_scenario("Simple (6 fields, 1 embedded doc)", simple)  # type: ignore[attr-defined]
 
-    complex_ = mod.run_scenario("Complex", mod.build_complex, mod.complex_kwargs, mod.complex_son, n, repeat)  # type: ignore[attr-defined]
-    mod.print_scenario("Complex (20 fields, 3-level nesting)", complex_)  # type: ignore[attr-defined]
+    all_results: list[tuple[str, dict]] = []
+    for name, build_fn, kwargs_fn, son_fn, label in mod.ALL_SCENARIOS:  # type: ignore[attr-defined]
+        results = mod.run_scenario(name, build_fn, kwargs_fn, son_fn, n, repeat)  # type: ignore[attr-defined]
+        mod.print_scenario(label, results)  # type: ignore[attr-defined]
+        all_results.append((name.lower().replace(" ", "_"), results))
 
-    return mod.results_to_dict(simple, complex_)  # type: ignore[attr-defined]
+    return mod.results_to_dict(*all_results)  # type: ignore[attr-defined]
 
 
 def run_hypothesis_scripts(n: int, repeat: int) -> None:
@@ -77,21 +78,30 @@ def run_baseline_on_main(n: int, repeat: int) -> dict[str, float] | None:
             cwd=REPO_ROOT, capture_output=True, check=True,
         )
 
-        # Run benchmark in a subprocess so its imports use the main branch code
+        # Run the current branch's benchmark script but with mongoengine
+        # imported from the main branch worktree.  The benchmark harness
+        # (bench_baseline.py) stays the same — only the library code differs.
+        bench_file = str(BENCH_DIR / "bench_baseline.py")
         script = f"""\
-import sys, json
+import sys, json, importlib.util
+
+# Main branch's mongoengine takes priority over the virtualenv's copy
 sys.path.insert(0, {str(worktree_dir)!r})
-from benchmarks.bench_baseline import (
-    run_scenario, build_simple, simple_kwargs, simple_son,
-    build_complex, complex_kwargs, complex_son, results_to_dict,
-)
-simple = run_scenario("Simple", build_simple, simple_kwargs, simple_son, {n}, {repeat})
-complex_ = run_scenario("Complex", build_complex, complex_kwargs, complex_son, {n}, {repeat})
-print(json.dumps(results_to_dict(simple, complex_)))
+
+# Explicitly load the current branch's benchmark script (not the worktree's)
+spec = importlib.util.spec_from_file_location("bench_baseline", {str(bench_file)!r})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+all_results = []
+for name, build_fn, kwargs_fn, son_fn, label in mod.ALL_SCENARIOS:
+    r = mod.run_scenario(name, build_fn, kwargs_fn, son_fn, {n}, {repeat})
+    all_results.append((name.lower().replace(" ", "_"), r))
+print(json.dumps(mod.results_to_dict(*all_results)))
 """
         result = subprocess.run(
             [sys.executable, "-c", script],
-            cwd=worktree_dir, capture_output=True, text=True, timeout=300,
+            cwd=worktree_dir, capture_output=True, text=True, timeout=600,
         )
         if result.returncode != 0:
             print(f"  WARNING: main branch benchmark failed:\n{result.stderr[:500]}")
@@ -206,7 +216,7 @@ def main() -> None:
 
     # --- Compare vs main ---
     if not args.no_compare and branch != "master":
-        print(f"\n--- Running baseline on main for comparison ---\n")
+        print("\n--- Running baseline on main for comparison ---\n")
         main_results = run_baseline_on_main(args.n, args.repeat)
         if main_results:
             compare(current, main_results)
