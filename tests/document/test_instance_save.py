@@ -692,3 +692,225 @@ class TestInstanceSave(MongoDBTestCase):
         assert post_obj["tags"] == tags
         for comment_obj, comment in zip(post_obj["comments"], comments):
             assert comment_obj["content"] == comment["content"]
+
+
+class TestCascadeSave(MongoDBTestCase):
+    """Explicit tests for cascade_save() edge cases."""
+
+    async def test_cascade_skips_none_reference(self):
+        """cascade_save does nothing when reference field is None."""
+
+        class Author(Document):
+            name = StringField()
+
+        class Post(Document):
+            title = StringField()
+            author = ReferenceField(Author)
+
+        await Author.drop_collection()
+        await Post.drop_collection()
+
+        post = Post(title="no author")
+        await post.save()
+        # Should not raise even though author is None
+        await post.cascade_save()
+
+    async def test_cascade_skips_dbref(self):
+        """cascade_save skips references stored as raw DBRef (not dereferenced)."""
+
+        class Author(Document):
+            name = StringField()
+
+        class Post(Document):
+            title = StringField()
+            author = ReferenceField(Author)
+
+        await Author.drop_collection()
+        await Post.drop_collection()
+
+        author = Author(name="Alice")
+        await author.save()
+
+        post = Post(title="test")
+        post.author = author
+        await post.save()
+
+        # Reload to get raw DBRef (not dereferenced)
+        await post.reload()
+        assert isinstance(post._data["author"], DBRef)
+
+        # Should skip without error
+        await post.cascade_save()
+
+    async def test_cascade_skips_unchanged_reference(self):
+        """cascade_save skips references with no changed fields."""
+
+        class Author(Document):
+            name = StringField()
+
+        class Post(Document):
+            title = StringField()
+            author = ReferenceField(Author)
+
+        await Author.drop_collection()
+        await Post.drop_collection()
+
+        author = Author(name="Alice")
+        await author.save()
+
+        post = Post(title="test", author=author)
+        await post.save()
+
+        # Dereference and verify no changed fields
+        persons = await Post.objects.select_related()
+        loaded_post = persons[0]
+        assert loaded_post.author._changed_fields == []
+
+        # cascade_save should skip the unchanged author
+        async with query_counter() as q:
+            count_before = await q.get_count()
+            await loaded_post.cascade_save()
+            # No save queries should be issued for unchanged reference
+            assert await q.get_count() == count_before
+
+    async def test_cascade_saves_changed_reference(self):
+        """cascade_save persists changes on referenced documents."""
+
+        class Author(Document):
+            name = StringField()
+
+        class Post(Document):
+            title = StringField()
+            author = ReferenceField(Author)
+
+        await Author.drop_collection()
+        await Post.drop_collection()
+
+        author = Author(name="Alice")
+        await author.save()
+
+        post = Post(title="test", author=author)
+        await post.save()
+
+        posts = await Post.objects.select_related()
+        loaded = posts[0]
+        loaded.author.name = "Bob"
+        await loaded.cascade_save()
+
+        await author.reload()
+        assert author.name == "Bob"
+
+    async def test_cascade_saves_multiple_references(self):
+        """cascade_save handles multiple reference fields."""
+
+        class Person(Document):
+            name = StringField()
+
+        class Post(Document):
+            title = StringField()
+            author = ReferenceField(Person)
+            reviewer = ReferenceField(Person)
+
+        await Person.drop_collection()
+        await Post.drop_collection()
+
+        author = Person(name="Alice")
+        await author.save()
+        reviewer = Person(name="Bob")
+        await reviewer.save()
+
+        post = Post(title="test", author=author, reviewer=reviewer)
+        await post.save()
+
+        posts = await Post.objects.select_related()
+        loaded = posts[0]
+        loaded.author.name = "Alice Updated"
+        loaded.reviewer.name = "Bob Updated"
+        await loaded.cascade_save()
+
+        await author.reload()
+        await reviewer.reload()
+        assert author.name == "Alice Updated"
+        assert reviewer.name == "Bob Updated"
+
+    async def test_cascade_prevents_circular_save(self):
+        """cascade_save prevents infinite loops on circular references."""
+
+        class Node(Document):
+            name = StringField()
+            parent = ReferenceField("self")
+
+        await Node.drop_collection()
+
+        a = Node(name="A")
+        await a.save()
+        b = Node(name="B", parent=a)
+        await b.save()
+
+        # Create circular reference
+        a.parent = b
+        a.name = "A modified"
+        await a.save()
+
+        nodes = await Node.objects(name="A modified").select_related()
+        loaded_a = nodes[0]
+        loaded_a.parent.name = "B modified"
+        # Should not infinite loop
+        await loaded_a.cascade_save()
+
+        await b.reload()
+        assert b.name == "B modified"
+
+    async def test_cascade_with_generic_reference(self):
+        """cascade_save works with GenericReferenceField."""
+
+        class Tag(Document):
+            label = StringField()
+
+        class Post(Document):
+            title = StringField()
+            related = GenericReferenceField()
+
+        await Tag.drop_collection()
+        await Post.drop_collection()
+
+        tag = Tag(label="python")
+        await tag.save()
+
+        post = Post(title="test", related=tag)
+        await post.save()
+
+        posts = await Post.objects.select_related()
+        loaded = posts[0]
+        loaded.related.label = "golang"
+        await loaded.cascade_save()
+
+        await tag.reload()
+        assert tag.label == "golang"
+
+    async def test_cascade_clears_changed_fields_after_save(self):
+        """cascade_save clears _changed_fields on the referenced doc."""
+
+        class Author(Document):
+            name = StringField()
+
+        class Post(Document):
+            title = StringField()
+            author = ReferenceField(Author)
+
+        await Author.drop_collection()
+        await Post.drop_collection()
+
+        author = Author(name="Alice")
+        await author.save()
+
+        post = Post(title="test", author=author)
+        await post.save()
+
+        posts = await Post.objects.select_related()
+        loaded = posts[0]
+        loaded.author.name = "Bob"
+        assert loaded.author._changed_fields != []
+
+        await loaded.cascade_save()
+        assert loaded.author._changed_fields == []
