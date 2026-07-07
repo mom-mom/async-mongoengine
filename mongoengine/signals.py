@@ -45,7 +45,13 @@ except ImportError:
         async def send_async(self, *a: Any, **kw: Any) -> None:
             return None
 
-        connect = disconnect = has_receivers_for = receivers_for = temporarily_connected_to = _fail
+        def has_receivers_for(self, sender: Any) -> bool:
+            # Receivers can never be registered without blinker, so this is
+            # always False. Must not raise: BaseDocument.__init__'s fast path
+            # calls it on every document construction.
+            return False
+
+        connect = disconnect = receivers_for = temporarily_connected_to = _fail
         del _fail
 
     class Namespace:  # type: ignore[no-redef]
