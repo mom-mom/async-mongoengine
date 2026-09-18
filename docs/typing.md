@@ -398,7 +398,10 @@ Item.objects.scalar("name").scalar()          # QuerySet[Item, Item, ObjectId] (
 `values_list()` is an alias of `scalar()`. The mode survives chaining and
 `no_cache()` / `cache()` (`raw.no_cache()` is
 `QuerySetNoCache[Item, dict[str, Any], ObjectId]`). Writes and creation keep
-using the model: `raw.create(...)` is `Item`, `raw.update(...)` is `int`.
+using the model: `raw.create(...)` is `Item`, `raw.update(...)` is `int`, and
+`raw.insert(doc)` / `raw.upsert_one(...)` return `Item` at runtime too: they
+reload through a document-mode clone of the queryset, whatever mode it is in
+(the field selection made by `scalar()` does not restrict that reload either).
 
 Limits:
 
@@ -512,12 +515,15 @@ oid = await Item.objects.insert(Item(name="x"), load_bulk=False)  # ObjectId
 sku = await Product.objects.insert(Product(sku="p1"), load_bulk=False)  # str
 ```
 
-With `load_bulk=True` the documents are reloaded in one `in_bulk()` query. If a
-document cannot be reloaded (for example when the queryset reads from a
-secondary that has not caught up yet), the in-memory document that was
-inserted is returned in its place; its primary key is already set, so the
-result never contains `None`. `pre_bulk_insert` / `post_bulk_insert` fire
-exactly as before (`loaded=True` / `loaded=False`).
+With `load_bulk=True` the documents are reloaded in one document-mode
+`in_bulk()` query, whatever projection mode the queryset is in. If a document
+cannot be reloaded (for example when the queryset reads from a secondary that
+has not caught up yet), the in-memory document that was inserted is returned
+in its place; its primary key is already set, so the result never contains
+`None`, and it is put into the loaded state (not `_created`, no pending
+changes) so that a later `save()` writes only the fields changed from then on.
+`pre_bulk_insert` / `post_bulk_insert` fire exactly as before
+(`loaded=True` / `loaded=False`).
 
 ### `in_bulk()` and `from_json()`
 
