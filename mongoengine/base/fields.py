@@ -189,13 +189,19 @@ class BaseField:
             cache[cls] = sig
         accepts_db, accepts_fields = sig
 
+        # Subclasses may extend ``to_mongo`` with ``use_db_field`` / ``fields``
+        # keywords (ComplexBaseField, EmbeddedDocumentField, ...), while custom
+        # fields may keep the base ``to_mongo(value)`` signature.  Bind the
+        # concrete implementation as a generic callable so each dispatch branch
+        # below passes exactly the keywords it was inspected to accept.
+        to_mongo: Callable[..., Any] = self.to_mongo
         if accepts_fields:
             if accepts_db:
-                return self.to_mongo(value, use_db_field=use_db_field, fields=fields)
-            return self.to_mongo(value, fields=fields)
+                return to_mongo(value, use_db_field=use_db_field, fields=fields)
+            return to_mongo(value, fields=fields)
         elif accepts_db:
-            return self.to_mongo(value, use_db_field=use_db_field)
-        return self.to_mongo(value)
+            return to_mongo(value, use_db_field=use_db_field)
+        return to_mongo(value)
 
     def prepare_query_value(self, op: str, value: Any) -> Any:
         """Prepare a value that is being used in a query for PyMongo."""
@@ -392,21 +398,23 @@ class ComplexBaseField(BaseField):
         # Non-iterable scalar — return as-is
         return value
 
-    # Cached import results for to_mongo (resolved once, reused).
-    _to_mongo_doc_type: type | None = None
-    _to_mongo_emb_type: type | None = None
-    _to_mongo_gen_ref_type: type | None = None
+    # Cached import results for to_mongo (resolved once, reused):
+    # (Document, EmbeddedDocument, GenericReferenceField).  A single tuple
+    # keeps the three references initialised together.
+    _to_mongo_types: tuple[type, type, type] | None = None
 
     def to_mongo(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """Convert a Python type to a MongoDB-compatible type."""
         # Use cached imports instead of calling _import_class every time
-        if ComplexBaseField._to_mongo_doc_type is None:
-            ComplexBaseField._to_mongo_doc_type = _import_class("Document")
-            ComplexBaseField._to_mongo_emb_type = _import_class("EmbeddedDocument")
-            ComplexBaseField._to_mongo_gen_ref_type = _import_class("GenericReferenceField")
-        Document = ComplexBaseField._to_mongo_doc_type
-        EmbeddedDocument = ComplexBaseField._to_mongo_emb_type
-        GenericReferenceField = ComplexBaseField._to_mongo_gen_ref_type
+        cached_types = ComplexBaseField._to_mongo_types
+        if cached_types is None:
+            cached_types = (
+                _import_class("Document"),
+                _import_class("EmbeddedDocument"),
+                _import_class("GenericReferenceField"),
+            )
+            ComplexBaseField._to_mongo_types = cached_types
+        Document, EmbeddedDocument, GenericReferenceField = cached_types
 
         if isinstance(value, str):
             return value

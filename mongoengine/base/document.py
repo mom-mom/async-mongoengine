@@ -764,9 +764,13 @@ class BaseDocument:
     # Built lazily on first validate() call per class.
     _validate_dispatch: tuple[tuple[str, Any, bool, bool, bool], ...] | None = None
 
-    @classmethod
-    def _build_validate_dispatch(cls) -> tuple[tuple[str, Any, bool, bool, bool], ...]:
-        """Pre-compute per-field dispatch info for validate."""
+    @staticmethod
+    def _get_validate_embedded_types() -> tuple[type, ...]:
+        """Return the field classes whose ``_validate`` accepts ``clean``.
+
+        Resolves the lazily imported classes once and caches them on
+        ``BaseDocument``.
+        """
         embedded_types = BaseDocument._validate_embedded_types
         if embedded_types is None:
             embedded_types = (
@@ -774,6 +778,12 @@ class BaseDocument:
                 _import_class("GenericEmbeddedDocumentField"),
             )
             BaseDocument._validate_embedded_types = embedded_types
+        return embedded_types
+
+    @classmethod
+    def _build_validate_dispatch(cls) -> tuple[tuple[str, Any, bool, bool, bool], ...]:
+        """Pre-compute per-field dispatch info for validate."""
+        embedded_types = BaseDocument._get_validate_embedded_types()
 
         dispatch = []
         for name in cls._fields_ordered:
@@ -837,7 +847,7 @@ class BaseDocument:
         # Handle dynamic fields not in the precomputed dispatch
         if self._dynamic:
             # Cached import for embedded types
-            embedded_types = BaseDocument._validate_embedded_types
+            embedded_types = BaseDocument._get_validate_embedded_types()
             _dynamic_fields = self._dynamic_fields
             for name in self._fields_ordered:
                 if name in self._fields:
