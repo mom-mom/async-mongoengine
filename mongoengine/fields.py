@@ -102,8 +102,28 @@ def _unsaved_object_error(document: Any) -> str:
     )
 
 
-class StringField[N = None](BaseField[str, N]):
-    """A unicode string field."""
+class StringField[N = None, V = str](BaseField[V, N]):
+    """A unicode string field.
+
+    The second type parameter ``V`` (default ``str``) is the Python value type
+    exposed on document instances.  It exists only so that string-backed
+    subclasses can expose another type
+    (:class:`~mongoengine.fields.ComplexDateTimeField` stores a string but
+    exposes ``datetime.datetime``); a plain ``StringField`` is always ``str``
+    and consumers never need to spell it (``StringField[Never]`` is
+    ``StringField[Never, str]``).
+    """
+
+    @overload
+    def __init__(
+        self: StringField[None],
+        regex: str | None = None,
+        max_length: int | None = None,
+        min_length: int | None = None,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -136,7 +156,7 @@ class StringField[N = None](BaseField[str, N]):
         min_length: int | None = None,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -231,6 +251,16 @@ class URLField[N = None](StringField[N]):
 
     @overload
     def __init__(
+        self: URLField[None],
+        url_regex: Any | None = None,
+        schemes: list[str] | None = None,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: URLField[Never],
         url_regex: Any | None = None,
         schemes: list[str] | None = None,
@@ -257,7 +287,7 @@ class URLField[N = None](StringField[N]):
         schemes: list[str] | None = None,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -318,6 +348,17 @@ class EmailField[N = None](StringField[N]):
 
     @overload
     def __init__(
+        self: EmailField[None],
+        domain_whitelist: list[str] | None = None,
+        allow_utf8_user: bool = False,
+        allow_ip_domain: bool = False,
+        *args: Any,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: EmailField[Never],
         domain_whitelist: list[str] | None = None,
         allow_utf8_user: bool = False,
@@ -347,7 +388,7 @@ class EmailField[N = None](StringField[N]):
         allow_ip_domain: bool = False,
         *args: Any,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -428,6 +469,16 @@ class IntField[N = None](BaseField[int, N]):
 
     @overload
     def __init__(
+        self: IntField[None],
+        min_value: int | None = None,
+        max_value: int | None = None,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: IntField[Never],
         min_value: int | None = None,
         max_value: int | None = None,
@@ -454,7 +505,7 @@ class IntField[N = None](BaseField[int, N]):
         max_value: int | None = None,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -503,6 +554,16 @@ class FloatField[N = None](BaseField[float, N]):
 
     @overload
     def __init__(
+        self: FloatField[None],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: FloatField[Never],
         min_value: float | None = None,
         max_value: float | None = None,
@@ -529,7 +590,7 @@ class FloatField[N = None](BaseField[float, N]):
         max_value: float | None = None,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -587,6 +648,19 @@ class DecimalField[N = None](BaseField[decimal.Decimal, N]):
 
     @overload
     def __init__(
+        self: DecimalField[None],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        force_string: bool = False,
+        precision: int = 2,
+        rounding: str = decimal.ROUND_HALF_UP,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: DecimalField[Never],
         min_value: float | None = None,
         max_value: float | None = None,
@@ -622,7 +696,7 @@ class DecimalField[N = None](BaseField[decimal.Decimal, N]):
         rounding: str = decimal.ROUND_HALF_UP,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -712,6 +786,9 @@ class BooleanField[N = None](BaseField[bool, N]):
         # Typing-only constructor overloads; the runtime ``__init__`` is
         # inherited unchanged from BaseField.
         @overload
+        def __init__(self: BooleanField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
         def __init__(self: BooleanField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
@@ -720,7 +797,7 @@ class BooleanField[N = None](BaseField[bool, N]):
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -736,7 +813,7 @@ class BooleanField[N = None](BaseField[bool, N]):
             self.error("BooleanField only accepts boolean values")
 
 
-class DateTimeField[N = None](BaseField[datetime.datetime, N]):
+class DateTimeField[V: datetime.date = datetime.datetime, N = None](BaseField[V, N]):
     """Datetime field.
 
     Uses the python-dateutil library if available alternatively use time.strptime
@@ -750,17 +827,28 @@ class DateTimeField[N = None](BaseField[datetime.datetime, N]):
       Pre UTC microsecond support is effectively broken.
       Use :class:`~mongoengine.fields.ComplexDateTimeField` if you
       need accurate microsecond support.
+
+    The first type parameter ``V`` (default ``datetime.datetime``) is the
+    Python value type exposed on document instances; it exists so that
+    :class:`~mongoengine.fields.DateField` can expose ``datetime.date`` while
+    sharing this implementation.  A plain ``DateTimeField`` is always
+    ``DateTimeField[datetime.datetime, N]``.
     """
 
     if TYPE_CHECKING:
         # Typing-only constructor overloads; the runtime ``__init__`` is
         # inherited unchanged from BaseField.
         @overload
-        def __init__(self: DateTimeField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+        def __init__(self: DateTimeField[datetime.datetime, None], *, null: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
         def __init__(
-            self: DateTimeField[Never],
+            self: DateTimeField[datetime.datetime, Never], *, required: Literal[True], **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self: DateTimeField[datetime.datetime, Never],
             *,
             default: datetime.datetime | Callable[[], datetime.datetime],
             required: bool = False,
@@ -768,7 +856,13 @@ class DateTimeField[N = None](BaseField[datetime.datetime, N]):
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+        def __init__(
+            self: DateTimeField[datetime.datetime, None],
+            *,
+            required: bool = False,
+            default: Any = None,
+            **kwargs: Any,
+        ) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -830,13 +924,16 @@ class DateTimeField[N = None](BaseField[datetime.datetime, N]):
         return super().prepare_query_value(op, self.to_mongo(value))
 
 
-class DateField[N = None](DateTimeField[N]):
+class DateField[N = None](DateTimeField[datetime.date, N]):
     """A :class:`DateTimeField` that exposes ``datetime.date`` values."""
 
     if TYPE_CHECKING:
-        # Typing-only declarations.  The runtime ``__init__`` / ``__get__`` /
-        # ``__set__`` are inherited unchanged; these narrow the value type
-        # from ``datetime.datetime`` to ``datetime.date``.
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged.  The value type ``datetime.date`` comes from
+        # the ``DateTimeField[datetime.date, N]`` base.
+        @overload
+        def __init__(self: DateField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
+
         @overload
         def __init__(self: DateField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
 
@@ -850,19 +947,9 @@ class DateField[N = None](DateTimeField[N]):
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
-
-        @overload
-        def __get__(self, instance: None, owner: type[Any]) -> Self: ...
-
-        @overload
-        def __get__(self, instance: Any, owner: type[Any]) -> datetime.date | N: ...
-
-        def __get__(self, instance: Any, owner: type[Any]) -> Any: ...
-
-        def __set__(self, instance: Any, value: datetime.date | N) -> None: ...
 
     def to_mongo(self, value: Any) -> Any:
         value = super().to_mongo(value)
@@ -879,7 +966,7 @@ class DateField[N = None](DateTimeField[N]):
         return value
 
 
-class ComplexDateTimeField[N = None](StringField[N]):
+class ComplexDateTimeField[N = None](StringField[N, datetime.datetime]):
     """
     ComplexDateTimeField handles microseconds exactly instead of rounding
     like DateTimeField does.
@@ -902,6 +989,11 @@ class ComplexDateTimeField[N = None](StringField[N]):
 
     @overload
     def __init__(
+        self: ComplexDateTimeField[None], separator: str = ",", *, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: ComplexDateTimeField[Never], separator: str = ",", *, required: Literal[True], **kwargs: Any
     ) -> None: ...
 
@@ -921,7 +1013,7 @@ class ComplexDateTimeField[N = None](StringField[N]):
         separator: str = ",",
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -976,7 +1068,7 @@ class ComplexDateTimeField[N = None](StringField[N]):
         return self._convert_from_string(data)
 
     def __set__(self, instance: Any, value: datetime.datetime | N) -> None:
-        super().__set__(instance, value)  # pyright: ignore[reportArgumentType]  # stored as a string, exposed as a datetime
+        super().__set__(instance, value)
         value = instance._data[self.name]
         if value is not None:
             if isinstance(value, datetime.datetime):
@@ -1016,6 +1108,11 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
 
     @overload
     def __init__[D2: EmbeddedDocument](
+        self: EmbeddedDocumentField[D2, None], document_type: type[D2], *, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[D2: EmbeddedDocument](
         self: EmbeddedDocumentField[D2, Never], document_type: type[D2], *, required: Literal[True], **kwargs: Any
     ) -> None: ...
 
@@ -1035,8 +1132,13 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
         document_type: type[D2],
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: EmbeddedDocumentField[Any, None], document_type: str, *, null: Literal[True], **kwargs: Any
     ) -> None: ...
 
     @overload
@@ -1060,7 +1162,7 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
         document_type: str,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1151,6 +1253,9 @@ class GenericEmbeddedDocumentField[N = None](BaseField[EmbeddedDocument, N]):
         # Typing-only constructor overloads; the runtime ``__init__`` is
         # inherited unchanged from BaseField.
         @overload
+        def __init__(self: GenericEmbeddedDocumentField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
         def __init__(self: GenericEmbeddedDocumentField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
@@ -1163,7 +1268,7 @@ class GenericEmbeddedDocumentField[N = None](BaseField[EmbeddedDocument, N]):
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -1217,6 +1322,9 @@ class DynamicField[N = None](BaseField[Any, N]):
         # Typing-only constructor overloads; the runtime ``__init__`` is
         # inherited unchanged from BaseField.
         @overload
+        def __init__(self: DynamicField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
         def __init__(self: DynamicField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
@@ -1225,7 +1333,7 @@ class DynamicField[N = None](BaseField[Any, N]):
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -1297,8 +1405,30 @@ class ListField[V = Any, N = Never](ComplexBaseField[list[V], N]):
 
     The element type ``V`` is inferred from the inner field
     (``ListField(StringField())`` yields ``list[str]``; no inner field yields
-    ``list[Any]``).  Because the default is ``[]`` the value is never ``None``.
+    ``list[Any]``).  Because the default is ``[]`` the value is never ``None``
+    unless the field is declared with an explicit ``default=None`` (which is
+    kept as is) or with ``null=True``.
     """
+
+    @overload
+    def __init__[V2](
+        self: ListField[V2, None],
+        field: BaseField[V2, Any],
+        *,
+        max_length: int | None = None,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](
+        self: ListField[V2, None],
+        field: BaseField[V2, Any],
+        *,
+        max_length: int | None = None,
+        default: None,
+        **kwargs: Any,
+    ) -> None: ...
 
     @overload
     def __init__[V2](
@@ -1307,7 +1437,36 @@ class ListField[V = Any, N = Never](ComplexBaseField[list[V], N]):
 
     @overload
     def __init__(
+        self: ListField[Any, None],
+        field: None = None,
+        *,
+        max_length: int | None = None,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: ListField[Any, None],
+        field: None = None,
+        *,
+        max_length: int | None = None,
+        default: None,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: ListField[Any, Never], field: None = None, *, max_length: int | None = None, **kwargs: Any
+    ) -> None: ...
+
+    # Catch-all for subclasses that are themselves generic in ``N``
+    # (``SortedListField[V, N]``, ...) and call ``super().__init__()``: their
+    # ``self`` has an unsolved ``N``.  A direct ``ListField(...)`` call always
+    # matches one of the overloads above.
+    @overload
+    def __init__(
+        self, field: BaseField[Any, Any] | None = None, *, max_length: int | None = None, **kwargs: Any
     ) -> None: ...
 
     def __init__(
@@ -1366,7 +1525,7 @@ class ListField[V = Any, N = Never](ComplexBaseField[list[V], N]):
         return super().prepare_query_value(op, value)
 
 
-class EmbeddedDocumentListField[D = Any](ListField[D, Never]):
+class EmbeddedDocumentListField[D = Any, N = Never](ListField[D, N]):
     """A :class:`~mongoengine.ListField` designed specially to hold a list of
     embedded documents to provide additional query helpers.
 
@@ -1376,16 +1535,38 @@ class EmbeddedDocumentListField[D = Any](ListField[D, Never]):
 
     Document instances expose an
     :class:`~mongoengine.base.datastructures.EmbeddedDocumentList` of ``D``
-    (``Any`` when ``document_type`` is a string name).
+    (``Any`` when ``document_type`` is a string name).  The value is never
+    ``None`` unless the field is declared with an explicit ``default=None`` or
+    with ``null=True``.
     """
 
     @overload
     def __init__[D2: EmbeddedDocument](
-        self: EmbeddedDocumentListField[D2], document_type: type[D2], **kwargs: Any
+        self: EmbeddedDocumentListField[D2, None], document_type: type[D2], *, null: Literal[True], **kwargs: Any
     ) -> None: ...
 
     @overload
-    def __init__(self: EmbeddedDocumentListField[Any], document_type: str, **kwargs: Any) -> None: ...
+    def __init__[D2: EmbeddedDocument](
+        self: EmbeddedDocumentListField[D2, None], document_type: type[D2], *, default: None, **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[D2: EmbeddedDocument](
+        self: EmbeddedDocumentListField[D2, Never], document_type: type[D2], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: EmbeddedDocumentListField[Any, None], document_type: str, *, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: EmbeddedDocumentListField[Any, None], document_type: str, *, default: None, **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(self: EmbeddedDocumentListField[Any, Never], document_type: str, **kwargs: Any) -> None: ...
 
     def __init__(self, document_type: str | type[Any], **kwargs: Any) -> None:
         """
@@ -1402,12 +1583,12 @@ class EmbeddedDocumentListField[D = Any](ListField[D, Never]):
         def __get__(self, instance: None, owner: type[Any]) -> Self: ...
 
         @overload
-        def __get__(self, instance: Any, owner: type[Any]) -> EmbeddedDocumentList[D]: ...
+        def __get__(self, instance: Any, owner: type[Any]) -> EmbeddedDocumentList[D] | N: ...
 
         def __get__(self, instance: Any, owner: type[Any]) -> Any: ...
 
 
-class SortedListField[V = Any](ListField[V, Never]):
+class SortedListField[V = Any, N = Never](ListField[V, N]):
     """A ListField that sorts the contents of its list before writing to
     the database in order to ensure that a sorted list is always
     retrieved.
@@ -1417,9 +1598,26 @@ class SortedListField[V = Any](ListField[V, Never]):
         save the whole list then other processes trying to save the whole list
         as well could overwrite changes.  The safest way to append to a list is
         to perform a push operation.
+
+    The element type ``V`` is inferred from ``field``; the value is never
+    ``None`` unless the field is declared with an explicit ``default=None`` or
+    with ``null=True``.
     """
 
-    def __init__(self, field: BaseField[V, Any], **kwargs: Any) -> None:
+    @overload
+    def __init__[V2](
+        self: SortedListField[V2, None], field: BaseField[V2, Any], *, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](
+        self: SortedListField[V2, None], field: BaseField[V2, Any], *, default: None, **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](self: SortedListField[V2, Never], field: BaseField[V2, Any], **kwargs: Any) -> None: ...
+
+    def __init__(self, field: BaseField[Any, Any], **kwargs: Any) -> None:
         self._ordering: str | None = kwargs.pop("ordering", None)
         self._order_reverse: bool = kwargs.pop("reverse", False)
         super().__init__(field, **kwargs)
@@ -1451,7 +1649,7 @@ def key_starts_with_dollar(d: dict[str, Any]) -> bool:
     return False
 
 
-class DictField[V = Any](ComplexBaseField[dict[str, V], Never]):
+class DictField[V = Any, N = Never](ComplexBaseField[dict[str, V], N]):
     """A dictionary field that wraps a standard Python dictionary. This is
     similar to an embedded document, but the structure is not defined.
 
@@ -1460,14 +1658,38 @@ class DictField[V = Any](ComplexBaseField[dict[str, V], Never]):
 
     The value type is ``dict[str, V]`` where ``V`` comes from the optional
     inner field (``dict[str, Any]`` without one).  Because the default is
-    ``{}`` the value is never ``None``.
+    ``{}`` the value is never ``None`` unless the field is declared with an
+    explicit ``default=None`` (which is kept as is) or with ``null=True``.
     """
 
     @overload
-    def __init__[V2](self: DictField[V2], field: BaseField[V2, Any], *args: Any, **kwargs: Any) -> None: ...
+    def __init__[V2](
+        self: DictField[V2, None], field: BaseField[V2, Any], *args: Any, null: Literal[True], **kwargs: Any
+    ) -> None: ...
 
     @overload
-    def __init__(self: DictField[Any], field: None = None, *args: Any, **kwargs: Any) -> None: ...
+    def __init__[V2](
+        self: DictField[V2, None], field: BaseField[V2, Any], *args: Any, default: None, **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](self: DictField[V2, Never], field: BaseField[V2, Any], *args: Any, **kwargs: Any) -> None: ...
+
+    @overload
+    def __init__(
+        self: DictField[Any, None], field: None = None, *args: Any, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(self: DictField[Any, None], field: None = None, *args: Any, default: None, **kwargs: Any) -> None: ...
+
+    @overload
+    def __init__(self: DictField[Any, Never], field: None = None, *args: Any, **kwargs: Any) -> None: ...
+
+    # Catch-all for subclasses that are themselves generic in ``N``
+    # (``MapField[V, N]``) and call ``super().__init__()``; see ListField.
+    @overload
+    def __init__(self, field: BaseField[Any, Any] | None = None, *args: Any, **kwargs: Any) -> None: ...
 
     def __init__(self, field: BaseField[Any, Any] | None = None, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("default", dict)
@@ -1504,15 +1726,31 @@ class DictField[V = Any](ComplexBaseField[dict[str, V], Never]):
         return super().prepare_query_value(op, value)
 
 
-class MapField[V = Any](DictField[V]):
+class MapField[V = Any, N = Never](DictField[V, N]):
     """A field that maps a name to a specified field type. Similar to
     a DictField, except the 'value' of each item must match the specified
     field type.
 
-    The value type is ``dict[str, V]`` with ``V`` inferred from ``field``.
+    The value type is ``dict[str, V]`` with ``V`` inferred from ``field``
+    (which is mandatory: ``MapField()`` raises at class definition).  The
+    value is never ``None`` unless the field is declared with an explicit
+    ``default=None`` or with ``null=True``.
     """
 
-    def __init__(self, field: BaseField[V, Any] | None = None, *args: Any, **kwargs: Any) -> None:
+    @overload
+    def __init__[V2](
+        self: MapField[V2, None], field: BaseField[V2, Any], *args: Any, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](
+        self: MapField[V2, None], field: BaseField[V2, Any], *args: Any, default: None, **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](self: MapField[V2, Never], field: BaseField[V2, Any], *args: Any, **kwargs: Any) -> None: ...
+
+    def __init__(self, field: BaseField[Any, Any] | None = None, *args: Any, **kwargs: Any) -> None:
         # XXX ValidationError raised outside the "validate" method.
         if not isinstance(field, BaseField):
             self.error("Argument to MapField constructor must be a valid field")
@@ -1561,6 +1799,17 @@ class ReferenceField[N = None](BaseField[Any, N]):
 
     @overload
     def __init__(
+        self: ReferenceField[None],
+        document_type: str | type[Document[Any]],
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: ReferenceField[Never],
         document_type: str | type[Document[Any]],
         dbref: bool = False,
@@ -1590,7 +1839,7 @@ class ReferenceField[N = None](BaseField[Any, N]):
         reverse_delete_rule: int = DO_NOTHING,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1715,6 +1964,17 @@ class CachedReferenceField[N = None](BaseField[Any, N]):
 
     @overload
     def __init__(
+        self: CachedReferenceField[None],
+        document_type: str | type[Document[Any]],
+        fields: list[str] | None = None,
+        auto_sync: bool = True,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: CachedReferenceField[Never],
         document_type: str | type[Document[Any]],
         fields: list[str] | None = None,
@@ -1744,7 +2004,7 @@ class CachedReferenceField[N = None](BaseField[Any, N]):
         auto_sync: bool = True,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1883,6 +2143,9 @@ class GenericReferenceField[N = None](BaseField[Any, N]):
     """
 
     @overload
+    def __init__(self: GenericReferenceField[None], *args: Any, null: Literal[True], **kwargs: Any) -> None: ...
+
+    @overload
     def __init__(self: GenericReferenceField[Never], *args: Any, required: Literal[True], **kwargs: Any) -> None: ...
 
     @overload
@@ -1895,7 +2158,7 @@ class GenericReferenceField[N = None](BaseField[Any, N]):
     ) -> None: ...
 
     @overload
-    def __init__(self, *args: Any, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+    def __init__(self, *args: Any, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         choices = kwargs.pop("choices", None)
@@ -1983,6 +2246,11 @@ class BinaryField[N = None](BaseField[bytes, N]):
 
     @overload
     def __init__(
+        self: BinaryField[None], max_bytes: int | None = None, *, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: BinaryField[Never], max_bytes: int | None = None, *, required: Literal[True], **kwargs: Any
     ) -> None: ...
 
@@ -2002,7 +2270,7 @@ class BinaryField[N = None](BaseField[bytes, N]):
         max_bytes: int | None = None,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2073,6 +2341,11 @@ class EnumField[E: Enum = Any, N = None](BaseField[E, N]):
 
     @overload
     def __init__[E2: Enum](
+        self: EnumField[E2, None], enum: type[E2], *, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[E2: Enum](
         self: EnumField[E2, Never], enum: type[E2], *, required: Literal[True], **kwargs: Any
     ) -> None: ...
 
@@ -2088,7 +2361,7 @@ class EnumField[E: Enum = Any, N = None](BaseField[E, N]):
 
     @overload
     def __init__[E2: Enum](
-        self: EnumField[E2, None], enum: type[E2], *, required: bool = False, default: None = None, **kwargs: Any
+        self: EnumField[E2, None], enum: type[E2], *, required: bool = False, default: Any = None, **kwargs: Any
     ) -> None: ...
 
     def __init__(self, enum: type[Enum], **kwargs: Any) -> None:
@@ -2135,7 +2408,7 @@ class EnumField[E: Enum = Any, N = None](BaseField[E, N]):
         return super().prepare_query_value(op, self.to_mongo(value))
 
 
-class SequenceField[N = None](BaseField[int, N]):
+class SequenceField[V = int, N = None](BaseField[V, N]):
     """Provides a sequential counter see:
      https://www.mongodb.com/docs/manual/reference/method/ObjectId/#ObjectIDs-SequenceNumbers
 
@@ -2155,6 +2428,11 @@ class SequenceField[N = None](BaseField[int, N]):
     any value suitable for your needs, e.g. string or hexadecimal
     representation of the default integer counter value.
 
+    The static value type ``V`` is the return type of ``value_decorator``
+    (``int`` without one): ``SequenceField(value_decorator=str)`` exposes
+    ``str`` on document instances and from :meth:`generate`.  Pass
+    ``value_decorator`` as a keyword argument for the type to be inferred.
+
     .. note::
 
         In case the counter is defined in the abstract document, it will be
@@ -2167,15 +2445,79 @@ class SequenceField[N = None](BaseField[int, N]):
     # The sync _auto_gen path in to_mongo() is guarded to skip async generate().
     _auto_gen: bool = True
     COLLECTION_NAME: str = "mongoengine.counters"
-    VALUE_DECORATOR: Callable[..., Any] = int
+    VALUE_DECORATOR: Callable[[Any], Any] = int
 
+    # With ``value_decorator``: the value type is its return type.
     @overload
-    def __init__(
-        self: SequenceField[Never],
+    def __init__[V2](
+        self: SequenceField[V2, None],
         collection_name: str | None = None,
         db_alias: str | None = None,
         sequence_name: str | None = None,
-        value_decorator: Callable[..., Any] | None = None,
+        *args: Any,
+        value_decorator: Callable[[Any], V2],
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](
+        self: SequenceField[V2, Never],
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        *args: Any,
+        value_decorator: Callable[[Any], V2],
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](
+        self: SequenceField[V2, Never],
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        *args: Any,
+        value_decorator: Callable[[Any], V2],
+        default: V2 | Callable[[], V2],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[V2](
+        self: SequenceField[V2, None],
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        *args: Any,
+        value_decorator: Callable[[Any], V2],
+        required: bool = False,
+        default: Any = None,
+        **kwargs: Any,
+    ) -> None: ...
+
+    # Without ``value_decorator``: the value type is ``int``.
+    @overload
+    def __init__(
+        self: SequenceField[int, None],
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        value_decorator: None = None,
+        *args: Any,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: SequenceField[int, Never],
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        value_decorator: None = None,
         *args: Any,
         required: Literal[True],
         **kwargs: Any,
@@ -2183,11 +2525,11 @@ class SequenceField[N = None](BaseField[int, N]):
 
     @overload
     def __init__(
-        self: SequenceField[Never],
+        self: SequenceField[int, Never],
         collection_name: str | None = None,
         db_alias: str | None = None,
         sequence_name: str | None = None,
-        value_decorator: Callable[..., Any] | None = None,
+        value_decorator: None = None,
         *args: Any,
         default: int | Callable[[], int],
         required: bool = False,
@@ -2196,14 +2538,14 @@ class SequenceField[N = None](BaseField[int, N]):
 
     @overload
     def __init__(
-        self,
+        self: SequenceField[int, None],
         collection_name: str | None = None,
         db_alias: str | None = None,
         sequence_name: str | None = None,
-        value_decorator: Callable[..., Any] | None = None,
+        value_decorator: None = None,
         *args: Any,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2219,10 +2561,12 @@ class SequenceField[N = None](BaseField[int, N]):
         self.collection_name = collection_name or self.COLLECTION_NAME
         self.db_alias = db_alias or DEFAULT_CONNECTION_NAME
         self.sequence_name = sequence_name
-        self.value_decorator = value_decorator if callable(value_decorator) else self.VALUE_DECORATOR
+        self.value_decorator: Callable[[Any], V] = (
+            value_decorator if callable(value_decorator) else self.VALUE_DECORATOR
+        )
         super().__init__(*args, **kwargs)
 
-    async def generate(self) -> Any:
+    async def generate(self) -> V:
         """Generate and Increment the counter.
 
         Must be called with ``await`` since it performs a DB operation.
@@ -2241,7 +2585,7 @@ class SequenceField[N = None](BaseField[int, N]):
         assert counter is not None
         return self.value_decorator(counter["next"])
 
-    async def set_next_value(self, value: Any) -> Any:
+    async def set_next_value(self, value: Any) -> V:
         """Helper method to set the next sequence value."""
         sequence_name = self.get_sequence_name()
         sequence_id = f"{sequence_name}.{self.name}"
@@ -2256,7 +2600,7 @@ class SequenceField[N = None](BaseField[int, N]):
         assert counter is not None
         return self.value_decorator(counter["next"])
 
-    async def get_next_value(self) -> Any:
+    async def get_next_value(self) -> V:
         """Helper method to get the next value for previewing.
 
         .. warning:: There is no guarantee this will be the next value
@@ -2286,7 +2630,7 @@ class SequenceField[N = None](BaseField[int, N]):
     def __get__(self, instance: None, owner: type[Any]) -> Self: ...
 
     @overload
-    def __get__(self, instance: Any, owner: type[Any]) -> int | N: ...
+    def __get__(self, instance: Any, owner: type[Any]) -> V | N: ...
 
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         # Cannot auto-generate in __get__ since generate() is async.
@@ -2295,7 +2639,7 @@ class SequenceField[N = None](BaseField[int, N]):
         # during save() if still None.
         return super().__get__(instance, owner)
 
-    def __set__(self, instance: Any, value: int | N) -> None:
+    def __set__(self, instance: Any, value: V | N) -> None:
         return super().__set__(instance, value)
 
     def prepare_query_value(self, op: str, value: Any) -> Any:
@@ -2312,6 +2656,9 @@ class UUIDField[N = None](BaseField[uuid.UUID, N]):
     _binary: bool | None = None
 
     @overload
+    def __init__(self: UUIDField[None], binary: bool = True, *, null: Literal[True], **kwargs: Any) -> None: ...
+
+    @overload
     def __init__(self: UUIDField[Never], binary: bool = True, *, required: Literal[True], **kwargs: Any) -> None: ...
 
     @overload
@@ -2325,7 +2672,7 @@ class UUIDField[N = None](BaseField[uuid.UUID, N]):
     ) -> None: ...
 
     @overload
-    def __init__(self, binary: bool = True, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+    def __init__(self, binary: bool = True, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
     def __init__(self, binary: bool = True, **kwargs: Any) -> None:
         """
@@ -2384,6 +2731,9 @@ class GeoPointField[N = None](BaseField[list[float], N]):
         # Typing-only constructor overloads; the runtime ``__init__`` is
         # inherited unchanged from BaseField.
         @overload
+        def __init__(self: GeoPointField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
         def __init__(self: GeoPointField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
@@ -2396,7 +2746,7 @@ class GeoPointField[N = None](BaseField[list[float], N]):
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -2434,6 +2784,11 @@ class PointField[N = None](GeoJsonBaseField[N]):
         # inherited unchanged from GeoJsonBaseField.
         @overload
         def __init__(
+            self: PointField[None], auto_index: bool = True, *args: Any, null: Literal[True], **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(
             self: PointField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
         ) -> None: ...
 
@@ -2453,7 +2808,7 @@ class PointField[N = None](GeoJsonBaseField[N]):
             auto_index: bool = True,
             *args: Any,
             required: bool = False,
-            default: None = None,
+            default: Any = None,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2482,6 +2837,11 @@ class LineStringField[N = None](GeoJsonBaseField[N]):
         # inherited unchanged from GeoJsonBaseField.
         @overload
         def __init__(
+            self: LineStringField[None], auto_index: bool = True, *args: Any, null: Literal[True], **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(
             self: LineStringField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
         ) -> None: ...
 
@@ -2501,7 +2861,7 @@ class LineStringField[N = None](GeoJsonBaseField[N]):
             auto_index: bool = True,
             *args: Any,
             required: bool = False,
-            default: None = None,
+            default: Any = None,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2533,6 +2893,11 @@ class PolygonField[N = None](GeoJsonBaseField[N]):
         # inherited unchanged from GeoJsonBaseField.
         @overload
         def __init__(
+            self: PolygonField[None], auto_index: bool = True, *args: Any, null: Literal[True], **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(
             self: PolygonField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
         ) -> None: ...
 
@@ -2552,7 +2917,7 @@ class PolygonField[N = None](GeoJsonBaseField[N]):
             auto_index: bool = True,
             *args: Any,
             required: bool = False,
-            default: None = None,
+            default: Any = None,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2582,6 +2947,11 @@ class MultiPointField[N = None](GeoJsonBaseField[N]):
         # inherited unchanged from GeoJsonBaseField.
         @overload
         def __init__(
+            self: MultiPointField[None], auto_index: bool = True, *args: Any, null: Literal[True], **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(
             self: MultiPointField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
         ) -> None: ...
 
@@ -2601,7 +2971,7 @@ class MultiPointField[N = None](GeoJsonBaseField[N]):
             auto_index: bool = True,
             *args: Any,
             required: bool = False,
-            default: None = None,
+            default: Any = None,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2631,6 +3001,15 @@ class MultiLineStringField[N = None](GeoJsonBaseField[N]):
         # inherited unchanged from GeoJsonBaseField.
         @overload
         def __init__(
+            self: MultiLineStringField[None],
+            auto_index: bool = True,
+            *args: Any,
+            null: Literal[True],
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
             self: MultiLineStringField[Never],
             auto_index: bool = True,
             *args: Any,
@@ -2654,7 +3033,7 @@ class MultiLineStringField[N = None](GeoJsonBaseField[N]):
             auto_index: bool = True,
             *args: Any,
             required: bool = False,
-            default: None = None,
+            default: Any = None,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2691,6 +3070,11 @@ class MultiPolygonField[N = None](GeoJsonBaseField[N]):
         # inherited unchanged from GeoJsonBaseField.
         @overload
         def __init__(
+            self: MultiPolygonField[None], auto_index: bool = True, *args: Any, null: Literal[True], **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(
             self: MultiPolygonField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
         ) -> None: ...
 
@@ -2710,7 +3094,7 @@ class MultiPolygonField[N = None](GeoJsonBaseField[N]):
             auto_index: bool = True,
             *args: Any,
             required: bool = False,
-            default: None = None,
+            default: Any = None,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2733,6 +3117,18 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
 
     @overload
     def __init__[D2: Document[Any]](
+        self: LazyReferenceField[D2, None],
+        document_type: type[D2],
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[D2: Document[Any]](
         self: LazyReferenceField[D2, Never],
         document_type: type[D2],
         passthrough: bool = False,
@@ -2751,7 +3147,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         dbref: bool = False,
         reverse_delete_rule: int = DO_NOTHING,
         *,
-        default: Any | Callable[[], Any],
+        default: D2 | LazyReference[D2] | DBRef | Callable[[], D2 | LazyReference[D2] | DBRef],
         required: bool = False,
         **kwargs: Any,
     ) -> None: ...
@@ -2765,7 +3161,19 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         reverse_delete_rule: int = DO_NOTHING,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: LazyReferenceField[Any, None],
+        document_type: str,
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        null: Literal[True],
         **kwargs: Any,
     ) -> None: ...
 
@@ -2789,7 +3197,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         dbref: bool = False,
         reverse_delete_rule: int = DO_NOTHING,
         *,
-        default: Any | Callable[[], Any],
+        default: Document[Any] | LazyReference[Any] | DBRef | Callable[[], Document[Any] | LazyReference[Any] | DBRef],
         required: bool = False,
         **kwargs: Any,
     ) -> None: ...
@@ -2803,7 +3211,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         reverse_delete_rule: int = DO_NOTHING,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2968,6 +3376,15 @@ class GenericLazyReferenceField[N = None](GenericReferenceField[N]):
 
     @overload
     def __init__(
+        self: GenericLazyReferenceField[None],
+        *args: Any,
+        passthrough: bool = False,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: GenericLazyReferenceField[Never],
         *args: Any,
         passthrough: bool = False,
@@ -2980,7 +3397,7 @@ class GenericLazyReferenceField[N = None](GenericReferenceField[N]):
         self: GenericLazyReferenceField[Never],
         *args: Any,
         passthrough: bool = False,
-        default: Any | Callable[[], Any],
+        default: Document[Any] | LazyReference[Any] | DBRef | Callable[[], Document[Any] | LazyReference[Any] | DBRef],
         required: bool = False,
         **kwargs: Any,
     ) -> None: ...
@@ -2991,7 +3408,7 @@ class GenericLazyReferenceField[N = None](GenericReferenceField[N]):
         *args: Any,
         passthrough: bool = False,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3071,6 +3488,16 @@ class Decimal128Field[N = None](BaseField[decimal.Decimal, N]):
 
     @overload
     def __init__(
+        self: Decimal128Field[None],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        null: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: Decimal128Field[Never],
         min_value: float | None = None,
         max_value: float | None = None,
@@ -3097,7 +3524,7 @@ class Decimal128Field[N = None](BaseField[decimal.Decimal, N]):
         max_value: float | None = None,
         *,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 

@@ -88,8 +88,8 @@ opts into its type with `class Product(Document[str])`; use `Document[Any]`
 for code that accepts documents of any primary-key type.
 
 See [docs/typing.md](docs/typing.md) for the full contract, the inferred type
-of every field, and the limitations (`null=True`, reference fields, custom
-fields).
+of every field, the optionality rules (`null=True`, `required=True`,
+`default=`) and the limitations (reference fields, custom fields).
 
 ## Examples
 

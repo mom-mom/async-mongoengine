@@ -51,7 +51,8 @@ Reading a field through a document instance yields the value type below, plus
 | Field | `doc.field` |
 |---|---|
 | `StringField`, `URLField`, `EmailField` | `str` |
-| `IntField`, `SequenceField` | `int` |
+| `IntField` | `int` |
+| `SequenceField()` / `SequenceField(value_decorator=str)` | `int` / `str` (the return type of `value_decorator`) |
 | `FloatField` | `float` |
 | `DecimalField`, `Decimal128Field` | `decimal.Decimal` |
 | `BooleanField` | `bool` |
@@ -65,10 +66,11 @@ Reading a field through a document instance yields the value type below, plus
 | `PointField`, `LineStringField`, `PolygonField`, `MultiPointField`, `MultiLineStringField`, `MultiPolygonField` | `Any` (a GeoJSON `dict` or the raw coordinate list, as stored) |
 | `DynamicField` | `Any` |
 | `ListField(StringField())` / `ListField()` | `list[str]` / `list[Any]` |
+| `ListField(DateField())` / `ListField(ComplexDateTimeField())` | `list[datetime.date]` / `list[datetime.datetime]` |
 | `SortedListField(IntField())` | `list[int]` |
 | `EmbeddedDocumentListField(Address)` / `EmbeddedDocumentListField("Address")` | `EmbeddedDocumentList[Address]` / `EmbeddedDocumentList[Any]` |
 | `DictField()` / `DictField(IntField())` | `dict[str, Any]` / `dict[str, int]` |
-| `MapField(IntField())` | `dict[str, int]` |
+| `MapField(IntField())` / `MapField(DateField())` | `dict[str, int]` / `dict[str, datetime.date]` |
 | `EmbeddedDocumentField(Address)` / `EmbeddedDocumentField("Address")` | `Address` / `Any` |
 | `GenericEmbeddedDocumentField` | `EmbeddedDocument` |
 | `ReferenceField`, `CachedReferenceField`, `GenericReferenceField` | `Any` (see below) |
@@ -77,12 +79,21 @@ Reading a field through a document instance yields the value type below, plus
 
 Notes:
 
-- **Container fields are never `None`.** `ListField`, `SortedListField`,
-  `EmbeddedDocumentListField`, `DictField` and `MapField` default to an empty
-  container, so `user.tags` is `list[str]`, not `list[str] | None`. The inner
-  type comes from the inner field (`ListField(ListField(IntField()))` is
-  `list[list[int]]`; `DictField(ListField(StringField()))` is
-  `dict[str, list[str]]`).
+- **Container fields default to an empty container.** `ListField`,
+  `SortedListField`, `EmbeddedDocumentListField`, `DictField` and `MapField`
+  default to `[]` / `{}`, so `user.tags` is `list[str]`, not
+  `list[str] | None`. The two exceptions are an explicit `default=None`
+  (`ListField(StringField(), default=None)` keeps `None` at runtime, so it is
+  `list[str] | None`) and `null=True`. The inner type is the Python type the
+  inner field exposes, whatever it stores: `ListField(ListField(IntField()))`
+  is `list[list[int]]`, `DictField(ListField(StringField()))` is
+  `dict[str, list[str]]`, `ListField(DateField())` is `list[datetime.date]`
+  and `ListField(ComplexDateTimeField())` is `list[datetime.datetime]`
+  (although it is stored as a string).
+- **`SequenceField`** exposes the return type of `value_decorator` (`int`
+  without one), so `SequenceField(value_decorator=str)` is `str`, and
+  `await Model.counter.generate()` returns the same type. Pass
+  `value_decorator` as a keyword argument for the type to be inferred.
 - **Embedded documents named by string** (`EmbeddedDocumentField("Address")`,
   used for forward and recursive references) cannot be resolved statically and
   are `Any`.
@@ -108,21 +119,38 @@ Notes:
 Every field is `V | None` unless the declaration guarantees a value:
 
 ```python
+def maybe_nick() -> str | None: ...
+
+
 class User(Document):
     name = StringField()                       # str | None
     email = StringField(required=True)         # str
     nick = StringField(default="")             # str
     joined = DateTimeField(default=datetime.datetime.now)  # datetime (callable default)
     score = IntField(default=None)             # int | None (a None default does not narrow)
+    alias = StringField(default=maybe_nick)    # str | None (the factory may return None)
+    label = StringField(default="", null=True) # str | None (null=True always wins)
     active = BooleanField(required=flag)       # bool | None (non-literal `required`)
+    tags = ListField(StringField())            # list[str] (empty-container default)
+    aliases = ListField(StringField(), default=None)  # list[str] | None
 ```
 
-The rule, applied per field class:
+The rule, applied per field class, in this order:
 
-1. `required=True` (the literal) makes the value non-optional.
-2. A non-`None` `default=` (a value or a zero-argument callable returning one)
+1. `null=True` (the literal) makes the value optional whatever else is passed:
+   such a field may hold `None` after an explicit `None` assignment even when
+   it has a default.
+2. `required=True` (the literal) makes the value non-optional.
+3. A non-`None` `default=` (a value or a zero-argument callable returning one)
    makes the value non-optional.
-3. Anything else, including `primary_key=True`, leaves the value optional.
+4. Anything else leaves the value optional: `primary_key=True`, an explicit
+   `default=None`, a factory that may return `None`
+   (`default=lambda: maybe_nick()`), or a non-literal `required=`.
+
+Container fields follow the same rule, with rule 4 replaced by their
+empty-container default: they are non-optional unless declared with an explicit
+`default=None` (kept as is at runtime, unlike a scalar field's `None` default)
+or with `null=True`.
 
 **Read this honestly.** `required=True` and `default=` change only the *static*
 type. `required` is enforced when the document is validated or saved, so
@@ -130,14 +158,15 @@ type. `required` is enforced when the document is validated or saved, so
 applied whenever the field is left unset or assigned `None`, so a defaulted
 field does hold a value in practice.
 
-`null=True` is **not modelled**. A field declared with `default=` and
-`null=True` may hold `None` at runtime after an explicit `None` assignment; its
-static type stays non-optional.
+Because the fallback (rule 4) accepts any `default=`, a default of the wrong
+type is **not rejected**: `IntField(default="x")` type-checks and the field is
+simply `int | None`; validation still catches the value at save time.
 
 Assignments are checked against the same type: `user.email = None` and
-`user.tags = [1]` are errors, `user.name = None` is fine. `BinaryField` also
-accepts `bytearray`; `LazyReferenceField` accepts a document, a `DBRef`, a
-`LazyReference` or a primary key (it is normalised on the next read).
+`user.tags = [1]` are errors, `user.name = None` and `user.aliases = None` are
+fine. `BinaryField` also accepts `bytearray`; `LazyReferenceField` accepts a
+document, a `DBRef`, a `LazyReference` or a primary key (it is normalised on
+the next read), so assigning `None` to a lazy reference is not reported either.
 
 ## Class-level access
 
@@ -148,14 +177,22 @@ metadata stays available:
 User.name             # StringField[Never]  (Never: non-optional)
 User.age              # IntField[None]
 User.tags             # ListField[str, Never]
+User.aliases          # ListField[str, None]
+User.joined           # DateTimeField[datetime.datetime, Never]
 User.address          # EmbeddedDocumentField[Address, None]
+User.counter          # SequenceField[int, None]
 User.name.db_field    # str | None
 User.name.required    # bool
 ```
 
-The second type parameter records optionality: `None` for optional fields,
+The last type parameter records optionality: `None` for optional fields,
 `Never` for non-optional ones. It is normally inferred; you only spell it out
-when subclassing a field (below).
+when subclassing a field (below). Two classes carry an extra, defaulted
+value-type parameter so that a subclass can expose another Python type:
+`StringField[N, V = str]` (`ComplexDateTimeField` is `StringField[N, datetime.datetime]`)
+and `DateTimeField[V = datetime.datetime, N]` (`DateField` is
+`DateTimeField[datetime.date, N]`). `StringField[Never]` is the same type as
+`StringField[Never, str]`; a plain field never needs it spelled out.
 
 ## Inherited models and mixins
 
@@ -169,11 +206,16 @@ and `sub.name` is typed exactly as on the base.
   declaring type parameters, is typed `Any` on read and accepts anything on
   write, exactly as before.
 - A class that subclasses a concrete field inherits its value type but not the
-  `required=` / `default=` narrowing: `class Slug(StringField)` is always
-  `str | None`. Subclass `StringField[Never]` for a field that is always
+  `required=` / `default=` / `null=` narrowing: `class Slug(StringField)` is
+  always `str | None`. Subclass `StringField[Never]` for a field that is always
   present, or declare the class generic and repeat the constructor overloads of
   the parent if you need per-instance narrowing (see `StringField` in
-  `mongoengine/fields.py` for the shape).
+  `mongoengine/fields.py` for the shape: `null: Literal[True]`, then
+  `required: Literal[True]`, then a non-`None` `default=`, then the fallback).
+- A string-backed field that exposes another Python type subclasses
+  `StringField[N, V]` with `V` set, as `ComplexDateTimeField` does
+  (`class ComplexDateTimeField[N = None](StringField[N, datetime.datetime])`),
+  and overrides `__get__` / `__set__` accordingly.
 
 ## Document IDs: `Document[PK]`
 
@@ -210,6 +252,11 @@ class Counter(Document[int]):
     id = IntField(primary_key=True)         # naming the key "id" also works
 
 
+class Ticket(Document[str]):
+    # SequenceField follows value_decorator, so the key type is str here.
+    id = SequenceField(primary_key=True, value_decorator=str)
+
+
 class Session(DynamicDocument[uuid.UUID]):
     id = UUIDField(primary_key=True)
 ```
@@ -229,7 +276,10 @@ Limitations of the ID contract:
 - Do not combine `primary_key=True` with `required=True` on a field named `id`;
   `required=True` narrows the field to `StringField[Never]`, which no longer
   matches the `BaseField[str, None]` declaration (`primary_key=True` already
-  implies required at runtime).
+  implies required at runtime). `null=True` is fine (it keeps `None`).
+- The primary-key field's value type must match `PK`:
+  `class Counter(Document[int]): id = SequenceField(primary_key=True, value_decorator=str)`
+  is reported as `reportAssignmentType`.
 - `EmbeddedDocument` has no `id` or `pk`; accessing them is an attribute error.
 
 **Bare `Document` means `Document[ObjectId]`.** A parameter annotated
@@ -271,9 +321,18 @@ and `in_bulk()` keys is documented in a follow-up section.
 
 ## Limitations summary
 
-- `null=True` is not modelled.
-- `required=` / `default=` narrow the static type only; validation happens at
-  save time.
+- `null=True` / `required=` / `default=` narrow the static type only;
+  validation happens at save time.
+- A `default=` of the wrong type (`IntField(default="x")`) is not rejected; the
+  field is then optional. The fallback accepts any default so that factories
+  returning `V | None` type-check as optional.
+- `SequenceField`'s value type is inferred from `value_decorator` only when it
+  is passed as a keyword argument; the checker rejects it passed positionally
+  (the runtime still accepts it).
+- `MapField()` without an inner field is rejected by the checker (it also
+  raises at class definition).
+- Assigning `None` to a `LazyReferenceField` / `GenericLazyReferenceField` is
+  never reported (their setter accepts any reference form).
 - Reference fields (`ReferenceField`, `CachedReferenceField`,
   `GenericReferenceField`) are `Any`.
 - String document names (`EmbeddedDocumentField("Address")`,
