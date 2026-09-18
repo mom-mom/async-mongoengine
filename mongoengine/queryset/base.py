@@ -1080,18 +1080,20 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         """Retrieve a set of documents by their ids.
 
         :param object_ids: the primary keys to look up (any iterable; it is
-            materialised into a list for the ``$in`` query). Each id goes
-            through the primary-key field's query conversion
-            (``prepare_query_value``), exactly as ``filter(pk__in=ids)`` does,
-            so the ids are given in their Python form as the static type
-            ``Iterable[PK]`` says: a ``uuid.UUID`` for a
-            ``UUIDField(binary=False)`` key (stored as ``str``), an enum
-            member for an ``EnumField`` key (stored as the enum value). The
-            stored form is accepted at runtime as well (``str(some_uuid)``,
+            materialised into a list for the ``$in`` query). The ids are given
+            in their Python form, as the static type ``Iterable[PK]`` says: a
+            ``uuid.UUID`` for a ``UUIDField(binary=False)`` key (stored as
+            ``str``), an enum member for an ``EnumField`` key (stored as the
+            enum value), the generated value of a ``SequenceField`` key. Each
+            id is converted to its stored form with the primary-key field's
+            ``to_mongo`` (not the query-operator conversion of
+            ``filter(pk__in=...)``, which would run a ``SequenceField``'s
+            ``value_decorator`` a second time on an already generated key).
+            The stored form is accepted at runtime as well (``str(some_uuid)``,
             the enum value), and so is a 24-character hex string for an
             ``ObjectIdField`` key, which the conversion turns into an
             ``ObjectId``; an id the field cannot convert raises
-            :class:`~mongoengine.errors.ValidationError` as a filter would.
+            :class:`~mongoengine.errors.ValidationError`.
         :returns: a dict keyed by the Python primary-key values (``doc.pk`` of
             the loaded document), whatever form the ids were given in and
             whatever the projection mode. Ids that do not exist are simply
@@ -1103,12 +1105,14 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         await self._ensure_collection()
         doc_map: dict[Any, Any] = {}
 
-        # ``transform.query`` resolves ``pk`` to the primary-key field and
-        # applies its ``prepare_query_value("in", value)`` to every id, so the
-        # ``$in`` query is built exactly as for ``filter(pk__in=ids)``.
-        query = transform.query(self._document, pk__in=list(object_ids))
+        # Convert the given Python primary-key values to their stored form.
+        # ``to_mongo`` rather than ``prepare_query_value``: the latter is the
+        # query-operator conversion, which for a SequenceField applies
+        # ``value_decorator`` and would decorate an already generated key
+        # again ("T1" -> "TT1").
         id_field = self._primary_key_field()
-        docs = self._collection.find(query, session=_get_session(), **self._cursor_args)
+        stored_ids = [id_field._to_mongo_safe_call(object_id) for object_id in object_ids]
+        docs = self._collection.find({"_id": {"$in": stored_ids}}, session=_get_session(), **self._cursor_args)
         if self._scalar:
             async for doc in docs:
                 doc_map[id_field.to_python(doc["_id"])] = self._get_scalar(self._document._from_son(doc))
@@ -1684,9 +1688,9 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
 
         Its ``to_python`` turns a stored ``_id`` into the value the model
         exposes (a ``uuid.UUID`` for ``UUIDField(binary=False)``, the member
-        for ``EnumField``) and its ``prepare_query_value`` does the reverse
-        for a query; ``insert()`` and ``in_bulk()`` use it so that their
-        primary-key values are the ``PK`` the static contract describes.
+        for ``EnumField``) and its ``to_mongo`` does the reverse; ``insert()``
+        and ``in_bulk()`` use it so that their primary-key values are the
+        ``PK`` the static contract describes.
         """
         return self._document._fields[self._document._meta["id_field"]]
 

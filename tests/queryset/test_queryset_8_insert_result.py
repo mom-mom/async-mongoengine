@@ -187,6 +187,27 @@ class TestQuerySetInsertResult(MongoDBTestCase):
         assert await Numbered.objects.insert([Numbered(), Numbered()], load_bulk=False) == [2, 3]
         assert (await Numbered.objects.insert(Numbered())).pk == 4
 
+    async def test_insert_reload_does_not_reapply_a_sequence_value_decorator(self):
+        """The ``load_bulk=True`` reload looks the generated keys up as stored.
+
+        Decorating them again would look for ``"TT0001"`` or fail on
+        ``f"T{'T0001':04d}"`` with ``ValueError`` after the insert succeeded.
+        """
+
+        class Padded(Document[str]):
+            id = SequenceField(primary_key=True, value_decorator=lambda n: f"T{n:04d}")
+            name = StringField()
+
+        inserted = await Padded.objects.insert(Padded(name="a"))
+        assert isinstance(inserted, Padded)
+        assert (inserted.pk, inserted.name) == ("T0001", "a")
+        assert not inserted._created  # reloaded from the database, not the fallback
+        assert await Padded.objects.insert(Padded(name="b"), load_bulk=False) == "T0002"
+        batch = await Padded.objects.insert([Padded(name="c"), Padded(name="d")])
+        assert [(doc.pk, doc.name) for doc in batch] == [("T0003", "c"), ("T0004", "d")]
+        assert all(not doc._created for doc in batch)
+        assert await Padded.objects.count() == 4
+
     async def test_insert_returns_documents_whatever_the_projection_mode(self):
         raw = self.Item.objects.as_pymongo()
         inserted = await raw.insert(self.Item(name="a", count=1))

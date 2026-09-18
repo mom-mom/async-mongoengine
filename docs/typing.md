@@ -551,14 +551,16 @@ session_id = await Session.objects.insert(Session(), load_bulk=False)  # uuid.UU
   `dict[ObjectId, dict[str, Any]]` after `as_pymongo()`, `dict[ObjectId, Any]`
   or `dict[ObjectId, tuple[Any, ...]]` after `scalar()`; keys follow the
   model's primary key (`dict[str, Product]`).
-  The ids go through the primary-key field's query conversion
-  (`prepare_query_value`, exactly as `filter(pk__in=ids)`), so they are given
-  in their Python form as the static type says: a `uuid.UUID` for a
-  `UUIDField(binary=False)` key, an enum member for an `EnumField` key. The
+  The ids are given in their Python form as the static type says: a
+  `uuid.UUID` for a `UUIDField(binary=False)` key, an enum member for an
+  `EnumField` key, the generated value of a `SequenceField` key. Each id is
+  converted to its stored form with the field's `to_mongo` (not the
+  query-operator conversion of `filter(pk__in=...)`, which would run a
+  `SequenceField`'s `value_decorator` again on an already generated key). The
   stored form (`str(some_uuid)`, the enum value) and a 24-character hex string
   for an `ObjectId` key are accepted at runtime as well, although the checker
-  rejects them; an id the field cannot convert raises `ValidationError` as a
-  filter would. The keys are always the Python values (`doc.pk` of the loaded
+  rejects them; an id the field cannot convert raises `ValidationError`. The
+  keys are always the Python values (`doc.pk` of the loaded
   document), whatever form the ids were given in and whatever the projection
   mode; the raw dicts of `as_pymongo()` keep the stored form in their `"_id"`
   entry.
@@ -616,8 +618,9 @@ runtime by `tests/queryset/test_queryset_7_update_result.py`,
   Python primary-key values (`Iterable[PK]`) it also accepts the stored form
   (`str(some_uuid)` for a `UUIDField(binary=False)` key, the enum value for an
   `EnumField` key, a 24-character hex string for an `ObjectId` key), since the
-  ids go through the field's query conversion; the result is keyed by the
-  Python values either way. `insert(..., load_bulk=False)` returns those
-  Python values as well (see `insert()` and `in_bulk()` above).
+  ids go through the field's `to_mongo`; the result is keyed by the Python
+  values either way. A `SequenceField` key must be given as generated (its
+  `value_decorator` is not applied again). `insert(..., load_bulk=False)`
+  returns those Python values as well (see `insert()` and `in_bulk()` above).
 - The contract is verified with Pyright; mypy is not part of the regression
   suite.

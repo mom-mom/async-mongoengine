@@ -216,11 +216,39 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
         docs = await Ticket.objects.in_bulk(["1", "3"])
         assert docs == {"1": first}
         assert type(next(iter(docs))) is str
-        # value_decorator is applied to the ids (prepare_query_value), so the
-        # raw counter value matches as well; the key is the str the field exposes.
-        assert await Ticket.objects.in_bulk([2]) == {"2": second}
+        assert await Ticket.objects.in_bulk(["2"]) == {"2": second}
         assert await Ticket.objects.scalar("name").in_bulk(["1", "2"]) == {"1": "a", "2": "b"}
-        assert await Ticket.objects.as_pymongo().in_bulk([1]) == {"1": {"_id": "1", "name": "a"}}
+        assert await Ticket.objects.as_pymongo().in_bulk(["1"]) == {"1": {"_id": "1", "name": "a"}}
+        # The ids are the generated keys; value_decorator is not applied to
+        # them again, so the raw counter value does not match.
+        assert await Ticket.objects.in_bulk([2]) == {}
+
+    async def test_in_bulk_does_not_reapply_a_sequence_value_decorator(self):
+        """A non-idempotent ``value_decorator`` runs once, when the key is generated.
+
+        ``filter(pk__in=...)`` would decorate the given keys again
+        (``"T1"`` -> ``"TT1"``, ``"T0001"`` -> ``ValueError``); ``in_bulk()``
+        converts them with ``to_mongo`` instead.
+        """
+
+        class Prefixed(Document[str]):
+            id = SequenceField(primary_key=True, value_decorator=lambda n: f"T{n}")
+            name = StringField()
+
+        class Padded(Document[str]):
+            id = SequenceField(primary_key=True, value_decorator=lambda n: f"T{n:04d}")
+            name = StringField()
+
+        first = await Prefixed(name="a").save()
+        second = await Prefixed(name="b").save()
+        assert (first.pk, second.pk) == ("T1", "T2")
+        assert await Prefixed.objects.in_bulk([first.pk, second.pk, "T3"]) == {"T1": first, "T2": second}
+        assert await Prefixed.objects.scalar("name").in_bulk(["T2"]) == {"T2": "b"}
+
+        padded = await Padded(name="p").save()
+        assert padded.pk == "T0001"
+        assert await Padded.objects.in_bulk([padded.pk]) == {"T0001": padded}
+        assert await Padded.objects.as_pymongo().in_bulk(["T0001"]) == {"T0001": {"_id": "T0001", "name": "p"}}
 
     async def test_in_bulk_accepts_object_id_strings(self):
         """``ObjectIdField`` keys: a 24-character hex string is converted like a filter value.
