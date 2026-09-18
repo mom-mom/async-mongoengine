@@ -159,7 +159,9 @@ The rule, applied per field class, in this order:
    `bool` (at runtime a true `null` keeps `None`, so the checker cannot
    promise a value), an explicit `default=None`, a factory that may return
    `None` (`default=maybe_nick`), a default of the wrong type, a non-literal
-   `required=`, or `primary_key=True` alone.
+   `required=` without a `default=`, or `primary_key=True` alone. A
+   non-literal `required=` is ignored by the checker: with a `default=` that
+   satisfies rule 3 the field is still non-optional.
 
 Container fields (`ListField`, `SortedListField`, `EmbeddedDocumentListField`,
 `DictField`, `MapField`) follow the same rule, with their implicit
@@ -348,8 +350,9 @@ and `in_bulk()` keys is documented in a follow-up section.
 - A `default=` of the wrong type (`IntField(default="x")`) is not rejected; the
   field is then optional. The fallback accepts any default so that factories
   returning `V | None` type-check as optional.
-- `null=` or `required=` given as a non-literal `bool` cannot be resolved
-  statically; such a field is optional even when it has a default.
+- `null=` given as a non-literal `bool` cannot be resolved statically; such a
+  field is optional even when it has a default. A non-literal `required=` is
+  ignored: the field is optional unless a `default=` makes it non-optional.
 - `SequenceField`'s value type is inferred from `value_decorator` only when it
   is passed as a keyword argument; the checker rejects it passed positionally
   (the runtime still accepts it).
