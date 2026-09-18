@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 async-mongoengine: MongoEngine fork with native PyMongo async support (`AsyncMongoClient`).
-See [docs/async/README.md](docs/async/README.md) for full API migration reference.
+See [docs/async/README.md](docs/async/README.md) for full API migration reference and
+[docs/typing.md](docs/typing.md) for the static typing contract (field inference, `Document[PK]`).
 
 ## Language
 

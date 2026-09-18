@@ -1,6 +1,6 @@
 import weakref
 from collections.abc import Callable, Generator, Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 
 from bson import DBRef
 
@@ -106,14 +106,18 @@ class BaseDict(dict):
                 self._instance._mark_as_changed(self._name)
 
 
-class BaseList(list):
-    """A special list so we can watch any changes."""
+class BaseList[T = Any](list[T]):
+    """A special list so we can watch any changes.
+
+    Generic over the element type for static typing only (``ListField(StringField())``
+    yields ``list[str]``); there is no runtime effect.
+    """
 
     _dereferenced: bool = False
     _instance: Any = None
     _name: str | None = None
 
-    def __init__(self, list_items: list[Any] | tuple[Any, ...], instance: Any, name: str | None) -> None:
+    def __init__(self, list_items: list[T] | tuple[T, ...], instance: Any, name: str | None) -> None:
         BaseDocument = _import_class("BaseDocument")
 
         if isinstance(instance, BaseDocument):
@@ -125,11 +129,19 @@ class BaseList(list):
         self._name = name
         super().__init__(list_items)
 
+    @overload
+    def __getitem__(self, key: int) -> T: ...
+
+    @overload
+    def __getitem__(self, key: slice) -> list[T]: ...
+
     def __getitem__(self, key: int | slice) -> Any:
         # change index to positive value because MongoDB does not support negative one
         if isinstance(key, int) and key < 0:
             key = len(self) + key
-        value = super().__getitem__(key)
+        # Nested plain dicts / lists are replaced in place by their tracking
+        # counterparts below, so the element is handled as ``Any`` here.
+        value: Any = super().__getitem__(key)
 
         if isinstance(key, slice):
             # When receiving a slice operator, we don't convert the structure and bind
@@ -151,7 +163,7 @@ class BaseList(list):
             value._instance = self._instance
         return value
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[T]:
         yield from super().__iter__()
 
     def __getstate__(self) -> list[Any]:
@@ -193,7 +205,12 @@ class BaseList(list):
                 self._instance._mark_as_changed(self._name)
 
 
-class EmbeddedDocumentList(BaseList):
+class EmbeddedDocumentList[T = Any](BaseList[T]):
+    """A :class:`BaseList` of embedded documents with query helpers.
+
+    ``T`` is the embedded document class (static typing only).
+    """
+
     @classmethod
     def __match_all(cls, embedded_doc: Any, kwargs: dict[str, Any]) -> bool:
         """Return True if a given embedded doc matches all the filter
@@ -212,7 +229,7 @@ class EmbeddedDocumentList(BaseList):
             return embedded_docs
         return [doc for doc in embedded_docs if cls.__match_all(doc, kwargs)]
 
-    def filter(self, **kwargs: Any) -> "EmbeddedDocumentList":
+    def filter(self, **kwargs: Any) -> "EmbeddedDocumentList[T]":
         """
         Filters the list by only including embedded documents with the
         given keyword arguments.
@@ -232,7 +249,7 @@ class EmbeddedDocumentList(BaseList):
         values = self.__only_matches(self, kwargs)
         return EmbeddedDocumentList(values, self._instance, self._name)
 
-    def exclude(self, **kwargs: Any) -> "EmbeddedDocumentList":
+    def exclude(self, **kwargs: Any) -> "EmbeddedDocumentList[T]":
         """
         Filters the list by excluding embedded documents with the given
         keyword arguments.
@@ -258,7 +275,7 @@ class EmbeddedDocumentList(BaseList):
         """
         return len(self)
 
-    def get(self, **kwargs: Any) -> Any:
+    def get(self, **kwargs: Any) -> T:
         """
         Retrieves an embedded document determined by the given keyword
         arguments.
@@ -280,14 +297,14 @@ class EmbeddedDocumentList(BaseList):
 
         return values[0]
 
-    def first(self) -> Any | None:
+    def first(self) -> T | None:
         """Return the first embedded document in the list, or ``None``
         if empty.
         """
         if len(self) > 0:
             return self[0]
 
-    def create(self, **values: Any) -> Any:
+    def create(self, **values: Any) -> T:
         """
         Creates a new instance of the EmbeddedDocument and appends it to this EmbeddedDocumentList.
 
@@ -434,10 +451,17 @@ class StrictDict:
         return cls._classes[allowed_keys_frozen]
 
 
-class LazyReference(DBRef):
+class LazyReference[D = Any](DBRef):
+    """A :class:`~bson.DBRef` that knows its document class and can ``fetch()`` it.
+
+    ``D`` is the referenced document class (static typing only): ``fetch()``
+    returns ``D``.  :class:`~mongoengine.fields.LazyReferenceField` yields
+    ``LazyReference[D]`` when constructed with a document class.
+    """
+
     __slots__ = ("_cached_doc", "passthrough", "document_type")
 
-    async def fetch(self, force: bool = False) -> Any:
+    async def fetch(self, force: bool = False) -> D:
         if not self._cached_doc or force:
             self._cached_doc = await self.document_type.objects.get(pk=self.pk)
             if not self._cached_doc:
@@ -448,9 +472,9 @@ class LazyReference(DBRef):
     def pk(self) -> Any:
         return self.id
 
-    def __init__(self, document_type: type[Any], pk: Any, cached_doc: Any = None, passthrough: bool = False) -> None:
-        self.document_type = document_type
-        self._cached_doc = cached_doc
+    def __init__(self, document_type: type[D], pk: Any, cached_doc: D | None = None, passthrough: bool = False) -> None:
+        self.document_type: Any = document_type
+        self._cached_doc: Any = cached_doc
         self.passthrough = passthrough
         super().__init__(self.document_type._get_collection_name(), pk)
 

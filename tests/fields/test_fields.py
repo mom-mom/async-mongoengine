@@ -24,6 +24,7 @@ from mongoengine import (
     IntField,
     LazyReferenceField,
     ListField,
+    MapField,
     MultipleObjectsReturned,
     NotRegistered,
     NotUniqueError,
@@ -228,6 +229,91 @@ class TestField(MongoDBTestCase):
         # Confirm introspection changes nothing
         data_to_be_saved = sorted(person.to_mongo().keys())
         assert data_to_be_saved == ["age", "created", "userid"]
+
+    def test_explicit_none_default_and_null_are_kept(self):
+        """Pin the runtime behaviour the static optionality contract relies on
+        (see docs/typing.md): an explicit ``default=None`` on a container field
+        is kept, so the value is ``None`` rather than an empty container, and
+        ``null=True`` keeps an explicitly assigned ``None`` even when the field
+        has a default.
+        """
+
+        class Address(EmbeddedDocument):
+            city = StringField()
+
+        class Person(Document):
+            tags = ListField(StringField())
+            no_tags = ListField(StringField(), default=None)
+            no_sorted = SortedListField(IntField(), default=None)
+            no_addresses = EmbeddedDocumentListField(Address, default=None)
+            no_extra = DictField(default=None)
+            no_scores = MapField(IntField(), default=None)
+            age = IntField(default=30, null=True)
+            label = StringField(default="x")
+
+        person = Person()
+        assert person.tags == []
+        assert person.no_tags is None
+        assert person.no_sorted is None
+        assert person.no_addresses is None
+        assert person.no_extra is None
+        assert person.no_scores is None
+
+        person.no_tags = ["a"]
+        person.no_tags = None
+        assert person.no_tags is None
+
+        person.age = None
+        person.label = None
+        assert person.age is None
+        assert person.label == "x"
+
+    def test_nullable_default_factory_and_dynamic_null_are_kept(self):
+        """Pin the runtime behaviour behind the remaining optional cases of the
+        static contract (see docs/typing.md): a container ``default=`` factory
+        that returns ``None`` yields ``None`` rather than an empty container,
+        and ``null=`` given as a runtime ``bool`` behaves like ``null=True``
+        when it is true, keeping an assigned ``None`` even with a default.
+        """
+
+        def maybe_list():
+            return None
+
+        def maybe_dict():
+            return None
+
+        def is_nullable() -> bool:
+            return True
+
+        class Address(EmbeddedDocument):
+            city = StringField()
+
+        class Person(Document):
+            tags = ListField(StringField(), default=maybe_list)
+            sorted_tags = SortedListField(StringField(), default=maybe_list)
+            addresses = EmbeddedDocumentListField(Address, default=maybe_list)
+            extra = DictField(default=maybe_dict)
+            scores = MapField(IntField(), default=maybe_dict)
+            name = StringField(default="x", null=is_nullable())
+            age = IntField(required=True, null=is_nullable())
+            labels = ListField(StringField(), null=is_nullable())
+
+        person = Person()
+        assert person.tags is None
+        assert person.sorted_tags is None
+        assert person.addresses is None
+        assert person.extra is None
+        assert person.scores is None
+        assert person.name == "x"
+        assert person.age is None
+        assert person.labels == []
+
+        person.name = None
+        person.age = None
+        person.labels = None
+        assert person.name is None
+        assert person.age is None
+        assert person.labels is None
 
     async def test_default_value_is_not_used_when_changing_value_to_empty_list_for_strict_doc(
         self,

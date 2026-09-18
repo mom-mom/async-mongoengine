@@ -60,23 +60,36 @@ uv pip install "async-mongoengine[signals] @ git+https://github.com/mom-mom/asyn
 
 ## Type Hints
 
-This package ships with `py.typed` and comprehensive type annotations.
-`QuerySet` is generic, so type checkers (pyright, mypy) can infer document
-types from query results:
+This package ships with `py.typed`. Fields are generic descriptors, so type
+checkers infer value types from the field class and its `required=` /
+`default=` arguments. Declare fields **without** value annotations:
 
 ```python
+class User(Document):
+    name = StringField(required=True)               # user.name: str
+    age = IntField()                                # user.age: int | None
+    tags = ListField(StringField())                 # user.tags: list[str]
+    address = EmbeddedDocumentField(Address)        # user.address: Address | None
+    status = EnumField(Status, default=Status.NEW)  # user.status: Status
+
 user = await User.objects.first()       # User | None
 user = await User.objects.get(name="x") # User
 async for u in User.objects:            # User
 ```
 
-For better field-level inference, add inline annotations to your models:
+`name: str = StringField()` is rejected by Pyright and is not supported.
+`required=True` and `default=` only make the *static* type non-optional:
+`required` is enforced at validation/save time, so `User().name` is still
+`None` at runtime before then. `User.name` (class-level access) is the field
+instance.
 
-```python
-class User(Document):
-    name: str = StringField(required=True)
-    age: int | None = IntField()
-```
+`doc.id` and `doc.pk` are `ObjectId | None`. A model with a custom primary key
+opts into its type with `class Product(Document[str])`; use `Document[Any]`
+for code that accepts documents of any primary-key type.
+
+See [docs/typing.md](docs/typing.md) for the full contract, the inferred type
+of every field, the optionality rules (`null=True`, `required=True`,
+`default=`) and the limitations (reference fields, custom fields).
 
 ## Examples
 

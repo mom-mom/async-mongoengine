@@ -52,7 +52,7 @@ DENY = 3
 PULL = 4
 
 
-class BaseQuerySet[T: Document]:
+class BaseQuerySet[T: Document[Any]]:
     """A set of results returned from a query. Wraps a MongoDB cursor,
     providing :class:`~mongoengine.Document` objects as the results.
     """

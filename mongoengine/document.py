@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import pymongo
 import pymongo.errors
+from bson import ObjectId
 from bson.dbref import DBRef
 from pymongo.read_preferences import ReadPreference
 
@@ -10,6 +11,7 @@ from mongoengine import signals
 from mongoengine.base import (
     BaseDict,
     BaseDocument,
+    BaseField,
     BaseList,
     DocumentMetaclass,
     EmbeddedDocumentList,
@@ -132,7 +134,7 @@ class EmbeddedDocument(BaseDocument, metaclass=DocumentMetaclass):
     # that describe it uniquely, hence it shouldn't be hashable. You can
     # define your own __hash__ method on a subclass if you need your
     # embedded documents to be hashable.
-    __hash__ = None
+    __hash__: ClassVar[None] = None  # pyright: ignore[reportIncompatibleVariableOverride]  # unhashable by design
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -166,12 +168,22 @@ class EmbeddedDocument(BaseDocument, metaclass=DocumentMetaclass):
         return data
 
 
-class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
+class Document[PK = ObjectId](BaseDocument, metaclass=TopLevelDocumentMetaclass):
     """The base class used for defining the structure and properties of
     collections of documents stored in MongoDB. Inherit from this class, and
     add fields as class attributes to define a document's structure.
     Individual documents may then be created by making instances of the
     :class:`~mongoengine.Document` subclass.
+
+    The class is generic over the primary-key type ``PK`` for static typing
+    only (``ObjectId`` by default, i.e. ``class Item(Document)`` means
+    ``Document[ObjectId]``).  ``doc.id`` and ``doc.pk`` are typed ``PK | None``
+    because they are ``None`` until the document is saved.  A model with a
+    custom primary key opts in with ``class Item(Document[str])`` (or ``int``,
+    ``UUID``, ...); one that does not opt in keeps the ``ObjectId | None``
+    typing.  Use ``Document[Any]`` for parameters that accept documents of any
+    primary-key type.  Adding ``Generic`` to the MRO is the only runtime
+    effect; the ``id`` field is still injected by the metaclass.
 
     By default, the MongoDB collection used to store documents created using a
     :class:`~mongoengine.Document` subclass will be the name of the subclass
@@ -217,17 +229,21 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     This can be disabled by setting :attr:`strict` to ``False``
     in the :attr:`meta` dictionary.
 
-    .. tip:: **Type annotations for fields.**
-        Field attributes are dynamically managed by the metaclass, so type
-        checkers cannot infer the Python type from the field class alone
-        (e.g. ``StringField`` → ``str``). Adding inline type annotations
-        gives full IDE support (autocomplete, type checking) with no
-        runtime cost::
+    .. tip:: **Static typing of fields.**
+        Fields are generic descriptors, so type checkers infer the value type
+        from the field class and its ``required=`` / ``default=`` arguments.
+        Declare fields *without* a value annotation::
 
             class User(Document):
-                name: str = StringField(required=True)
-                age: int | None = IntField()
-                email: str = EmailField(required=True)
+                name = StringField(required=True)   # user.name: str
+                age = IntField()                    # user.age: int | None
+                tags = ListField(StringField())     # user.tags: list[str]
+
+        ``name: str = StringField()`` is rejected by Pyright (a field is not a
+        ``str``) and is not supported.  ``required=True`` only makes the
+        *static* type non-optional: it is enforced when the document is
+        validated or saved, so ``User().name`` is still ``None`` at runtime
+        before then.  See ``docs/typing.md`` for the full contract.
     """
 
     if TYPE_CHECKING:
@@ -238,6 +254,11 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         objects: ClassVar[QuerySetManager]
         DoesNotExist: ClassVar[type[_DoesNotExist]]
         MultipleObjectsReturned: ClassVar[type[_MultipleObjectsReturned]]
+        # The primary-key field injected (or aliased) by the metaclass.  An
+        # assignment is required for Pyright to apply the descriptor protocol
+        # (``doc.id`` is ``PK | None``, ``Model.id`` is the field); ``ClassVar``
+        # cannot hold a type variable.
+        id: BaseField[PK, None] = BaseField()
         # Cached PyMongo collection; ``switch_db`` / ``switch_collection``
         # also set it per instance.
         _collection: AsyncCollection[Any] | None
@@ -248,16 +269,28 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     __slots__ = ("_objects",)
 
     @property
-    def pk(self) -> Any:
+    def pk(self) -> PK | None:
         """Get the primary key."""
         if "id_field" not in self._meta:
             return None
         return getattr(self, self._meta["id_field"])
 
     @pk.setter
-    def pk(self, value: Any) -> None:
+    def pk(self, value: PK | None) -> None:
         """Set the primary key."""
         return setattr(self, self._meta["id_field"], value)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, self.__class__) and hasattr(other, "id") and other.id is not None:
+            return self.id == other.id
+        if isinstance(other, DBRef):
+            return self._get_collection_name() == other.collection and self.id == other.id
+        if self.id is None:
+            return self is other
+        return False
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
 
     def __hash__(self) -> int:
         """Return the hash based on the PK of this document. If it's new
@@ -1102,7 +1135,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         return {"missing": missing, "extra": extra}
 
 
-class DynamicDocument(Document, metaclass=TopLevelDocumentMetaclass):
+class DynamicDocument[PK = ObjectId](Document[PK], metaclass=TopLevelDocumentMetaclass):
     """A Dynamic Document class allowing flexible, expandable and uncontrolled
     schemas.  As a :class:`~mongoengine.Document` subclass, acts in the same
     way as an ordinary document but has expanded style properties.  Any data
@@ -1110,6 +1143,8 @@ class DynamicDocument(Document, metaclass=TopLevelDocumentMetaclass):
     not a field is automatically converted into a
     :class:`~mongoengine.fields.DynamicField` and data can be attributed to that
     field.
+
+    Generic over the primary-key type exactly like :class:`~mongoengine.Document`.
 
     .. note::
 
