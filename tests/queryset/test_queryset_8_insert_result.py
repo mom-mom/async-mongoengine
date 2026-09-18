@@ -5,9 +5,11 @@ checked by ``tests/typing/cases/check_insert.py``; these tests pin the runtime
 values the overloads describe, the reload fallback and the bulk-insert signals.
 """
 
+import uuid
+
 from bson import ObjectId
 
-from mongoengine import Document, IntField, StringField, signals
+from mongoengine import Document, IntField, StringField, UUIDField, signals
 from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import MongoDBTestCase
 
@@ -22,8 +24,13 @@ class TestQuerySetInsertResult(MongoDBTestCase):
             code = StringField(primary_key=True)
             name = StringField()
 
+        class Session(Document[uuid.UUID]):
+            id = UUIDField(primary_key=True, binary=False)
+            name = StringField()
+
         self.Item = Item
         self.Coded = Coded
+        self.Session = Session
 
     async def test_insert_single_returns_reloaded_document(self):
         item = self.Item(name="a")
@@ -76,6 +83,33 @@ class TestQuerySetInsertResult(MongoDBTestCase):
         docs = await self.Coded.objects.insert([self.Coded(code="e"), self.Coded(code="f")])
         assert [doc.pk for doc in docs] == ["e", "f"]
         assert all(isinstance(doc, self.Coded) for doc in docs)
+
+    async def test_insert_returns_the_stored_primary_key_form(self):
+        """Pins the current behaviour for issue #33 (PK Python type vs stored type).
+
+        ``UUIDField(binary=False)`` stores the key as ``str``; ``load_bulk=False``
+        returns that stored form although ``Document[uuid.UUID]`` types it as
+        ``uuid.UUID``. The reloaded document (``load_bulk=True``) goes through
+        ``to_python`` and exposes a ``uuid.UUID`` again.
+        """
+        session_id = uuid.uuid4()
+        session = self.Session(id=session_id, name="a")
+        inserted_id = await self.Session.objects.insert(session, load_bulk=False)
+        assert inserted_id == str(session_id)
+        assert type(inserted_id) is str
+        assert session.pk == str(session_id)  # the in-memory document gets the stored form too
+        assert type(session.pk) is str
+        batch_ids = await self.Session.objects.insert(
+            [self.Session(id=uuid.uuid4()), self.Session(id=uuid.uuid4())], load_bulk=False
+        )
+        assert all(type(batch_id) is str for batch_id in batch_ids)
+
+        other_id = uuid.uuid4()
+        reloaded = await self.Session.objects.insert(self.Session(id=other_id, name="b"))
+        assert isinstance(reloaded, self.Session)
+        assert reloaded.id == other_id
+        assert type(reloaded.id) is uuid.UUID
+        assert (await self.Session.objects.as_pymongo().get(id=other_id))["_id"] == str(other_id)
 
     async def test_insert_returns_documents_whatever_the_projection_mode(self):
         raw = self.Item.objects.as_pymongo()

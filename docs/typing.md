@@ -572,5 +572,20 @@ runtime by `tests/queryset/test_queryset_7_update_result.py`,
   `QuerySetManager[Any]`.
 - The count form of `update()` is `None` at runtime for unacknowledged
   writes (`w=0`); the static type describes acknowledged writes.
+- **Primary keys whose stored form differs from their Python type.**
+  `insert(..., load_bulk=False)` returns the stored `_id` values as PyMongo
+  reports them (and sets the in-memory document's `pk` to the same value),
+  and `in_bulk()` matches the ids it is given against the stored values
+  without the primary-key field's query conversion. For
+  `UUIDField(binary=False)` (stores `str`) or `EnumField` (stores the enum
+  value) the runtime values are therefore the stored form while the static
+  type is `PK`: with `class Session(Document[uuid.UUID])`,
+  `await Session.objects.insert(session, load_bulk=False)` is a `str`,
+  `in_bulk([str(session_id)])` matches and `in_bulk([session_id])` returns
+  nothing (whereas `get(id=session_id)` converts and matches). Issue #33
+  tracks applying the field's `to_python` / `prepare_query_value` conversions;
+  until then the current behaviour is pinned by
+  `test_insert_returns_the_stored_primary_key_form` and
+  `test_in_bulk_matches_stored_primary_key_values`.
 - The contract is verified with Pyright; mypy is not part of the regression
   suite.

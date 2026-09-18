@@ -464,7 +464,14 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         - a single document with ``load_bulk=True`` (the default) returns the
           reloaded document (``T``); a list of documents returns ``list[T]``;
         - with ``load_bulk=False`` the primary key(s) are returned instead:
-          ``PK`` for a single document, ``list[PK]`` for a list.
+          ``PK`` for a single document, ``list[PK]`` for a list. These are
+          the stored ``_id`` values as PyMongo reports them, so for a primary
+          key whose BSON form differs from its Python type
+          (``UUIDField(binary=False)`` stores ``str``, ``EnumField`` stores
+          the enum value) the runtime value is the stored form although the
+          static type is ``PK``; the in-memory document's ``pk`` is set to
+          the same value. Issue #33 will apply the field's ``to_python``
+          conversion.
 
         With ``load_bulk=True`` the inserted documents are reloaded from the
         database in one document-mode ``in_bulk()`` query, whatever projection
@@ -1059,11 +1066,18 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         """Retrieve a set of documents by their ids.
 
         :param object_ids: the primary keys to look up (any iterable; it is
-            materialised into a list for the ``$in`` query)
-        :returns: a dict keyed by primary key. Ids that do not exist are
-            simply absent. The values follow the queryset's projection mode:
-            document instances by default, raw dicts after ``as_pymongo()``
-            and scalar values / tuples after ``scalar()``.
+            materialised into a list for the ``$in`` query). They are matched
+            against the stored ``_id`` values as given, without the primary-key
+            field's query conversion, so for a primary key whose BSON form
+            differs from its Python type (``UUIDField(binary=False)`` stores
+            ``str``, ``EnumField`` stores the enum value) pass the stored form:
+            ``in_bulk([str(some_uuid)])`` matches while ``in_bulk([some_uuid])``
+            returns nothing, although the static type is ``Iterable[PK]``.
+            Issue #33 will apply ``prepare_query_value`` to the ids.
+        :returns: a dict keyed by the stored primary-key values. Ids that do
+            not exist are simply absent. The values follow the queryset's
+            projection mode: document instances by default, raw dicts after
+            ``as_pymongo()`` and scalar values / tuples after ``scalar()``.
         """
         await self._ensure_collection()
         doc_map: dict[Any, Any] = {}

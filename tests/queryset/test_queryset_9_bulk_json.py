@@ -6,9 +6,11 @@ missing ids are absent, values follow the projection mode, keys follow the
 model's primary-key type and ``from_json()`` rebuilds subclasses.
 """
 
+import uuid
+
 from bson import ObjectId
 
-from mongoengine import Document, IntField, StringField
+from mongoengine import Document, IntField, StringField, UUIDField
 from tests.utils import MongoDBTestCase
 
 
@@ -27,9 +29,14 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
             code = StringField(primary_key=True)
             name = StringField()
 
+        class Session(Document[uuid.UUID]):
+            id = UUIDField(primary_key=True, binary=False)
+            name = StringField()
+
         self.Item = Item
         self.SubItem = SubItem
         self.Coded = Coded
+        self.Session = Session
 
     async def test_in_bulk_documents_and_missing_ids(self):
         a = await self.Item(name="a", count=1).save()
@@ -109,6 +116,26 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
         assert await self.Coded.objects.scalar("name").in_bulk(["x", "y"]) == {"x": "X", "y": "Y"}
         raw = await self.Coded.objects.as_pymongo().in_bulk(("y",))
         assert raw == {"y": {"_id": "y", "name": "Y"}}
+
+    async def test_in_bulk_matches_stored_primary_key_values(self):
+        """Pins the current behaviour for issue #33 (PK Python type vs stored type).
+
+        ``in_bulk()`` matches the given ids against the stored ``_id`` values
+        without the field's query conversion: with ``UUIDField(binary=False)``
+        the stored form is ``str``, so the ``uuid.UUID`` the static type asks
+        for does not match (``get()`` converts and does).
+        """
+        session_id = uuid.uuid4()
+        session = await self.Session(id=session_id, name="a").save()
+        assert type(session.id) is uuid.UUID
+
+        by_stored_form = await self.Session.objects.in_bulk([str(session_id)])
+        assert list(by_stored_form) == [str(session_id)]  # keys are the stored values too
+        assert by_stored_form[str(session_id)] == session
+        assert type(by_stored_form[str(session_id)].id) is uuid.UUID
+
+        assert await self.Session.objects.in_bulk([session_id]) == {}
+        assert (await self.Session.objects.get(id=session_id)).name == "a"
 
     async def test_in_bulk_reconstructs_subclasses(self):
         item = await self.Item(name="i").save()
