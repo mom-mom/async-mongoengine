@@ -583,7 +583,9 @@ class ObjectIdField[N = None](BaseField[ObjectId, N]):
         def __init__(self: ObjectIdField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
-        def __init__(self: ObjectIdField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+        def __init__(
+            self: ObjectIdField[Never], *, required: Literal[True], null: Literal[False] = False, **kwargs: Any
+        ) -> None: ...
 
         @overload
         def __init__(
@@ -591,11 +593,14 @@ class ObjectIdField[N = None](BaseField[ObjectId, N]):
             *,
             default: ObjectId | Callable[[], ObjectId],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+        def __init__(
+            self, *, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+        ) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -645,7 +650,12 @@ class GeoJsonBaseField[N = None](BaseField[Any, N]):
 
     @overload
     def __init__(
-        self: GeoJsonBaseField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+        self: GeoJsonBaseField[Never],
+        auto_index: bool = True,
+        *args: Any,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -655,6 +665,7 @@ class GeoJsonBaseField[N = None](BaseField[Any, N]):
         *args: Any,
         default: Any | Callable[[], Any],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -665,6 +676,7 @@ class GeoJsonBaseField[N = None](BaseField[Any, N]):
         *args: Any,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 

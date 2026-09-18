@@ -82,9 +82,13 @@ Notes:
 - **Container fields default to an empty container.** `ListField`,
   `SortedListField`, `EmbeddedDocumentListField`, `DictField` and `MapField`
   default to `[]` / `{}`, so `user.tags` is `list[str]`, not
-  `list[str] | None`. The two exceptions are an explicit `default=None`
-  (`ListField(StringField(), default=None)` keeps `None` at runtime, so it is
-  `list[str] | None`) and `null=True`. The inner type is the Python type the
+  `list[str] | None`. They become optional exactly like scalar fields (see
+  "Optional vs. required values"): with `null=True` or a non-literal `null=`,
+  with an explicit `default=None` (`ListField(StringField(), default=None)`
+  keeps `None` at runtime), or with a `default=` factory that may return
+  `None`. A default that is a container of the right type, or a factory
+  returning one (`default=list`, `default=["a"]`), keeps them non-optional.
+  The inner type is the Python type the
   inner field exposes, whatever it stores: `ListField(ListField(IntField()))`
   is `list[list[int]]`, `DictField(ListField(StringField()))` is
   `dict[str, list[str]]`, `ListField(DateField())` is `list[datetime.date]`
@@ -120,19 +124,25 @@ Every field is `V | None` unless the declaration guarantees a value:
 
 ```python
 def maybe_nick() -> str | None: ...
+def maybe_tags() -> list[str] | None: ...
+def get_flag() -> bool: ...
 
 
 class User(Document):
     name = StringField()                       # str | None
     email = StringField(required=True)         # str
     nick = StringField(default="")             # str
+    slug = StringField(default="", null=False) # str
     joined = DateTimeField(default=datetime.datetime.now)  # datetime (callable default)
     score = IntField(default=None)             # int | None (a None default does not narrow)
     alias = StringField(default=maybe_nick)    # str | None (the factory may return None)
     label = StringField(default="", null=True) # str | None (null=True always wins)
-    active = BooleanField(required=flag)       # bool | None (non-literal `required`)
+    title = StringField(default="", null=get_flag())  # str | None (non-literal `null`)
+    active = BooleanField(required=get_flag()) # bool | None (non-literal `required`)
     tags = ListField(StringField())            # list[str] (empty-container default)
-    aliases = ListField(StringField(), default=None)  # list[str] | None
+    names = ListField(StringField(), default=list)         # list[str] (list factory)
+    aliases = ListField(StringField(), default=None)       # list[str] | None
+    labels = ListField(StringField(), default=maybe_tags)  # list[str] | None
 ```
 
 The rule, applied per field class, in this order:
@@ -140,17 +150,25 @@ The rule, applied per field class, in this order:
 1. `null=True` (the literal) makes the value optional whatever else is passed:
    such a field may hold `None` after an explicit `None` assignment even when
    it has a default.
-2. `required=True` (the literal) makes the value non-optional.
-3. A non-`None` `default=` (a value or a zero-argument callable returning one)
-   makes the value non-optional.
-4. Anything else leaves the value optional: `primary_key=True`, an explicit
-   `default=None`, a factory that may return `None`
-   (`default=lambda: maybe_nick()`), or a non-literal `required=`.
+2. `required=True` (the literal), with `null` absent or `False`, makes the
+   value non-optional.
+3. A `default=` whose value, or whose zero-argument factory's return type, is
+   the field's value type, with `null` absent or `False`, makes the value
+   non-optional.
+4. Anything else leaves the value optional: `null=` given as a non-literal
+   `bool` (at runtime a true `null` keeps `None`, so the checker cannot
+   promise a value), an explicit `default=None`, a factory that may return
+   `None` (`default=maybe_nick`), a default of the wrong type, a non-literal
+   `required=`, or `primary_key=True` alone.
 
-Container fields follow the same rule, with rule 4 replaced by their
-empty-container default: they are non-optional unless declared with an explicit
-`default=None` (kept as is at runtime, unlike a scalar field's `None` default)
-or with `null=True`.
+Container fields (`ListField`, `SortedListField`, `EmbeddedDocumentListField`,
+`DictField`, `MapField`) follow the same rule, with their implicit
+empty-container default counting as rule 3 when `default=` is absent. So
+`ListField(StringField())`, `ListField(StringField(), default=list)` and
+`ListField(StringField(), default=["a"])` are `list[str]`, while an explicit
+`default=None` (kept as is at runtime, unlike a scalar field's `None` default),
+a factory that may return `None` or a non-literal `null=` make the field
+`list[str] | None`.
 
 **Read this honestly.** `required=True` and `default=` change only the *static*
 type. `required` is enforced when the document is validated or saved, so
@@ -159,8 +177,10 @@ applied whenever the field is left unset or assigned `None`, so a defaulted
 field does hold a value in practice.
 
 Because the fallback (rule 4) accepts any `default=`, a default of the wrong
-type is **not rejected**: `IntField(default="x")` type-checks and the field is
-simply `int | None`; validation still catches the value at save time.
+type is **not rejected**: `IntField(default="x")` and
+`ListField(StringField(), default=[1])` type-check and the fields are simply
+`int | None` and `list[str] | None`; validation still catches the value at
+save time.
 
 Assignments are checked against the same type: `user.email = None` and
 `user.tags = [1]` are errors, `user.name = None` and `user.aliases = None` are
@@ -211,7 +231,9 @@ and `sub.name` is typed exactly as on the base.
   present, or declare the class generic and repeat the constructor overloads of
   the parent if you need per-instance narrowing (see `StringField` in
   `mongoengine/fields.py` for the shape: `null: Literal[True]`, then
-  `required: Literal[True]`, then a non-`None` `default=`, then the fallback).
+  `required: Literal[True]` with `null: Literal[False] = False`, then a typed
+  `default=` with `null: Literal[False] = False`, then the fallback with
+  `default: Any = None, null: bool = False`).
 - A string-backed field that exposes another Python type subclasses
   `StringField[N, V]` with `V` set, as `ComplexDateTimeField` does
   (`class ComplexDateTimeField[N = None](StringField[N, datetime.datetime])`),
@@ -326,6 +348,8 @@ and `in_bulk()` keys is documented in a follow-up section.
 - A `default=` of the wrong type (`IntField(default="x")`) is not rejected; the
   field is then optional. The fallback accepts any default so that factories
   returning `V | None` type-check as optional.
+- `null=` or `required=` given as a non-literal `bool` cannot be resolved
+  statically; such a field is optional even when it has a default.
 - `SequenceField`'s value type is inferred from `value_decorator` only when it
   is passed as a keyword argument; the checker rejects it passed positionally
   (the runtime still accepts it).
