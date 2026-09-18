@@ -29,6 +29,9 @@ uv run ruff format .
 # Type check
 uv run pyright
 
+# Consumer type regression check (runs Pyright in basic mode on tests/typing/cases)
+uv run pytest tests/typing
+
 # Sync dependencies (after changing pyproject.toml)
 uv sync --group dev
 
