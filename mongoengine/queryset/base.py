@@ -477,7 +477,8 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         database in one document-mode ``in_bulk()`` query, whatever projection
         mode the queryset is in (``as_pymongo()`` / ``scalar()`` apply to the
         results of the query, not to the inserted documents; the field
-        selection made by ``scalar()`` is not applied to the reload either).
+        selection in force, from ``only()`` / ``exclude()`` or ``scalar()``, is not
+        applied to the reload either: the documents come back complete).
         If a document cannot be reloaded
         (for example because the queryset reads from a secondary that has not
         caught up yet), the in-memory document that was inserted is returned
@@ -1644,15 +1645,15 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         Used by the operations that return model instances regardless of the
         projection mode (the ``insert()`` reload and the existing-document
         branch of ``upsert_one()``), so that ``as_pymongo()`` / ``scalar()``
-        never leak into a value typed ``T``. ``scalar(*fields)`` also
-        restricts the loaded fields to ``fields`` (``only()``); that
-        restriction is reset as well, so the documents come back complete.
+        never leak into a value typed ``T``. Any field selection
+        (``only()`` / ``exclude()``, including the one ``scalar(*fields)``
+        makes and which ``as_pymongo()`` keeps in force) is reset as well,
+        so the documents always come back complete.
         """
         queryset = self.clone()
         queryset._as_pymongo = False
-        if queryset._scalar:
-            queryset._scalar = []
-            queryset = queryset.all_fields()
+        queryset._scalar = []
+        queryset = queryset.all_fields()
         return cast("BaseQuerySet[T, T, PK]", queryset)
 
     def max_time_ms(self, ms: int) -> Self:

@@ -130,6 +130,13 @@ class TestQuerySetInsertResult(MongoDBTestCase):
         single = await self.Item.objects.scalar("name").insert(self.Item(name="d", count=4))
         assert isinstance(single, self.Item)
         assert single.count == 4
+        # Nor does the selection scalar() left behind after switching to raw
+        # mode, nor an explicit only(): the reload is always complete.
+        combined = await self.Item.objects.scalar("name").as_pymongo().insert(self.Item(name="f", count=4))
+        assert isinstance(combined, self.Item)
+        assert (combined.name, combined.count) == ("f", 4)
+        restricted = await self.Item.objects.only("name").insert(self.Item(name="g", count=5))
+        assert (restricted.name, restricted.count) == ("g", 5)
         assert (
             await self.Item.objects.values_list("count").insert(self.Item(name="e"), load_bulk=False)
             == (await self.Item.objects.get(name="e")).id

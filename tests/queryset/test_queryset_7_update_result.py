@@ -211,6 +211,15 @@ class TestQuerySetUpdateResult(MongoDBTestCase):
         assert (existing.name, existing.count) == ("b", 4)
         assert await self.Item.objects.count() == 2
 
+        # scalar() followed by as_pymongo() leaves scalar()'s field selection
+        # in force for reads; the returned document is still complete.
+        existing = await self.Item.objects(name="b").scalar("name").as_pymongo().upsert_one(set__count=9)
+        assert isinstance(existing, self.Item)
+        assert (existing.name, existing.count) == ("b", 9)
+        existing = await self.Item.objects(name="b").only("name").upsert_one(set__count=10)
+        assert (existing.name, existing.count) == ("b", 10)
+        assert await self.Item.objects.count() == 2
+
     async def test_upsert_one_raises_when_upserted_document_cannot_be_read_back(self, monkeypatch):
         async def missing_with_id(self, object_id):
             return None

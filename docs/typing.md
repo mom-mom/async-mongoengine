@@ -401,7 +401,8 @@ Item.objects.scalar("name").scalar()          # QuerySet[Item, Item, ObjectId] (
 using the model: `raw.create(...)` is `Item`, `raw.update(...)` is `int`, and
 `raw.insert(doc)` / `raw.upsert_one(...)` return `Item` at runtime too: they
 reload through a document-mode clone of the queryset, whatever mode it is in
-(the field selection made by `scalar()` does not restrict that reload either).
+(no field selection restricts that reload: `only()` / `exclude()` and the one
+`scalar()` makes are reset, so the documents come back complete).
 
 Limits:
 
