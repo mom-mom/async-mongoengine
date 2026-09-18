@@ -87,9 +87,17 @@ instance.
 opts into its type with `class Product(Document[str])`; use `Document[Any]`
 for code that accepts documents of any primary-key type.
 
+`User.objects` is a `QuerySet[User, User, ObjectId]` (`QuerySet[T, R, PK]`:
+model, result type, primary-key type). `as_pymongo()` / `scalar()` change the
+result type (`dict[str, Any]`, `Any`, `tuple[Any, ...]`),
+`update(full_result=True)` returns a `pymongo.results.UpdateResult`, `insert()`
+returns documents or primary keys depending on `load_bulk`, and `in_bulk()`
+returns `dict[PK, R]`.
+
 See [docs/typing.md](docs/typing.md) for the full contract, the inferred type
 of every field, the optionality rules (`null=True`, `required=True`,
-`default=`) and the limitations (reference fields, custom fields).
+`default=`), the QuerySet result contract, and the limitations (reference
+fields, custom fields, untyped scalar projections).
 
 ## Examples
 

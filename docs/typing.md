@@ -317,11 +317,20 @@ def describe(doc: Document[Any]) -> str:
 
 The same applies to **custom `QuerySet` subclasses**: bound the model type
 parameter with `Document[Any]` so the queryset can be used by models with any
-primary key.
+primary key. `QuerySet` has three type parameters (`QuerySet[T, R, PK]`, see
+the next section); a custom queryset for models with an `ObjectId` primary key
+only needs the model parameter, while the fully general form repeats all three
+so that `insert(..., load_bulk=False)` and `in_bulk()` keys follow a custom
+primary key:
 
 ```python
-class PublishedQuerySet[T: Document[Any]](QuerySet[T]):
+class PublishedQuerySet[T: Document[Any]](QuerySet[T]):       # ObjectId models
     def published(self) -> "PublishedQuerySet[T]":
+        return self.filter(published=True)
+
+
+class GeneralQuerySet[T: Document[Any], R = T, PK = ObjectId](QuerySet[T, R, PK]):
+    def published(self) -> "GeneralQuerySet[T, R, PK]":
         return self.filter(published=True)
 
 
@@ -329,19 +338,153 @@ class Post(Document[str]):
     slug = StringField(primary_key=True)
 
     if TYPE_CHECKING:
-        objects: ClassVar[PublishedQuerySet["Post"]]
+        objects: ClassVar[GeneralQuerySet["Post", "Post", str]]
 
-    meta = {"queryset_class": PublishedQuerySet}
+    meta = {"queryset_class": GeneralQuerySet}
 ```
 
-## QuerySet results
+With `objects: ClassVar[PublishedQuerySet["Post"]]` on a `Document[str]` model
+the custom methods are visible but `PK` falls back to `ObjectId`. Managers
+declared with `@queryset_manager` are `QuerySetManager[Any]` (the decorator
+cannot see the model), so `Model.manager` is `QuerySet[Model, Model, Any]`.
 
-`Model.objects` is a `QuerySet[Model]`; `first()` yields `Model | None`,
-`get()` / `create()` yield `Model`, `to_list()` yields `list[Model]` and
-`async for` iterates `Model` instances (see
-`tests/typing/cases/check_queryset_inference.py`). Result typing for
-projections (`as_pymongo()`, `scalar()`), `update()` / `insert()` return values
-and `in_bulk()` keys is documented in a follow-up section.
+## QuerySet results: `QuerySet[T, R, PK]`
+
+`QuerySet` and `QuerySetNoCache` are generic over three parameters:
+
+| Parameter | Meaning | Default |
+|---|---|---|
+| `T` | the model the queries are built against; what `create()`, `modify()`, `upsert_one()`, `insert()` and `from_json()` produce | — |
+| `R` | the value yielded by *executing* the query: `first()`, `get()`, `get_item()`, `to_list()`, `async for`, `with_id()` and the values of `in_bulk()` | `T` |
+| `PK` | the primary-key type of `T`: `insert(..., load_bulk=False)` results and `in_bulk()` keys | `ObjectId` |
+
+`QuerySet[Item]` is short for `QuerySet[Item, Item, ObjectId]`. `Model.objects`
+is `QuerySet[Model, Model, PK]` with `PK` taken from `Document[PK]`, so
+`Product.objects` is `QuerySet[Product, Product, str]` for
+`class Product(Document[str])`.
+
+```python
+Item.objects                               # QuerySet[Item, Item, ObjectId]
+await Item.objects.first()                 # Item | None
+await Item.objects.get(name="x")           # Item
+await Item.objects.get_item(0)             # Item
+await Item.objects.to_list()               # list[Item]
+async for item in Item.objects: ...        # Item
+await Item.objects.with_id(some_id)        # Item | None
+await Item.objects.create(name="x")        # Item
+await Item.objects.modify(set__name="y")   # Item | None
+await Item.objects(name="x").upsert_one(set__name="y")  # Item
+```
+
+Chainable methods (`filter()`, `order_by()`, slicing, `only()`, `limit()`,
+`select_related()`, `no_cache()` / `cache()`, ...) keep all three parameters.
+
+### Projection modes: `as_pymongo()` and `scalar()`
+
+The projection switches change `R` and nothing else:
+
+```python
+raw = Item.objects.as_pymongo()               # QuerySet[Item, dict[str, Any], ObjectId]
+await raw.first()                             # dict[str, Any] | None
+await raw.to_list()                           # list[dict[str, Any]]
+
+one = Item.objects.scalar("name")             # QuerySet[Item, Any, ObjectId]
+await one.to_list()                           # list[Any]
+many = Item.objects.scalar("name", "count")   # QuerySet[Item, tuple[Any, ...], ObjectId]
+await many.first()                            # tuple[Any, ...] | None
+Item.objects.scalar("name").scalar()          # QuerySet[Item, Item, ObjectId] (document mode again)
+```
+
+`values_list()` is an alias of `scalar()`. The mode survives chaining and
+`no_cache()` / `cache()` (`raw.no_cache()` is
+`QuerySetNoCache[Item, dict[str, Any], ObjectId]`). Writes and creation keep
+using the model: `raw.create(...)` is `Item`, `raw.update(...)` is `int`.
+
+Limits:
+
+- **Field values are not typed by name.** A single scalar is `Any` and several
+  are `tuple[Any, ...]`; narrow them yourself.
+- **Do not combine the two modes.** The static type follows the last call,
+  but the runtime does not: iteration, `first()`, `get()` and `get_item()`
+  let `as_pymongo()` win whatever the order (`qs.as_pymongo().scalar("x")`
+  still yields dicts), while `in_bulk()` applies `scalar()` first.
+- After a projection switch the static type is the plain `QuerySet[...]`, so
+  the methods of a custom queryset class are no longer visible. Call them
+  before switching modes, or re-declare `as_pymongo()` / `scalar()` in the
+  subclass under `TYPE_CHECKING` (see `mongoengine/queryset/queryset.py`).
+
+### Update results
+
+`update()`, `update_one()` and `Document.update()` are overloaded on
+`full_result`:
+
+| Call | Result |
+|---|---|
+| `update(**changes)` or `update(full_result=False, **changes)` | `int`: the number of **matched** documents (`UpdateResult.matched_count`, not the number modified) |
+| `update(full_result=True, **changes)` | `pymongo.results.UpdateResult` (`matched_count`, `modified_count`, `upserted_id`, `did_upsert`) |
+| `update(full_result=flag, **changes)` with a runtime `bool` | `int \| UpdateResult`; narrow with `isinstance` |
+
+```python
+count = await Item.objects(name="x").update(set__count=1)                # int
+result = await Item.objects(name="x").update(full_result=True, inc__count=1)  # UpdateResult
+result.matched_count, result.modified_count, result.upserted_id
+await item.update(full_result=True, set__count=2)                        # UpdateResult
+```
+
+- Querysets that cannot match anything (`none()`, an empty slice such as
+  `qs[5:5]`) do not touch the database: they return `0`, or with
+  `full_result=True` a zero-count acknowledged `UpdateResult`
+  (`matched_count == modified_count == 0`, `upserted_id is None`).
+- With an unacknowledged write concern (`w=0`) the server reports nothing:
+  the count form returns `None` at runtime and the `UpdateResult` is
+  unacknowledged. The static type describes acknowledged writes.
+- `Document.update()` forwards to `update_one()`. An unsaved document raises
+  `OperationError` unless `upsert=True` is passed, in which case its current
+  field values are the upsert query.
+
+### Insert results
+
+`insert()` is overloaded on the input shape and `load_bulk`:
+
+| Call | Result |
+|---|---|
+| `insert(doc)` or `insert(doc, load_bulk=True)` | `T` (the reloaded document) |
+| `insert([doc, ...])` (any `Sequence[T]`) | `list[T]` |
+| `insert(doc, load_bulk=False)` | `PK` |
+| `insert([doc, ...], load_bulk=False)` | `list[PK]` |
+| a runtime `bool` flag | `T \| PK` or `list[T] \| list[PK]` |
+
+```python
+item = await Item.objects.insert(Item(name="x"))                  # Item
+items = await Item.objects.insert([Item(name="a"), Item(name="b")])  # list[Item]
+oid = await Item.objects.insert(Item(name="x"), load_bulk=False)  # ObjectId
+sku = await Product.objects.insert(Product(sku="p1"), load_bulk=False)  # str
+```
+
+With `load_bulk=True` the documents are reloaded in one `in_bulk()` query. If a
+document cannot be reloaded (for example when the queryset reads from a
+secondary that has not caught up yet), the in-memory document that was
+inserted is returned in its place; its primary key is already set, so the
+result never contains `None`. `pre_bulk_insert` / `post_bulk_insert` fire
+exactly as before (`loaded=True` / `loaded=False`).
+
+### `in_bulk()` and `from_json()`
+
+- `in_bulk(ids: Iterable[PK]) -> dict[PK, R]`: accepts any iterable of primary
+  keys (it is materialised into a list for the `$in` query). Ids that do not
+  exist are absent from the result, so use `.get()` when an id may be missing.
+  The values follow the projection mode: `dict[ObjectId, Item]` by default,
+  `dict[ObjectId, dict[str, Any]]` after `as_pymongo()`, `dict[ObjectId, Any]`
+  or `dict[ObjectId, tuple[Any, ...]]` after `scalar()`; keys follow the
+  model's primary key (`dict[str, Product]`).
+- `from_json(json) -> list[T]`: always builds model instances, whatever the
+  projection mode. With inheritance enabled the `_cls` entry reconstructs the
+  matching subclass.
+
+These contracts are verified by `tests/typing/cases/check_update.py`,
+`check_insert.py`, `check_projection.py` and `check_bulk_json.py`, and at
+runtime by `tests/queryset/test_queryset_7_update_result.py`,
+`test_queryset_8_insert_result.py` and `test_queryset_9_bulk_json.py`.
 
 ## Limitations summary
 
@@ -368,5 +511,14 @@ and `in_bulk()` keys is documented in a follow-up section.
   `ObjectId | None`.
 - Subclasses of concrete fields do not narrow on `required=` / `default=`
   unless they repeat the constructor overloads.
+- `scalar()` values are `Any` (one field) or `tuple[Any, ...]` (several);
+  `as_pymongo()` and `scalar()` must not be combined (the static type follows
+  the last call; the runtime precedence differs between iteration and
+  `in_bulk()`).
+- After `as_pymongo()` / `scalar()` a custom queryset class is typed as the
+  plain `QuerySet[...]`; `@queryset_manager` managers are
+  `QuerySetManager[Any]`.
+- The count form of `update()` is `None` at runtime for unacknowledged
+  writes (`w=0`); the static type describes acknowledged writes.
 - The contract is verified with Pyright; mypy is not part of the regression
   suite.
