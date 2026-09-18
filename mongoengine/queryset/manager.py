@@ -26,11 +26,14 @@ class QuerySetManager:
         When using ``meta = {"queryset_class": CustomQuerySet}``, the type
         checker sees ``objects`` as ``QuerySet[MyDoc]`` and custom methods
         on ``CustomQuerySet`` are not visible. To work around this, add a
-        ``TYPE_CHECKING`` annotation in your model::
+        ``TYPE_CHECKING`` annotation in your model.  Bound the model type
+        parameter with ``Document[Any]`` (bare ``Document`` means
+        ``Document[ObjectId]`` and would reject models with a custom
+        primary-key type)::
 
-            from typing import TYPE_CHECKING, ClassVar
+            from typing import TYPE_CHECKING, Any, ClassVar
 
-            class CustomQuerySet[T: Document](QuerySet[T]):
+            class CustomQuerySet[T: Document[Any]](QuerySet[T]):
                 def published(self) -> "CustomQuerySet[T]": ...
 
             class Post(Document):
@@ -49,7 +52,7 @@ class QuerySetManager:
             self.get_queryset = queryset_func
 
     @overload
-    def __get__[D: Document](self, instance: None, owner: type[D]) -> QuerySet[D]: ...
+    def __get__[D: Document[Any]](self, instance: None, owner: type[D]) -> QuerySet[D]: ...
 
     @overload
     def __get__(self, instance: Any, owner: Any) -> "QuerySetManager": ...

@@ -127,7 +127,7 @@ def _recurse_set_instance(
             _recurse_set_instance(item, proxy, embedded_type, _osetattr)
 
 
-def _field_may_contain_embedded(field: BaseField, embedded_type: type) -> bool:
+def _field_may_contain_embedded(field: BaseField[Any, Any], embedded_type: type) -> bool:
     """Return True if *field* could hold embedded document instances."""
     EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
     GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
@@ -220,7 +220,7 @@ class BaseDocument:
         # Typing-only declarations: nothing is assigned at runtime, so
         # ``__slots__`` and the metaclass behaviour are unchanged.
         _meta: ClassVar[dict[str, Any]]
-        _fields: ClassVar[dict[str, BaseField]]
+        _fields: ClassVar[dict[str, BaseField[Any, Any]]]
         # Dynamic documents extend ``_fields_ordered`` per instance.
         _fields_ordered: tuple[str, ...]
         # Also a slot: ``_from_son`` copies the class-level map onto the instance.
@@ -598,17 +598,9 @@ class BaseDocument:
             return self.__unicode__()  # pyright: ignore[reportAttributeAccessIssue]  # optional user-defined hook
         return f"{self.__class__.__name__} object"
 
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, self.__class__) and hasattr(other, "id") and other.id is not None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
-            return self.id == other.id  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
-        if isinstance(other, DBRef):
-            return self._get_collection_name() == other.collection and self.id == other.id  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
-        if self.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
-            return self is other
-        return False
-
-    def __ne__(self, other: object) -> bool:
-        return not self.__eq__(other)
+    # ``__eq__`` / ``__ne__`` live on ``Document`` (primary-key comparison) and
+    # ``EmbeddedDocument`` (``_data`` comparison), which declare the attributes
+    # they compare.
 
     def clean(self) -> None:
         """
@@ -897,9 +889,11 @@ class BaseDocument:
                     errors[field.name] = ValidationError("Field is required", field_name=field.name)
 
         if errors:
-            pk = "None"
+            pk: Any = "None"
             if hasattr(self, "pk"):
-                pk = self.pk  # pyright: ignore[reportAttributeAccessIssue]  # pk is declared with the PK contract in a follow-up
+                # ``pk`` is declared on Document only; embedded documents fall
+                # through to the owning document's pk below.
+                pk = getattr(self, "pk")
             elif self._instance and hasattr(self._instance, "pk"):  # pyright: ignore[reportAttributeAccessIssue]  # only reached for embedded documents, which own _instance
                 pk = self._instance.pk  # pyright: ignore[reportAttributeAccessIssue]  # see above
             message = f"ValidationError ({self._class_name}:{pk}) "
