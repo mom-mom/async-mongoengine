@@ -9,15 +9,18 @@ expectations use ``typing.assert_type``; negative expectations use
 The contract under test is documented in ``docs/typing.md``: the result
 follows the input shape (one document or a sequence) and ``load_bulk``
 (documents by default, primary keys with ``load_bulk=False``); the key type
-follows the model's ``Document[PK]`` parameter.
+follows the model's ``Document[PK]`` parameter, and the runtime returns the
+Python form of the key (a ``uuid.UUID``, an enum member) so the type holds.
 """
 
+import uuid
 from collections.abc import Sequence
+from enum import Enum
 from typing import assert_type
 
 from bson import ObjectId
 
-from mongoengine import Document, QuerySet, StringField
+from mongoengine import Document, EnumField, QuerySet, StringField, UUIDField
 
 
 class Item(Document):
@@ -32,6 +35,19 @@ class Sub(Item):
 
 class Coded(Document[str]):
     code = StringField(primary_key=True)
+
+
+class Status(Enum):
+    ACTIVE = "active"
+    DONE = "done"
+
+
+class Session(Document[uuid.UUID]):
+    id = UUIDField(primary_key=True, binary=False)  # stored as str, exposed as uuid.UUID
+
+
+class Flagged(Document[Status]):
+    id = EnumField(Status, primary_key=True)  # stored as the enum value, exposed as the member
 
 
 async def single_document(query: QuerySet[Item], item: Item, flag: bool) -> None:
@@ -84,7 +100,21 @@ async def custom_primary_key(coded: Coded, flag: bool) -> None:
     assert_type(await Coded.objects.insert([coded], load_bulk=flag), list[Coded] | list[str])
 
 
-async def shape_mismatches(query: QuerySet[Item], item: Item, coded: Coded) -> None:
+async def converted_primary_keys(session: Session, flagged: Flagged, flag: bool) -> None:
+    # Keys whose stored form differs from their Python type: the runtime
+    # converts the inserted ids with the field's to_python, so these values
+    # really are what the type says (issue #33).
+    assert_type(await Session.objects.insert(session, load_bulk=False), uuid.UUID)
+    assert_type(await Session.objects.insert([session], load_bulk=False), list[uuid.UUID])
+    assert_type(await Session.objects.insert(session), Session)
+    assert_type(await Session.objects.insert(session, load_bulk=flag), Session | uuid.UUID)
+    assert_type((await Session.objects.insert(session, load_bulk=False)).hex, str)
+    assert_type(await Flagged.objects.insert(flagged, load_bulk=False), Status)
+    assert_type(await Flagged.objects.insert([flagged], load_bulk=False), list[Status])
+    assert_type(await Flagged.objects.insert(flagged), Flagged)
+
+
+async def shape_mismatches(query: QuerySet[Item], item: Item, coded: Coded, session: Session) -> None:
     single: Item = await query.insert([item])  # expect-error: reportAssignmentType
     _ = single
     batch: list[Item] = await query.insert(item)  # expect-error: reportAssignmentType
@@ -95,6 +125,10 @@ async def shape_mismatches(query: QuerySet[Item], item: Item, coded: Coded) -> N
     _ = ids
     object_id: ObjectId = await Coded.objects.insert(coded, load_bulk=False)  # expect-error: reportAssignmentType
     _ = object_id
+    stored: str = await Session.objects.insert(session, load_bulk=False)  # expect-error: reportAssignmentType
+    _ = stored
+    stored_batch: list[str] = await Session.objects.insert([session], False)  # expect-error: reportAssignmentType
+    _ = stored_batch
     inserted_id = await query.insert(item, load_bulk=False)
     inserted_id.name  # expect-error: reportAttributeAccessIssue "name"
     inserted = await query.insert(item)
