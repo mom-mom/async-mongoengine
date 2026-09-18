@@ -21,6 +21,7 @@ from mongoengine import (
     EmbeddedDocument,
     IntField,
     QuerySet,
+    SequenceField,
     StringField,
     UUIDField,
 )
@@ -55,6 +56,25 @@ class Numbered(Document[int]):
 
 class Tagged(DynamicDocument[uuid.UUID]):
     id = UUIDField(primary_key=True)
+
+
+class Counter(Document[int]):
+    id = SequenceField(primary_key=True)
+
+
+class NamedCounter(Document[str]):
+    # The value type follows ``value_decorator``, so it matches ``Document[str]``.
+    id = SequenceField(primary_key=True, value_decorator=str)
+
+
+class NullableKey(Document[str]):
+    id = StringField(primary_key=True, null=True)
+
+
+class MismatchedCounter(Document[int]):
+    # ``value_decorator=str`` makes the field ``SequenceField[str, None]``,
+    # which conflicts with the ``BaseField[int, None]`` declaration.
+    id = SequenceField(primary_key=True, value_decorator=str)  # expect-error: reportAssignmentType
 
 
 class NotOptedIn(Document):
@@ -150,6 +170,23 @@ async def custom_primary_keys(coded: Coded, id_named: IdNamed, numbered: Numbere
     assert_type(created.id, str | None)
     loaded = await IdNamed.objects.get(id="k")
     assert_type(loaded.pk, str | None)
+
+
+async def sequence_primary_keys(counter: Counter, named: NamedCounter, nullable: NullableKey) -> None:
+    assert_type(counter.id, int | None)
+    assert_type(counter.pk, int | None)
+    assert_type(Counter.id, BaseField[int, None])
+    assert_type(named.id, str | None)
+    assert_type(named.pk, str | None)
+    assert_type(NamedCounter.id, BaseField[str, None])
+    assert_type(nullable.id, str | None)
+    counter.id = 1
+    named.id = "1"
+    named.pk = "1"
+    counter.id = "1"  # expect-error: reportAttributeAccessIssue "id"
+    named.id = 1  # expect-error: reportAttributeAccessIssue "id"
+    created = await NamedCounter.objects.create()
+    assert_type(created.id, str | None)
 
 
 async def not_opted_in(doc: NotOptedIn) -> None:

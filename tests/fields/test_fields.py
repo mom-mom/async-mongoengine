@@ -24,6 +24,7 @@ from mongoengine import (
     IntField,
     LazyReferenceField,
     ListField,
+    MapField,
     MultipleObjectsReturned,
     NotRegistered,
     NotUniqueError,
@@ -228,6 +229,44 @@ class TestField(MongoDBTestCase):
         # Confirm introspection changes nothing
         data_to_be_saved = sorted(person.to_mongo().keys())
         assert data_to_be_saved == ["age", "created", "userid"]
+
+    def test_explicit_none_default_and_null_are_kept(self):
+        """Pin the runtime behaviour the static optionality contract relies on
+        (see docs/typing.md): an explicit ``default=None`` on a container field
+        is kept, so the value is ``None`` rather than an empty container, and
+        ``null=True`` keeps an explicitly assigned ``None`` even when the field
+        has a default.
+        """
+
+        class Address(EmbeddedDocument):
+            city = StringField()
+
+        class Person(Document):
+            tags = ListField(StringField())
+            no_tags = ListField(StringField(), default=None)
+            no_sorted = SortedListField(IntField(), default=None)
+            no_addresses = EmbeddedDocumentListField(Address, default=None)
+            no_extra = DictField(default=None)
+            no_scores = MapField(IntField(), default=None)
+            age = IntField(default=30, null=True)
+            label = StringField(default="x")
+
+        person = Person()
+        assert person.tags == []
+        assert person.no_tags is None
+        assert person.no_sorted is None
+        assert person.no_addresses is None
+        assert person.no_extra is None
+        assert person.no_scores is None
+
+        person.no_tags = ["a"]
+        person.no_tags = None
+        assert person.no_tags is None
+
+        person.age = None
+        person.label = None
+        assert person.age is None
+        assert person.label == "x"
 
     async def test_default_value_is_not_used_when_changing_value_to_empty_list_for_strict_doc(
         self,
