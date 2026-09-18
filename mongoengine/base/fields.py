@@ -463,7 +463,9 @@ class ComplexBaseField(BaseField):
                 return value
 
         if self.field:
-            value_dict = {key: self.field._to_mongo_safe_call(item, use_db_field, fields) for key, item in value.items()}
+            value_dict = {
+                key: self.field._to_mongo_safe_call(item, use_db_field, fields) for key, item in value.items()
+            }
         else:
             value_dict = {}
             for k, v in value.items():

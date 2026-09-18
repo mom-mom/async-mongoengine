@@ -10,7 +10,6 @@ Covers:
 - Dynamic document exclusion from fast path
 """
 
-
 import pytest
 
 from mongoengine import *

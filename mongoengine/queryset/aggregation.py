@@ -51,8 +51,7 @@ class AggregationResult[T = dict[str, Any]]:
     def _check_consumed(self) -> None:
         if self._consumed or self._iterating:
             raise RuntimeError(
-                "This AggregationResult has already been consumed. "
-                "Call aggregate() again for a new result."
+                "This AggregationResult has already been consumed. Call aggregate() again for a new result."
             )
 
     async def _ensure_cursor(self) -> AsyncCommandCursor:

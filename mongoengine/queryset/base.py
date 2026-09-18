@@ -1436,7 +1436,9 @@ class BaseQuerySet[T]:
 
         return AggregationResult(self._do_aggregate(pipeline, **kwargs))
 
-    async def _do_aggregate(self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any) -> AsyncCommandCursor:
+    async def _do_aggregate(
+        self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any
+    ) -> AsyncCommandCursor:
         await self._ensure_collection()
 
         initial_pipeline: list[dict[str, Any]] = []
