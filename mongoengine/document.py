@@ -2,6 +2,7 @@ import re
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import pymongo
+import pymongo.errors
 from bson.dbref import DBRef
 from pymongo.read_preferences import ReadPreference
 
@@ -39,6 +40,12 @@ from mongoengine.queryset import (
     QuerySet,
     transform,
 )
+
+if TYPE_CHECKING:
+    from pymongo.asynchronous.collection import AsyncCollection
+
+    from mongoengine.errors import DoesNotExist as _DoesNotExist
+    from mongoengine.errors import MultipleObjectsReturned as _MultipleObjectsReturned
 
 __all__ = (
     "Document",
@@ -226,7 +233,14 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
     if TYPE_CHECKING:
         from mongoengine.queryset.manager import QuerySetManager
 
+        # Attributes provided by TopLevelDocumentMetaclass (typing-only
+        # declarations, nothing is assigned at runtime).
         objects: ClassVar[QuerySetManager]
+        DoesNotExist: ClassVar[type[_DoesNotExist]]
+        MultipleObjectsReturned: ClassVar[type[_MultipleObjectsReturned]]
+        # Cached PyMongo collection; ``switch_db`` / ``switch_collection``
+        # also set it per instance.
+        _collection: AsyncCollection[Any] | None
 
     # my_metaclass is defined so that metaclass can be queried in Python 2 & 3
     my_metaclass = TopLevelDocumentMetaclass
@@ -340,7 +354,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             await collection.options()
             return collection
 
-        opts: dict[str, Any] = {"expireAfterSeconds": timeseries_opts.pop("expireAfterSeconds", None)}
+        opts: dict[str, Any] = {"expireAfterSeconds": timeseries_opts.pop("expireAfterSeconds", None)}  # pyright: ignore[reportOptionalMemberAccess]  # only called when meta["timeseries"] is set
         return await db.create_collection(
             name=collection_name,
             timeseries=timeseries_opts,
@@ -1009,8 +1023,8 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
                 if (
                     isinstance(base_cls, TopLevelDocumentMetaclass)
                     and base_cls != Document
-                    and not base_cls._meta.get("abstract")
-                    and (await base_cls._get_collection()).full_name == (await cls._get_collection()).full_name
+                    and not base_cls._meta.get("abstract")  # pyright: ignore[reportAttributeAccessIssue]  # document classes are metaclass instances
+                    and (await base_cls._get_collection()).full_name == (await cls._get_collection()).full_name  # pyright: ignore[reportAttributeAccessIssue]  # document classes are metaclass instances
                     and base_cls not in classes
                 ):
                     classes.append(base_cls)
@@ -1018,7 +1032,7 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
             for subclass in cls.__subclasses__():
                 if (
                     isinstance(base_cls, TopLevelDocumentMetaclass)
-                    and (await subclass._get_collection()).full_name == (await cls._get_collection()).full_name
+                    and (await subclass._get_collection()).full_name == (await cls._get_collection()).full_name  # pyright: ignore[reportAttributeAccessIssue]  # document classes are metaclass instances
                     and subclass not in classes
                 ):
                     classes.append(subclass)

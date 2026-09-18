@@ -1,11 +1,14 @@
 import weakref
 from collections.abc import Callable, Generator, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from bson import DBRef
 
 from mongoengine.common import _import_class
 from mongoengine.errors import DoesNotExist, MultipleObjectsReturned
+
+if TYPE_CHECKING:
+    from mongoengine.document import EmbeddedDocument as _EmbeddedDocument
 
 __all__ = (
     "BaseDict",
@@ -65,7 +68,7 @@ class BaseDict(dict):
     def __getitem__(self, key: str) -> Any:
         value = super().__getitem__(key)
 
-        EmbeddedDocument = _import_class("EmbeddedDocument")
+        EmbeddedDocument: type[_EmbeddedDocument] = _import_class("EmbeddedDocument")
         if isinstance(value, EmbeddedDocument) and value._instance is None:
             value._instance = self._instance
         elif isinstance(value, dict) and not isinstance(value, BaseDict):
@@ -133,7 +136,7 @@ class BaseList(list):
             # to parent's instance. This is buggy for now but would require more work to be handled properly
             return value
 
-        EmbeddedDocument = _import_class("EmbeddedDocument")
+        EmbeddedDocument: type[_EmbeddedDocument] = _import_class("EmbeddedDocument")
         if isinstance(value, EmbeddedDocument) and value._instance is None:
             value._instance = self._instance
         elif isinstance(value, dict) and not isinstance(value, BaseDict):

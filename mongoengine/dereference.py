@@ -57,7 +57,7 @@ class DeReference:
         doc_type: Any = None
 
         if instance and isinstance(instance, (Document, EmbeddedDocument, TopLevelDocumentMetaclass)):
-            doc_type = instance._fields.get(name)
+            doc_type = instance._fields.get(name)  # pyright: ignore[reportAttributeAccessIssue, reportArgumentType]  # instance may be a document class; name is set with it
             while hasattr(doc_type, "field"):
                 doc_type = doc_type.field
 
@@ -137,7 +137,7 @@ class DeReference:
                         # LazyReference inherits DBRef but should not be dereferenced here !
                         continue
                     elif isinstance(v, DBRef):
-                        reference_map.setdefault(field.document_type, set()).add(v.id)
+                        reference_map.setdefault(field.document_type, set()).add(v.id)  # pyright: ignore[reportAttributeAccessIssue]  # a DBRef value implies a reference field
                     elif isinstance(v, (dict, SON)) and "_ref" in v:
                         reference_map.setdefault(_DocumentRegistry.get(v["_cls"]), set()).add(v["_ref"].id)
                     elif isinstance(v, (dict, list, tuple)) and depth <= self.max_depth:
