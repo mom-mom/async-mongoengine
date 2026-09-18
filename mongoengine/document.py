@@ -1,11 +1,12 @@
 import re
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, overload
 
 import pymongo
 import pymongo.errors
 from bson import ObjectId
 from bson.dbref import DBRef
 from pymongo.read_preferences import ReadPreference
+from pymongo.results import UpdateResult
 
 from mongoengine import signals
 from mongoengine.base import (
@@ -250,8 +251,11 @@ class Document[PK = ObjectId](BaseDocument, metaclass=TopLevelDocumentMetaclass)
         from mongoengine.queryset.manager import QuerySetManager
 
         # Attributes provided by TopLevelDocumentMetaclass (typing-only
-        # declarations, nothing is assigned at runtime).
-        objects: ClassVar[QuerySetManager]
+        # declarations, nothing is assigned at runtime). ``objects`` is not a
+        # ``ClassVar`` because ``ClassVar`` cannot hold a type variable; class
+        # access still goes through ``QuerySetManager.__get__``, so
+        # ``Model.objects`` is a ``QuerySet[Model, Model, PK]``.
+        objects: QuerySetManager[PK]
         DoesNotExist: ClassVar[type[_DoesNotExist]]
         MultipleObjectsReturned: ClassVar[type[_MultipleObjectsReturned]]
         # The primary-key field injected (or aliased) by the metaclass.  An
@@ -753,24 +757,38 @@ class Document[PK = ObjectId](BaseDocument, metaclass=TopLevelDocumentMetaclass)
             select_dict["__".join(field_parts)] = val
         return select_dict
 
-    async def update(self, **kwargs: Any) -> None:
+    @overload
+    async def update(self, *, full_result: Literal[True], **kwargs: Any) -> UpdateResult: ...
+
+    @overload
+    async def update(self, *, full_result: Literal[False] = False, **kwargs: Any) -> int: ...
+
+    @overload
+    async def update(self, *, full_result: bool, **kwargs: Any) -> int | UpdateResult: ...
+
+    async def update(self, *, full_result: bool = False, **kwargs: Any) -> int | UpdateResult | None:
         """Performs an update on the :class:`~mongoengine.Document`
-        A convenience wrapper to :meth:`~mongoengine.QuerySet.update`.
+        A convenience wrapper to :meth:`~mongoengine.QuerySet.update_one`.
+
+        Returns the matched count (``0`` or ``1``) or, with
+        ``full_result=True``, the :class:`pymongo.results.UpdateResult`.
+        With an unacknowledged write concern the count form is ``None``.
 
         Raises :class:`OperationError` if called on an object that has not yet
-        been saved.
+        been saved, unless ``upsert=True`` is passed: the document's current
+        field values are then used as the query for an upsert.
         """
         if self.pk is None:
             if kwargs.get("upsert", False):
                 query: Any = self.to_mongo()
                 if "_cls" in query:
                     del query["_cls"]
-                return await self._qs.filter(**query).update_one(**kwargs)
+                return await self._qs.filter(**query).update_one(full_result=full_result, **kwargs)
             else:
                 raise OperationError("attempt to update a document not yet saved")
 
         # Need to add shard key to query, or you get an error
-        return await self._qs.filter(**self._object_key).update_one(**kwargs)
+        return await self._qs.filter(**self._object_key).update_one(full_result=full_result, **kwargs)
 
     async def delete(self, signal_kwargs: dict[str, Any] | None = None, **write_concern: Any) -> None:
         """Delete the :class:`~mongoengine.Document` from the database. This

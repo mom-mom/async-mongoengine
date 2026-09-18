@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
+
+from bson import ObjectId
 
 from mongoengine.errors import OperationError
 from mongoengine.queryset.base import (
@@ -29,19 +33,44 @@ REPR_OUTPUT_SIZE = 20
 ITER_CHUNK_SIZE = 100
 
 
-class QuerySet[T: Document[Any]](BaseQuerySet[T]):
+class QuerySet[T: Document[Any], R = T, PK = ObjectId](BaseQuerySet[T, R, PK]):
     """The default queryset, that builds queries and handles a set of results
     returned from a query.
 
     Wraps a MongoDB cursor, providing :class:`~mongoengine.Document` objects as
     the results.
+
+    See :class:`~mongoengine.queryset.base.BaseQuerySet` for the meaning of
+    the ``T`` / ``R`` / ``PK`` type parameters.
     """
 
     _has_more: bool = True
     _len: int | None = None
-    _result_cache: list[T] | None = None
+    _result_cache: list[R] | None = None
 
-    async def __aiter__(self) -> AsyncIterator[T]:
+    if TYPE_CHECKING:
+        # Projection-mode switches. The runtime implementation is inherited
+        # from BaseQuerySet; these typing-only declarations narrow the return
+        # type to QuerySet (``Self`` cannot change the ``R`` parameter).
+        def as_pymongo(self) -> QuerySet[T, dict[str, Any], PK]: ...
+
+        @overload
+        def scalar(self) -> QuerySet[T, T, PK]: ...
+        @overload
+        def scalar(self, field: str, /) -> QuerySet[T, Any, PK]: ...
+        @overload
+        def scalar(self, field1: str, field2: str, /, *fields: str) -> QuerySet[T, tuple[Any, ...], PK]: ...
+        def scalar(self, *fields: str) -> QuerySet[T, Any, PK]: ...
+
+        @overload
+        def values_list(self) -> QuerySet[T, T, PK]: ...
+        @overload
+        def values_list(self, field: str, /) -> QuerySet[T, Any, PK]: ...
+        @overload
+        def values_list(self, field1: str, field2: str, /, *fields: str) -> QuerySet[T, tuple[Any, ...], PK]: ...
+        def values_list(self, *fields: str) -> QuerySet[T, Any, PK]: ...
+
+    async def __aiter__(self) -> AsyncIterator[R]:
         """Async iteration utilises a results cache which iterates the cursor
         in batches of ``ITER_CHUNK_SIZE``.
 
@@ -72,7 +101,7 @@ class QuerySet[T: Document[Any]](BaseQuerySet[T]):
             for item in self._result_cache or []:
                 yield item
 
-    async def _iter_results(self) -> AsyncGenerator[T]:
+    async def _iter_results(self) -> AsyncGenerator[R]:
         """An async generator for iterating over the result cache.
 
         Also populates the cache if there are more possible results to
@@ -106,7 +135,7 @@ class QuerySet[T: Document[Any]](BaseQuerySet[T]):
 
         try:
             for _ in range(ITER_CHUNK_SIZE):
-                doc: T = await self.__anext__()
+                doc = await self.__anext__()
                 self._result_cache.append(doc)
         except StopAsyncIteration:
             self._has_more = False
@@ -134,20 +163,40 @@ class QuerySet[T: Document[Any]](BaseQuerySet[T]):
 
         return f"{self._document._class_name} async queryset"
 
-    def no_cache(self) -> "QuerySetNoCache[T]":
+    def no_cache(self) -> QuerySetNoCache[T, R, PK]:
         """Convert to a non-caching queryset"""
         if self._result_cache is not None:
             raise OperationError("QuerySet already cached")
 
-        return self._clone_into(QuerySetNoCache(self._document, self._collection))  # type: ignore[arg-type,return-value]
+        return self._clone_into(QuerySetNoCache(self._document, self._collection))
 
 
-class QuerySetNoCache[T: Document[Any]](BaseQuerySet[T]):
+class QuerySetNoCache[T: Document[Any], R = T, PK = ObjectId](BaseQuerySet[T, R, PK]):
     """A non caching QuerySet"""
 
-    def cache(self) -> QuerySet[T]:
+    if TYPE_CHECKING:
+        # See QuerySet: typing-only re-declarations of the projection modes.
+        def as_pymongo(self) -> QuerySetNoCache[T, dict[str, Any], PK]: ...
+
+        @overload
+        def scalar(self) -> QuerySetNoCache[T, T, PK]: ...
+        @overload
+        def scalar(self, field: str, /) -> QuerySetNoCache[T, Any, PK]: ...
+        @overload
+        def scalar(self, field1: str, field2: str, /, *fields: str) -> QuerySetNoCache[T, tuple[Any, ...], PK]: ...
+        def scalar(self, *fields: str) -> QuerySetNoCache[T, Any, PK]: ...
+
+        @overload
+        def values_list(self) -> QuerySetNoCache[T, T, PK]: ...
+        @overload
+        def values_list(self, field: str, /) -> QuerySetNoCache[T, Any, PK]: ...
+        @overload
+        def values_list(self, field1: str, field2: str, /, *fields: str) -> QuerySetNoCache[T, tuple[Any, ...], PK]: ...
+        def values_list(self, *fields: str) -> QuerySetNoCache[T, Any, PK]: ...
+
+    def cache(self) -> QuerySet[T, R, PK]:
         """Convert to a caching queryset"""
-        return self._clone_into(QuerySet(self._document, self._collection))  # type: ignore[arg-type,return-value]
+        return self._clone_into(QuerySet(self._document, self._collection))
 
     def __repr__(self) -> str:
         """Provides the string representation of the QuerySet"""
@@ -155,7 +204,7 @@ class QuerySetNoCache[T: Document[Any]](BaseQuerySet[T]):
             return ".. queryset mid-iteration .."
         return f"{self._document._class_name} async queryset (no cache)"
 
-    async def __aiter__(self) -> AsyncIterator[T]:
+    async def __aiter__(self) -> AsyncIterator[R]:
         queryset = self
         if queryset._iter:
             queryset = self.clone()
