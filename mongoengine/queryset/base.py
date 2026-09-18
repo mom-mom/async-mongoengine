@@ -1,18 +1,21 @@
+from __future__ import annotations
+
 import copy
 import itertools
 import re
 import warnings
 from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NoReturn, Self
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Self, cast, overload
 
 import pymongo
 import pymongo.errors
-from bson import SON, json_util
+from bson import SON, ObjectId, json_util
 from bson.code import Code
 from pymongo.asynchronous.command_cursor import AsyncCommandCursor
 from pymongo.collection import ReturnDocument
 from pymongo.common import validate_read_preference
 from pymongo.read_concern import ReadConcern
+from pymongo.results import UpdateResult
 
 from mongoengine import signals
 from mongoengine.base import _DocumentRegistry
@@ -52,9 +55,25 @@ DENY = 3
 PULL = 4
 
 
-class BaseQuerySet[T: Document[Any]]:
+class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
     """A set of results returned from a query. Wraps a MongoDB cursor,
     providing :class:`~mongoengine.Document` objects as the results.
+
+    The class is generic for static typing only:
+
+    - ``T`` is the document class the queries are built against; it is what
+      ``create()``, ``modify()``, ``upsert_one()``, ``insert()`` and
+      ``from_json()`` produce.
+    - ``R`` is the value yielded by executing the query (``first()``, ``get()``,
+      ``to_list()``, ``async for``, ``in_bulk()`` values ...). It is ``T`` by
+      default and is switched by the projection modes: ``as_pymongo()`` makes
+      it ``dict[str, Any]``, ``scalar(field)`` makes it ``Any`` and
+      ``scalar(f1, f2, ...)`` makes it ``tuple[Any, ...]``.
+    - ``PK`` is the primary-key type of ``T`` (``ObjectId`` unless the model
+      subclasses ``Document[str]`` etc.); ``insert(..., load_bulk=False)`` and
+      ``in_bulk()`` keys use it.
+
+    ``Model.objects`` is a ``QuerySet[Model, Model, PK]``. See ``docs/typing.md``.
     """
 
     _document: type[T]
@@ -222,7 +241,7 @@ class BaseQuerySet[T: Document[Any]]:
             "Integer index is not supported via []. Use 'await qs.get_item(index)' or 'await qs.first()' instead."
         )
 
-    async def get_item(self, index: int) -> T:
+    async def get_item(self, index: int) -> R:
         """Async method to retrieve a document by integer index.
 
         >>> doc = await User.objects.get_item(0)
@@ -236,7 +255,10 @@ class BaseQuerySet[T: Document[Any]]:
             raise IndexError("index out of range")
         if self._as_pymongo:
             return doc
-        result = self._document._from_son(doc)
+        # ``_from_son`` yields ``T``; in document mode ``R`` is ``T``, otherwise
+        # the value is projected below. The modes are runtime flags, so this
+        # is typed through a single ``Any`` local.
+        result: Any = self._document._from_son(doc)
         if self._scalar:
             return self._get_scalar(result)
         if self._select_related_depth > 0:
@@ -249,7 +271,7 @@ class BaseQuerySet[T: Document[Any]]:
     def __await__(self) -> Any:
         return self.to_list().__await__()
 
-    async def to_list(self) -> list[T]:
+    async def to_list(self) -> list[R]:
         """Materialize this queryset into a list.
 
         >>> docs = await MyDoc.objects.to_list()
@@ -315,7 +337,7 @@ class BaseQuerySet[T: Document[Any]]:
 
         return queryset
 
-    async def get(self, *q_objs: QNode, **query: Any) -> T:
+    async def get(self, *q_objs: QNode, **query: Any) -> R:
         """Retrieve the matching object raising
         :class:`~mongoengine.queryset.MultipleObjectsReturned` or
         `DocumentName.MultipleObjectsReturned` exception if multiple results
@@ -348,7 +370,7 @@ class BaseQuerySet[T: Document[Any]]:
         """Create new object. Returns the saved object instance."""
         return await self._document(**kwargs).save(force_insert=True)
 
-    async def first(self) -> T | None:
+    async def first(self) -> R | None:
         """Retrieve the first object matching the query."""
         await self._ensure_collection()
         queryset = self.clone()
@@ -361,13 +383,67 @@ class BaseQuerySet[T: Document[Any]]:
             result = None
         return result
 
+    @overload
     async def insert(
         self,
-        doc_or_docs: T | list[T],
+        doc_or_docs: T,
+        load_bulk: Literal[True] = True,
+        write_concern: dict[str, Any] | None = None,
+        signal_kwargs: dict[str, Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def insert(
+        self,
+        doc_or_docs: Sequence[T],
+        load_bulk: Literal[True] = True,
+        write_concern: dict[str, Any] | None = None,
+        signal_kwargs: dict[str, Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def insert(
+        self,
+        doc_or_docs: T,
+        load_bulk: Literal[False],
+        write_concern: dict[str, Any] | None = None,
+        signal_kwargs: dict[str, Any] | None = None,
+    ) -> PK: ...
+
+    @overload
+    async def insert(
+        self,
+        doc_or_docs: Sequence[T],
+        load_bulk: Literal[False],
+        write_concern: dict[str, Any] | None = None,
+        signal_kwargs: dict[str, Any] | None = None,
+    ) -> list[PK]: ...
+
+    @overload
+    async def insert(
+        self,
+        doc_or_docs: T,
+        load_bulk: bool,
+        write_concern: dict[str, Any] | None = None,
+        signal_kwargs: dict[str, Any] | None = None,
+    ) -> T | PK: ...
+
+    @overload
+    async def insert(
+        self,
+        doc_or_docs: Sequence[T],
+        load_bulk: bool,
+        write_concern: dict[str, Any] | None = None,
+        signal_kwargs: dict[str, Any] | None = None,
+    ) -> list[T] | list[PK]: ...
+
+    async def insert(
+        self,
+        doc_or_docs: Any,
         load_bulk: bool = True,
         write_concern: dict[str, Any] | None = None,
         signal_kwargs: dict[str, Any] | None = None,
-    ) -> T | list[T]:
+    ) -> T | list[T] | PK | list[PK]:
         """bulk insert documents
 
         :param doc_or_docs: a document or list of documents to be inserted
@@ -383,8 +459,34 @@ class BaseQuerySet[T: Document[Any]]:
         :param signal_kwargs: (optional) kwargs dictionary to be passed to
             the signal calls.
 
-        By default returns document instances, set ``load_bulk`` to False to
-        return just ``ObjectIds``
+        The return value follows the input shape and ``load_bulk``:
+
+        - a single document with ``load_bulk=True`` (the default) returns the
+          reloaded document (``T``); a list of documents returns ``list[T]``;
+        - with ``load_bulk=False`` the primary key(s) are returned instead:
+          ``PK`` for a single document, ``list[PK]`` for a list. These are
+          the stored ``_id`` values as PyMongo reports them, so for a primary
+          key whose BSON form differs from its Python type
+          (``UUIDField(binary=False)`` stores ``str``, ``EnumField`` stores
+          the enum value) the runtime value is the stored form although the
+          static type is ``PK``; the in-memory document's ``pk`` is set to
+          the same value. Issue #33 will apply the field's ``to_python``
+          conversion.
+
+        With ``load_bulk=True`` the inserted documents are reloaded from the
+        database in one document-mode ``in_bulk()`` query, whatever projection
+        mode the queryset is in (``as_pymongo()`` / ``scalar()`` apply to the
+        results of the query, not to the inserted documents; the field
+        selection in force, from ``only()`` / ``exclude()`` or ``scalar()``, is not
+        applied to the reload either: the documents come back complete).
+        If a document cannot be reloaded
+        (for example because the queryset reads from a secondary that has not
+        caught up yet), the in-memory document that was inserted is returned
+        in its place; its primary key is already set, so the result never
+        contains ``None``. Such a fallback document is put into the same state
+        as a loaded one (not ``_created``, no pending changes) before the
+        ``post_bulk_insert`` signals fire, so a later ``save()`` writes only
+        the fields changed from then on.
         """
         await self._ensure_collection()
         Document = _import_class("Document")
@@ -392,13 +494,13 @@ class BaseQuerySet[T: Document[Any]]:
         if write_concern is None:
             write_concern = {}
 
-        docs: list[T]
+        docs: Sequence[T]
         return_one = False
         if isinstance(doc_or_docs, Document) or issubclass(doc_or_docs.__class__, Document):
             return_one = True
-            docs = [doc_or_docs]  # type: ignore[list-item]
+            docs = [doc_or_docs]
         else:
-            docs = doc_or_docs  # type: ignore[assignment]
+            docs = doc_or_docs
 
         for doc in docs:
             if not isinstance(doc, self._document):
@@ -446,7 +548,7 @@ class BaseQuerySet[T: Document[Any]]:
             raise OperationError(message % err)
 
         # Apply inserted_ids to documents
-        for doc, doc_id in zip(docs, ids):  # type: ignore[arg-type]
+        for doc, doc_id in zip(docs, ids):
             doc.pk = doc_id
 
         if not load_bulk:
@@ -456,11 +558,25 @@ class BaseQuerySet[T: Document[Any]]:
             )
             return ids[0] if return_one else ids
 
-        documents = await self.in_bulk(ids)
-        results = [documents.get(obj_id) for obj_id in ids]
+        # Reload the inserted documents in document mode (a projection mode
+        # must not leak into the result); fall back to the in-memory document
+        # (its pk is set above) for any id the reload did not return.
+        documents: dict[Any, T] = await self._document_mode_clone().in_bulk(ids)
+        results: list[T] = []
+        for doc, doc_id in zip(docs, ids):
+            loaded = documents.get(doc_id)
+            if loaded is None:
+                # Put the fallback document into the state ``_from_son(created=False)``
+                # yields: a fresh document has no ``_changed_fields`` at all, so
+                # ``save()`` would write every field back (``_delta()`` falls back
+                # to the whole document) and overwrite concurrent writes.
+                doc._created = False
+                doc._clear_changed_fields()
+                loaded = doc
+            results.append(loaded)
         signals.post_bulk_insert.send(self._document, documents=results, loaded=True, **signal_kwargs)
         await signals.post_bulk_insert_async.send_async(self._document, documents=results, loaded=True, **signal_kwargs)
-        return results[0] if return_one else results  # type: ignore[return-value]
+        return results[0] if return_one else results
 
     async def count(self, with_limit_and_skip: bool = False) -> int:
         """Count the selected elements in the query.
@@ -609,6 +725,32 @@ class BaseQuerySet[T: Document[Any]]:
             if result.acknowledged:
                 return result.deleted_count
 
+    @overload
+    async def update(
+        self,
+        upsert: bool = False,
+        multi: bool = True,
+        write_concern: dict[str, Any] | None = None,
+        read_concern: dict[str, Any] | None = None,
+        *,
+        full_result: Literal[True],
+        array_filters: list[dict[str, Any]] | None = None,
+        **update: Any,
+    ) -> UpdateResult: ...
+
+    @overload
+    async def update(
+        self,
+        upsert: bool = False,
+        multi: bool = True,
+        write_concern: dict[str, Any] | None = None,
+        read_concern: dict[str, Any] | None = None,
+        full_result: Literal[False] = False,
+        array_filters: list[dict[str, Any]] | None = None,
+        **update: Any,
+    ) -> int: ...
+
+    @overload
     async def update(
         self,
         upsert: bool = False,
@@ -618,7 +760,18 @@ class BaseQuerySet[T: Document[Any]]:
         full_result: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
         **update: Any,
-    ) -> int | Any:
+    ) -> int | UpdateResult: ...
+
+    async def update(
+        self,
+        upsert: bool = False,
+        multi: bool = True,
+        write_concern: dict[str, Any] | None = None,
+        read_concern: dict[str, Any] | None = None,
+        full_result: bool = False,
+        array_filters: list[dict[str, Any]] | None = None,
+        **update: Any,
+    ) -> int | UpdateResult | None:
         """Perform an atomic update on the fields matched by the query.
 
         :param upsert: insert if document doesn't exist (default ``False``)
@@ -635,7 +788,20 @@ class BaseQuerySet[T: Document[Any]]:
         :param array_filters: A list of filters specifying which array elements an update should apply.
         :param update: Django-style update keyword arguments
 
-        :returns the number of updated documents (unless ``full_result`` is True)
+        :returns: the number of *matched* documents (``UpdateResult.matched_count``,
+            not the number modified) or, with ``full_result=True``, the
+            :class:`pymongo.results.UpdateResult` itself so that
+            ``matched_count``, ``modified_count``, ``upserted_id`` and
+            ``did_upsert`` are available.
+
+        A queryset that cannot match anything (``none()`` or an empty slice
+        such as ``qs[5:5]``) does not touch the database: it returns ``0``,
+        or a zero-count acknowledged ``UpdateResult`` with ``full_result=True``.
+
+        .. note:: With an unacknowledged write concern (``w=0``) the server
+            reports nothing, so the count form returns ``None`` at runtime and
+            the ``UpdateResult`` is unacknowledged. The static return type
+            describes acknowledged writes.
         """
         if not update and not upsert:
             raise OperationError("No update parameters, would remove data")
@@ -643,6 +809,8 @@ class BaseQuerySet[T: Document[Any]]:
         if write_concern is None:
             write_concern = {}
         if self._none or self._empty:
+            if full_result:
+                return UpdateResult({"n": 0, "nModified": 0, "ok": 1.0, "updatedExisting": False}, acknowledged=True)
             return 0
 
         await self._ensure_collection()
@@ -711,7 +879,12 @@ class BaseQuerySet[T: Document[Any]]:
         :param read_concern: Override the read concern for the operation
         :param update: Django-style update keyword arguments
 
-        :returns the new or overwritten document
+        :returns: the new or overwritten document (``T``), whatever projection
+            mode the queryset is in: ``as_pymongo()`` / ``scalar()`` apply to
+            the results of the query, not to the document this returns.
+        :raises OperationError: if the freshly upserted document cannot be
+            read back (for example when the queryset reads from a secondary
+            that has not caught up yet).
         """
 
         atomic_update = await self.update(
@@ -723,11 +896,47 @@ class BaseQuerySet[T: Document[Any]]:
             **update,
         )
 
-        if atomic_update.raw_result["updatedExisting"]:  # pyright: ignore[reportAttributeAccessIssue]  # full_result=True yields UpdateResult; overloads are added in a follow-up
-            document = await self.get()
-        else:
-            document = await self._document.objects.with_id(atomic_update.upserted_id)  # pyright: ignore[reportAttributeAccessIssue]  # see above
-        return document  # pyright: ignore[reportReturnType]  # with_id() is Optional, but the upserted document always exists
+        if atomic_update.upserted_id is not None:
+            document = await self._document.objects.with_id(atomic_update.upserted_id)
+            if document is None:
+                raise OperationError("upsert_one() inserted a document that could not be read back")
+            return document
+
+        # The query matched an existing document: reload it through a
+        # document-mode clone so that a projection mode does not leak into
+        # the returned value.
+        return await self._document_mode_clone().get()
+
+    @overload
+    async def update_one(
+        self,
+        upsert: bool = False,
+        write_concern: dict[str, Any] | None = None,
+        *,
+        full_result: Literal[True],
+        array_filters: list[dict[str, Any]] | None = None,
+        **update: Any,
+    ) -> UpdateResult: ...
+
+    @overload
+    async def update_one(
+        self,
+        upsert: bool = False,
+        write_concern: dict[str, Any] | None = None,
+        full_result: Literal[False] = False,
+        array_filters: list[dict[str, Any]] | None = None,
+        **update: Any,
+    ) -> int: ...
+
+    @overload
+    async def update_one(
+        self,
+        upsert: bool = False,
+        write_concern: dict[str, Any] | None = None,
+        full_result: bool = False,
+        array_filters: list[dict[str, Any]] | None = None,
+        **update: Any,
+    ) -> int | UpdateResult: ...
 
     async def update_one(
         self,
@@ -736,7 +945,7 @@ class BaseQuerySet[T: Document[Any]]:
         full_result: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
         **update: Any,
-    ) -> int | Any:
+    ) -> int | UpdateResult | None:
         """Perform an atomic update on the fields of the first document
         matched by the query.
 
@@ -751,8 +960,11 @@ class BaseQuerySet[T: Document[Any]]:
             updated items
         :param array_filters: A list of filters specifying which array elements an update should apply.
         :param update: Django-style update keyword arguments
-            full_result
-        :returns the number of updated documents (unless ``full_result`` is True)
+
+        :returns: the number of matched documents (``0`` or ``1``) or, with
+            ``full_result=True``, the :class:`pymongo.results.UpdateResult`.
+            See :meth:`update` for the ``none()`` / empty-slice and
+            unacknowledged-write behaviour.
         """
         return await self.update(
             upsert=upsert,
@@ -838,7 +1050,7 @@ class BaseQuerySet[T: Document[Any]]:
 
         return result
 
-    async def with_id(self, object_id: Any) -> T | None:
+    async def with_id(self, object_id: Any) -> R | None:
         """Retrieve the object matching the id provided.  Uses `object_id` only
         and raises InvalidQueryError if a filter has been applied. Returns
         `None` if no document exists with that id.
@@ -851,17 +1063,30 @@ class BaseQuerySet[T: Document[Any]]:
             raise InvalidQueryError(msg)
         return await queryset.filter(pk=object_id).first()
 
-    async def in_bulk(self, object_ids: list[Any]) -> dict[Any, Any]:
+    async def in_bulk(self, object_ids: Iterable[PK]) -> dict[PK, R]:
         """Retrieve a set of documents by their ids.
 
-        :param object_ids: a list or tuple of ObjectId's
-        :rtype: dict of ObjectId's as keys and collection-specific
-                Document subclasses as values.
+        :param object_ids: the primary keys to look up (any iterable; it is
+            materialised into a list for the ``$in`` query). They are matched
+            against the stored ``_id`` values as given, without the primary-key
+            field's query conversion, so for a primary key whose BSON form
+            differs from its Python type (``UUIDField(binary=False)`` stores
+            ``str``, ``EnumField`` stores the enum value) pass the stored form:
+            ``in_bulk([str(some_uuid)])`` matches while ``in_bulk([some_uuid])``
+            does not (it finds nothing with ``uuidRepresentation="standard"``;
+            with PyMongo's default, unspecified representation bson refuses
+            to encode a native ``uuid.UUID`` at all), although the static
+            type is ``Iterable[PK]``. Issue #33 will apply
+            ``prepare_query_value`` to the ids.
+        :returns: a dict keyed by the stored primary-key values. Ids that do
+            not exist are simply absent. The values follow the queryset's
+            projection mode: document instances by default, raw dicts after
+            ``as_pymongo()`` and scalar values / tuples after ``scalar()``.
         """
         await self._ensure_collection()
         doc_map: dict[Any, Any] = {}
 
-        docs = self._collection.find({"_id": {"$in": object_ids}}, session=_get_session(), **self._cursor_args)
+        docs = self._collection.find({"_id": {"$in": list(object_ids)}}, session=_get_session(), **self._cursor_args)
         if self._scalar:
             async for doc in docs:
                 doc_map[doc["_id"]] = self._get_scalar(self._document._from_son(doc))
@@ -914,7 +1139,7 @@ class BaseQuerySet[T: Document[Any]]:
         """Create a copy of the current queryset."""
         return self._clone_into(self.__class__(self._document, self._collection_obj))
 
-    def _clone_into(self, new_qs: Self) -> Self:
+    def _clone_into[Q: BaseQuerySet[Any, Any, Any]](self, new_qs: Q) -> Q:
         """Copy all the relevant properties of this queryset to
         a new queryset (which has to be an instance of
         :class:`~mongoengine.queryset.base.BaseQuerySet`).
@@ -1331,17 +1556,49 @@ class BaseQuerySet[T: Document[Any]]:
         queryset._cursor_obj = None  # we need to re-create the cursor object whenever we apply read_concern
         return queryset
 
-    def scalar(self, *fields: str) -> Self:
+    # Projection modes. ``Self`` cannot change the ``R`` type parameter, so the
+    # implementations return ``BaseQuerySet[T, <mode>, PK]``; ``QuerySet`` and
+    # ``QuerySetNoCache`` re-declare the same signatures (typing-only) to
+    # return their own class. The modes are mutually exclusive: the last
+    # switch wins at runtime (``as_pymongo()`` clears ``_scalar``, ``scalar()``
+    # clears ``_as_pymongo``) exactly as it does statically, so the result
+    # type is never wrong and no method needs a precedence rule.
+
+    @overload
+    def scalar(self) -> BaseQuerySet[T, T, PK]: ...
+
+    @overload
+    def scalar(self, field: str, /) -> BaseQuerySet[T, Any, PK]: ...
+
+    @overload
+    def scalar(self, field1: str, field2: str, /, *fields: str) -> BaseQuerySet[T, tuple[Any, ...], PK]: ...
+
+    def scalar(self, *fields: str) -> BaseQuerySet[T, Any, PK]:
         """Instead of returning Document instances, return either a specific
         value or a tuple of values in order.
 
         .. note:: This effects all results and can be unset by calling
                   ``scalar`` without arguments. Calls ``only`` automatically.
 
+        The projection modes are mutually exclusive and the last switch wins:
+        ``scalar(...)`` leaves ``as_pymongo()`` mode (``qs.as_pymongo().scalar("x")``
+        yields field values, ``qs.as_pymongo().scalar()`` yields documents
+        again) and ``as_pymongo()`` leaves scalar mode.
+
+        Statically, one field makes the result type ``Any`` (field values are
+        not typed by name) and two or more fields make it ``tuple[Any, ...]``;
+        calling ``scalar()`` without fields restores the document type. A
+        field list of unknown length (``scalar(*names)``) is typed as the
+        tuple form: the checker cannot tell an unpacked ``list[str]`` from two
+        or more literal fields, although a 0- or 1-element list yields
+        documents or single values at runtime. Pass the fields literally, or
+        narrow the result yourself.
+
         :param fields: One or more fields to return instead of a Document.
         """
-        queryset = self.clone()
+        queryset: BaseQuerySet[T, Any, PK] = self.clone()
         queryset._scalar = list(fields)
+        queryset._as_pymongo = False
 
         if fields:
             queryset = queryset.only(*fields)
@@ -1350,20 +1607,54 @@ class BaseQuerySet[T: Document[Any]]:
 
         return queryset
 
-    def values_list(self, *fields: str) -> Self:
+    @overload
+    def values_list(self) -> BaseQuerySet[T, T, PK]: ...
+
+    @overload
+    def values_list(self, field: str, /) -> BaseQuerySet[T, Any, PK]: ...
+
+    @overload
+    def values_list(self, field1: str, field2: str, /, *fields: str) -> BaseQuerySet[T, tuple[Any, ...], PK]: ...
+
+    def values_list(self, *fields: str) -> BaseQuerySet[T, Any, PK]:
         """An alias for scalar"""
         return self.scalar(*fields)
 
-    def as_pymongo(self) -> Self:
+    def as_pymongo(self) -> BaseQuerySet[T, dict[str, Any], PK]:
         """Instead of returning Document instances, return raw values from
         pymongo.
 
         This method is particularly useful if you don't need dereferencing
         and care primarily about the speed of data retrieval.
+
+        Results are the raw ``dict`` documents. The projection modes are
+        mutually exclusive and the last switch wins: ``as_pymongo()`` leaves
+        ``scalar()`` mode (``qs.scalar("x").as_pymongo()`` yields dicts) but
+        keeps the field selection in force, including the one ``scalar("x")``
+        made through ``only("x")``.
         """
         queryset = self.clone()
         queryset._as_pymongo = True
-        return queryset
+        queryset._scalar = []
+        # Same object, only the (invariant) phantom result type ``R`` changes.
+        return cast("BaseQuerySet[T, dict[str, Any], PK]", queryset)
+
+    def _document_mode_clone(self) -> BaseQuerySet[T, T, PK]:
+        """Clone this queryset into document mode, whatever mode it is in.
+
+        Used by the operations that return model instances regardless of the
+        projection mode (the ``insert()`` reload and the existing-document
+        branch of ``upsert_one()``), so that ``as_pymongo()`` / ``scalar()``
+        never leak into a value typed ``T``. Any field selection
+        (``only()`` / ``exclude()``, including the one ``scalar(*fields)``
+        makes and which ``as_pymongo()`` keeps in force) is reset as well,
+        so the documents always come back complete.
+        """
+        queryset = self.clone()
+        queryset._as_pymongo = False
+        queryset._scalar = []
+        queryset = queryset.all_fields()
+        return cast("BaseQuerySet[T, T, PK]", queryset)
 
     def max_time_ms(self, ms: int) -> Self:
         """Wait `ms` milliseconds before killing the query on the server
@@ -1393,8 +1684,12 @@ class BaseQuerySet[T: Document[Any]]:
             docs.append(doc)
         return json_util.dumps(docs, *args, **kwargs)
 
-    def from_json(self, json_data: str) -> list[Any]:
-        """Converts json data to unsaved objects"""
+    def from_json(self, json_data: str) -> list[T]:
+        """Converts json data to unsaved objects.
+
+        Each element is built with ``_from_son``, so a ``_cls`` entry
+        reconstructs the matching subclass when inheritance is enabled.
+        """
         son_data = json_util.loads(json_data)
         return [self._document._from_son(data) for data in son_data]
 
@@ -1731,7 +2026,7 @@ class BaseQuerySet[T: Document[Any]]:
 
     # Iterator helpers
 
-    async def __anext__(self) -> T:
+    async def __anext__(self) -> R:
         """Wrap the result in a :class:`~mongoengine.Document` object."""
         if self._none or self._empty:
             raise StopAsyncIteration
@@ -1742,7 +2037,8 @@ class BaseQuerySet[T: Document[Any]]:
         if self._as_pymongo:
             return raw_doc
 
-        doc = self._document._from_son(raw_doc)
+        # ``_from_son`` yields ``T``; in document mode ``R`` is ``T`` (see get_item).
+        doc: Any = self._document._from_son(raw_doc)
 
         if self._scalar:
             return self._get_scalar(doc)
