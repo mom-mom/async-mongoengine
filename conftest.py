@@ -49,13 +49,14 @@ def _is_mongo_testcase(cls):
     return any(c.__name__ == "MongoDBTestCase" for c in cls.__mro__)
 
 
-@pytest_asyncio.fixture(autouse=True, loop_scope="session")
+@pytest_asyncio.fixture(loop_scope="session")
 async def _clean_db(_mongo_connection, request):
-    """Drop the test database before and after each test."""
-    if not _is_mongo_testcase(request.cls):
-        yield
-        return
+    """Drop the test database before and after each MongoDBTestCase test.
 
+    Not ``autouse``: ``_mongo_testcase_fixtures`` requests it only for
+    ``MongoDBTestCase`` subclasses, so DB-free tests (unit tests, the typing
+    harness under ``tests/typing``) never open a MongoDB connection.
+    """
     from mongoengine.connection import _connection_settings, _connections, _dbs
 
     # Reset connection state: keep only "default" and "test2" from session fixture.
@@ -81,6 +82,13 @@ async def _clean_db(_mongo_connection, request):
     await db.client.drop_database(MONGO_TEST_DB)
     yield
     await db.client.drop_database(MONGO_TEST_DB)
+
+
+@pytest.fixture(autouse=True)
+def _mongo_testcase_fixtures(request):
+    """Attach the MongoDB connection/cleanup fixtures to MongoDBTestCase tests only."""
+    if _is_mongo_testcase(request.cls):
+        request.getfixturevalue("_clean_db")
 
 
 def pytest_configure(config):

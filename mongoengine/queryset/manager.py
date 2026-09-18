@@ -1,8 +1,11 @@
 from collections.abc import Callable
 from functools import partial
-from typing import Any, overload
+from typing import TYPE_CHECKING, Any, overload
 
 from mongoengine.queryset.queryset import QuerySet
+
+if TYPE_CHECKING:
+    from mongoengine.document import Document
 
 __all__ = ("queryset_manager", "QuerySetManager")
 
@@ -27,7 +30,7 @@ class QuerySetManager:
 
             from typing import TYPE_CHECKING, ClassVar
 
-            class CustomQuerySet[T](QuerySet[T]):
+            class CustomQuerySet[T: Document](QuerySet[T]):
                 def published(self) -> "CustomQuerySet[T]": ...
 
             class Post(Document):
@@ -46,7 +49,7 @@ class QuerySetManager:
             self.get_queryset = queryset_func
 
     @overload
-    def __get__[D](self, instance: None, owner: type[D]) -> QuerySet[D]: ...
+    def __get__[D: Document](self, instance: None, owner: type[D]) -> QuerySet[D]: ...
 
     @overload
     def __get__(self, instance: Any, owner: Any) -> "QuerySetManager": ...

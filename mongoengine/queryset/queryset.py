@@ -1,5 +1,5 @@
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mongoengine.errors import OperationError
 from mongoengine.queryset.base import (
@@ -10,6 +10,9 @@ from mongoengine.queryset.base import (
     PULL,
     BaseQuerySet,
 )
+
+if TYPE_CHECKING:
+    from mongoengine.document import Document
 
 __all__ = (
     "QuerySet",
@@ -26,7 +29,7 @@ REPR_OUTPUT_SIZE = 20
 ITER_CHUNK_SIZE = 100
 
 
-class QuerySet[T](BaseQuerySet[T]):
+class QuerySet[T: Document](BaseQuerySet[T]):
     """The default queryset, that builds queries and handles a set of results
     returned from a query.
 
@@ -139,7 +142,7 @@ class QuerySet[T](BaseQuerySet[T]):
         return self._clone_into(QuerySetNoCache(self._document, self._collection))  # type: ignore[arg-type,return-value]
 
 
-class QuerySetNoCache[T](BaseQuerySet[T]):
+class QuerySetNoCache[T: Document](BaseQuerySet[T]):
     """A non caching QuerySet"""
 
     def cache(self) -> QuerySet[T]:

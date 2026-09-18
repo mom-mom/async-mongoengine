@@ -156,13 +156,13 @@ class DocumentMetaclass(type):
         ) = mcs._import_classes()
 
         if issubclass(new_class, Document):
-            new_class._collection = None
+            new_class._collection = None  # pyright: ignore[reportAttributeAccessIssue]  # document classes are metaclass instances
 
         # Add class to the _document_registry
         _DocumentRegistry.register(new_class)
 
         # Handle delete rules
-        for field in new_class._fields.values():
+        for field in new_class._fields.values():  # pyright: ignore[reportAttributeAccessIssue]  # document classes are metaclass instances
             f = field
             if f.owner_document is None:
                 f.owner_document = new_class
@@ -188,7 +188,7 @@ class DocumentMetaclass(type):
                 if issubclass(new_class, EmbeddedDocument):
                     msg = f"Reverse delete rules are not supported for EmbeddedDocuments (field: {field.name})"
                     raise InvalidDocumentError(msg)
-                f.document_type.register_delete_rule(new_class, field.name, delete_rule)
+                f.document_type.register_delete_rule(new_class, field.name, delete_rule)  # pyright: ignore[reportAttributeAccessIssue]  # only reference fields carry delete rules
 
             if field.name and hasattr(Document, field.name) and EmbeddedDocument not in new_class.mro():
                 msg = f"{field.name} is a document method and not a valid field name"

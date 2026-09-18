@@ -2,7 +2,7 @@ import numbers
 import warnings
 import weakref
 from functools import partial
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import pymongo
 from bson import SON, DBRef, ObjectId, json_util
@@ -26,6 +26,11 @@ from mongoengine.errors import (
     ValidationError,
 )
 from mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
+
+if TYPE_CHECKING:
+    from mongoengine.document import EmbeddedDocument as _EmbeddedDocument
+    from mongoengine.fields import CachedReferenceField
+    from mongoengine.fields import SortedListField as _SortedListField
 
 __all__ = ("BaseDocument", "NON_FIELD_ERRORS")
 
@@ -56,7 +61,7 @@ _KNOWN_EXTRA_KEYS = frozenset({"_cls", "_text_score"})
 _INIT_ALLOWED_EXTRA_KEYS = frozenset(("id", "pk", "_cls", "_text_score"))
 
 try:
-    GEOHAYSTACK = pymongo.GEOHAYSTACK
+    GEOHAYSTACK = pymongo.GEOHAYSTACK  # pyright: ignore[reportAttributeAccessIssue]  # removed in PyMongo 4; guarded compat access
 except AttributeError:
     GEOHAYSTACK = None
 
@@ -210,6 +215,28 @@ class BaseDocument:
         "__weakref__",
     )
 
+    if TYPE_CHECKING:
+        # Attributes provided by DocumentMetaclass / TopLevelDocumentMetaclass.
+        # Typing-only declarations: nothing is assigned at runtime, so
+        # ``__slots__`` and the metaclass behaviour are unchanged.
+        _meta: ClassVar[dict[str, Any]]
+        _fields: ClassVar[dict[str, BaseField]]
+        # Dynamic documents extend ``_fields_ordered`` per instance.
+        _fields_ordered: tuple[str, ...]
+        # Also a slot: ``_from_son`` copies the class-level map onto the instance.
+        _db_field_map: dict[str, str]
+        _reverse_db_field_map: ClassVar[dict[str, str]]
+        _class_name: ClassVar[str]
+        _subclasses: ClassVar[tuple[str, ...]]
+        _superclasses: ClassVar[tuple[str, ...]]
+        _types: ClassVar[tuple[str, ...]]
+        _is_document: ClassVar[bool]
+        _is_base_cls: ClassVar[bool]
+        _cached_reference_fields: ClassVar[list[CachedReferenceField]]
+        # Class-level ``StringField`` when inheritance is allowed; ``__init__``
+        # stores the class name on the instance.
+        _cls: str
+
     _dynamic: bool = False
     _dynamic_lock: bool = True
     STRICT: bool = False
@@ -330,7 +357,7 @@ class BaseDocument:
             field_set = type(field).__set__
             if field_set is _BaseField_set:
                 continue  # plain BaseField — direct data write
-            if field_set is _ComplexField_set:
+            if field_set is _ComplexField_set and isinstance(field, ComplexBaseField):
                 # ComplexBaseField only does EnumField conversion
                 # Skip __set__ if inner field is not EnumField
                 if field.field is not None:
@@ -568,15 +595,15 @@ class BaseDocument:
     def __str__(self) -> str:
         # TODO this could be simpler?
         if hasattr(self, "__unicode__"):
-            return self.__unicode__()
+            return self.__unicode__()  # pyright: ignore[reportAttributeAccessIssue]  # optional user-defined hook
         return f"{self.__class__.__name__} object"
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, self.__class__) and hasattr(other, "id") and other.id is not None:
-            return self.id == other.id
+        if isinstance(other, self.__class__) and hasattr(other, "id") and other.id is not None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
+            return self.id == other.id  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
         if isinstance(other, DBRef):
-            return self._get_collection_name() == other.collection and self.id == other.id
-        if self.id is None:
+            return self._get_collection_name() == other.collection and self.id == other.id  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
+        if self.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
             return self is other
         return False
 
@@ -764,9 +791,13 @@ class BaseDocument:
     # Built lazily on first validate() call per class.
     _validate_dispatch: tuple[tuple[str, Any, bool, bool, bool], ...] | None = None
 
-    @classmethod
-    def _build_validate_dispatch(cls) -> tuple[tuple[str, Any, bool, bool, bool], ...]:
-        """Pre-compute per-field dispatch info for validate."""
+    @staticmethod
+    def _get_validate_embedded_types() -> tuple[type, ...]:
+        """Return the field classes whose ``_validate`` accepts ``clean``.
+
+        Resolves the lazily imported classes once and caches them on
+        ``BaseDocument``.
+        """
         embedded_types = BaseDocument._validate_embedded_types
         if embedded_types is None:
             embedded_types = (
@@ -774,6 +805,12 @@ class BaseDocument:
                 _import_class("GenericEmbeddedDocumentField"),
             )
             BaseDocument._validate_embedded_types = embedded_types
+        return embedded_types
+
+    @classmethod
+    def _build_validate_dispatch(cls) -> tuple[tuple[str, Any, bool, bool, bool], ...]:
+        """Pre-compute per-field dispatch info for validate."""
+        embedded_types = BaseDocument._get_validate_embedded_types()
 
         dispatch = []
         for name in cls._fields_ordered:
@@ -837,7 +874,7 @@ class BaseDocument:
         # Handle dynamic fields not in the precomputed dispatch
         if self._dynamic:
             # Cached import for embedded types
-            embedded_types = BaseDocument._validate_embedded_types
+            embedded_types = BaseDocument._get_validate_embedded_types()
             _dynamic_fields = self._dynamic_fields
             for name in self._fields_ordered:
                 if name in self._fields:
@@ -862,9 +899,9 @@ class BaseDocument:
         if errors:
             pk = "None"
             if hasattr(self, "pk"):
-                pk = self.pk
-            elif self._instance and hasattr(self._instance, "pk"):
-                pk = self._instance.pk
+                pk = self.pk  # pyright: ignore[reportAttributeAccessIssue]  # pk is declared with the PK contract in a follow-up
+            elif self._instance and hasattr(self._instance, "pk"):  # pyright: ignore[reportAttributeAccessIssue]  # only reached for embedded documents, which own _instance
+                pk = self._instance.pk  # pyright: ignore[reportAttributeAccessIssue]  # see above
             message = f"ValidationError ({self._class_name}:{pk}) "
             raise ValidationError(message, errors=errors)
 
@@ -995,7 +1032,7 @@ class BaseDocument:
                 elif isinstance(data, dict):
                     data = data.get(part, None)
                 else:
-                    field_name = data._reverse_db_field_map.get(part, part)
+                    field_name = data._reverse_db_field_map.get(part, part)  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed traversal of nested documents
                     data = getattr(data, field_name, None)
 
                 if not isinstance(data, LazyReference) and hasattr(data, "_changed_fields"):
@@ -1004,7 +1041,7 @@ class BaseDocument:
 
                     data._changed_fields = []
                 elif isinstance(data, (list, tuple, dict)):
-                    if hasattr(data, "field") and isinstance(data.field, (ReferenceField, GenericReferenceField)):
+                    if hasattr(data, "field") and isinstance(data.field, (ReferenceField, GenericReferenceField)):  # pyright: ignore[reportAttributeAccessIssue]  # BaseList/BaseDict expose their field
                         continue
                     BaseDocument._nestable_types_clear_changed_fields(data)
 
@@ -1023,11 +1060,11 @@ class BaseDocument:
         if not hasattr(data, "items"):
             iterator = enumerate(data)
         else:
-            iterator = data.items()
+            iterator = data.items()  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed: only mappings reach this branch
 
         for _index_or_key, value in iterator:
             if hasattr(value, "_get_changed_fields") and not isinstance(value, Document):  # don't follow references
-                value._clear_changed_fields()
+                value._clear_changed_fields()  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed nested document
             elif isinstance(value, (list, tuple, dict)):
                 BaseDocument._nestable_types_clear_changed_fields(value)
 
@@ -1048,7 +1085,7 @@ class BaseDocument:
         if not hasattr(data, "items"):
             iterator = enumerate(data)
         else:
-            iterator = data.items()
+            iterator = data.items()  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed: only mappings reach this branch
 
         for index_or_key, value in iterator:
             item_key = f"{base_key}{index_or_key}."
@@ -1058,19 +1095,19 @@ class BaseDocument:
                 continue
 
             if hasattr(value, "_get_changed_fields"):
-                changed = value._get_changed_fields()
+                changed = value._get_changed_fields()  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed nested document
                 changed_fields += [f"{item_key}{k}" for k in changed if k]
             elif isinstance(value, (list, tuple, dict)):
                 BaseDocument._nestable_types_changed_fields(changed_fields, item_key, value)
 
     def _get_changed_fields(self) -> list[str]:
         """Return a list of all fields that have explicitly been changed."""
-        EmbeddedDocument = _import_class("EmbeddedDocument")
+        EmbeddedDocument: type[_EmbeddedDocument] = _import_class("EmbeddedDocument")
         LazyReferenceField = _import_class("LazyReferenceField")
         ReferenceField = _import_class("ReferenceField")
         GenericLazyReferenceField = _import_class("GenericLazyReferenceField")
         GenericReferenceField = _import_class("GenericReferenceField")
-        SortedListField = _import_class("SortedListField")
+        SortedListField: type[_SortedListField] = _import_class("SortedListField")
 
         changed_fields: list[str] = []
         changed_fields += getattr(self, "_changed_fields", [])
@@ -1093,8 +1130,9 @@ class BaseDocument:
                 changed = data._get_changed_fields()
                 changed_fields += [f"{key}{k}" for k in changed if k]
             elif isinstance(data, (list, tuple, dict)):
-                if hasattr(field, "field") and isinstance(
-                    field.field,
+                inner_field = getattr(field, "field", None)
+                if isinstance(
+                    inner_field,
                     (
                         LazyReferenceField,
                         ReferenceField,
@@ -1137,7 +1175,7 @@ class BaseDocument:
                         d = d[int(p)]
                     elif hasattr(d, "get"):
                         # dict-like (dict, embedded document)
-                        d = d.get(p)
+                        d = d.get(p)  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed traversal of nested values
                     new_path.append(p)
                 path = ".".join(new_path)
                 set_data[path] = d
@@ -1169,10 +1207,10 @@ class BaseDocument:
                     if isinstance(d, list) and p.isdigit():
                         d = d[int(p)]
                     elif hasattr(d, "__getattribute__") and not isinstance(d, dict):
-                        real_path = d._reverse_db_field_map.get(p, p)
+                        real_path = d._reverse_db_field_map.get(p, p)  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed traversal of nested documents
                         d = getattr(d, real_path)
                     else:
-                        d = d.get(p)
+                        d = d.get(p)  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed traversal of nested values
 
                 if hasattr(d, "_fields"):
                     field_name = d._reverse_db_field_map.get(db_field_name, db_field_name)
@@ -1465,7 +1503,7 @@ class BaseDocument:
                 direction = pymongo.GEOSPHERE
             elif key.startswith(")"):
                 try:
-                    direction = pymongo.GEOHAYSTACK
+                    direction = pymongo.GEOHAYSTACK  # pyright: ignore[reportAttributeAccessIssue]  # removed in PyMongo 4; guarded compat access
                 except AttributeError:
                     raise NotImplementedError
             elif key.startswith("*"):
@@ -1546,12 +1584,12 @@ class BaseDocument:
                 "ListField",
                 "SortedListField",
             }:
-                field = field.field
+                field = field.field  # pyright: ignore[reportAttributeAccessIssue]  # class-name dispatch selects list fields
 
             # Grab any embedded document field unique indexes
-            if field.__class__.__name__ == "EmbeddedDocumentField" and field.document_type != cls:
+            if field.__class__.__name__ == "EmbeddedDocumentField" and field.document_type != cls:  # pyright: ignore[reportAttributeAccessIssue]  # class-name dispatch
                 field_namespace = f"{field_name}."
-                doc_cls = field.document_type
+                doc_cls = field.document_type  # pyright: ignore[reportAttributeAccessIssue]  # class-name dispatch
                 unique_indexes += doc_cls._unique_with_indexes(field_namespace)
 
         return unique_indexes
@@ -1581,7 +1619,7 @@ class BaseDocument:
                 continue
 
             if hasattr(field, "document_type"):
-                field_cls = field.document_type
+                field_cls = field.document_type  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed: embedded document fields only
                 if field_cls in inspected:
                     continue
 
@@ -1683,8 +1721,9 @@ class BaseDocument:
                 # If the parent field has a "field" attribute which has a
                 # lookup_member method, call it to find the field
                 # corresponding to this iteration.
-                if hasattr(getattr(field, "field", None), "lookup_member"):
-                    new_field = field.field.lookup_member(field_name)
+                sub_field: Any = getattr(field, "field", None)
+                if hasattr(sub_field, "lookup_member"):
+                    new_field = sub_field.lookup_member(field_name)
 
                 # If the parent field is a DynamicField or if it's part of
                 # a DynamicDocument, mark current field as a DynamicField

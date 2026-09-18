@@ -38,7 +38,7 @@ class SimplificationVisitor(QNodeVisitor):
         if combination.operation == combination.AND:
             # The simplification only applies to 'simple' queries
             if all(isinstance(node, Q) for node in combination.children):
-                queries = [n.query for n in combination.children]
+                queries = [n.query for n in combination.children]  # pyright: ignore[reportAttributeAccessIssue]  # all children are Q per the check above
                 try:
                     return Q(**self._query_conjunction(queries))
                 except DuplicateQueryConditionsError:
@@ -158,7 +158,7 @@ class QCombination(QNode):
 
     def __eq__(self, other: object) -> bool:
         return (
-            self.__class__ == other.__class__ and self.operation == other.operation and self.children == other.children
+            self.__class__ == other.__class__ and self.operation == other.operation and self.children == other.children  # pyright: ignore[reportAttributeAccessIssue]  # same class per the first operand
         )
 
 
@@ -177,7 +177,7 @@ class Q(QNode):
         return bool(self.query)
 
     def __eq__(self, other: object) -> bool:
-        return self.__class__ == other.__class__ and self.query == other.query
+        return self.__class__ == other.__class__ and self.query == other.query  # pyright: ignore[reportAttributeAccessIssue]  # same class per the first operand
 
     def accept(self, visitor: QNodeVisitor) -> Any:
         return visitor.visit_query(self)

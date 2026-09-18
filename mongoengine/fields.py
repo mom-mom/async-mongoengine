@@ -853,7 +853,7 @@ class DynamicField(BaseField):
             value = {k: v for k, v in enumerate(value)}
 
         data = {}
-        for k, v in value.items():
+        for k, v in value.items():  # pyright: ignore[reportAttributeAccessIssue]  # sequences were converted to a dict above
             data[k] = self.to_mongo(v, use_db_field, fields)
 
         value = data
@@ -1197,7 +1197,7 @@ class ReferenceField(BaseField):
         if not isinstance(value, (self.document_type, LazyReference, DBRef, ObjectId)):
             self.error("A ReferenceField only accepts DBRef, LazyReference, ObjectId or documents")
 
-        if isinstance(value, Document) and value.id is None:
+        if isinstance(value, Document) and value.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
             self.error(_unsaved_object_error(value.__class__.__name__))
 
     def lookup_member(self, member_name: str) -> Any:
@@ -1308,7 +1308,7 @@ class CachedReferenceField(BaseField):
         if not isinstance(value, self.document_type):
             self.error("A CachedReferenceField only accepts documents")
 
-        if isinstance(value, Document) and value.id is None:
+        if isinstance(value, Document) and value.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
             self.error(_unsaved_object_error(value.__class__.__name__))
 
     def lookup_member(self, member_name: str) -> Any:
@@ -1373,7 +1373,7 @@ class GenericReferenceField(BaseField):
                 self.error("GenericReferences can only contain documents")
 
         # We need the id from the saved object to create the DBRef
-        elif isinstance(value, Document) and value.id is None:
+        elif isinstance(value, Document) and value.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
             self.error(_unsaved_object_error(value.__class__.__name__))
 
     def to_mongo(self, document: Any) -> Any:
@@ -1388,7 +1388,7 @@ class GenericReferenceField(BaseField):
 
         if isinstance(document, Document):
             # We need the id from the saved object to create the DBRef
-            id_ = document.id
+            id_ = document.id  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
             if id_ is None:
                 # XXX ValidationError raised outside of the "validate" method.
                 self.error(_unsaved_object_error(document.__class__.__name__))

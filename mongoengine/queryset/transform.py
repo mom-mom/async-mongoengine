@@ -320,7 +320,7 @@ def update(_doc_cls: Any = None, **update: Any) -> dict[str, Any]:
                     appended_sub_field = False
                     cleaned_fields.append(field)
                     if hasattr(field, "field"):
-                        cleaned_fields.append(field.field)
+                        cleaned_fields.append(field.field)  # pyright: ignore[reportAttributeAccessIssue]  # duck-typed inner field of complex fields
                         appended_sub_field = True
 
             # Convert value to proper value

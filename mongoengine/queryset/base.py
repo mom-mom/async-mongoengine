@@ -2,8 +2,8 @@ import copy
 import itertools
 import re
 import warnings
-from collections.abc import Iterable, Mapping
-from typing import Any, NoReturn, Self
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, NoReturn, Self
 
 import pymongo
 import pymongo.errors
@@ -39,6 +39,9 @@ from mongoengine.queryset.aggregation import AggregationResult
 from mongoengine.queryset.field_list import QueryFieldList
 from mongoengine.queryset.visitor import Q, QNode
 
+if TYPE_CHECKING:
+    from mongoengine.document import Document
+
 __all__ = ("BaseQuerySet", "DO_NOTHING", "NULLIFY", "CASCADE", "DENY", "PULL")
 
 # Delete rules
@@ -49,7 +52,7 @@ DENY = 3
 PULL = 4
 
 
-class BaseQuerySet[T]:
+class BaseQuerySet[T: Document]:
     """A set of results returned from a query. Wraps a MongoDB cursor,
     providing :class:`~mongoengine.Document` objects as the results.
     """
@@ -61,7 +64,7 @@ class BaseQuerySet[T]:
     _cls_query: dict[str, Any] | None
     _where_clause: str | None
     _loaded_fields: QueryFieldList
-    _ordering: list[tuple[str, int]] | None
+    _ordering: Sequence[tuple[str, int | dict[str, str]]] | None
     _timeout: bool
     _allow_disk_use: bool
     _read_preference: Any | None
@@ -720,11 +723,11 @@ class BaseQuerySet[T]:
             **update,
         )
 
-        if atomic_update.raw_result["updatedExisting"]:
+        if atomic_update.raw_result["updatedExisting"]:  # pyright: ignore[reportAttributeAccessIssue]  # full_result=True yields UpdateResult; overloads are added in a follow-up
             document = await self.get()
         else:
-            document = await self._document.objects.with_id(atomic_update.upserted_id)
-        return document
+            document = await self._document.objects.with_id(atomic_update.upserted_id)  # pyright: ignore[reportAttributeAccessIssue]  # see above
+        return document  # pyright: ignore[reportReturnType]  # with_id() is Optional, but the upserted document always exists
 
     async def update_one(
         self,
@@ -1436,7 +1439,9 @@ class BaseQuerySet[T]:
 
         return AggregationResult(self._do_aggregate(pipeline, **kwargs))
 
-    async def _do_aggregate(self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any) -> AsyncCommandCursor:
+    async def _do_aggregate(
+        self, pipeline: list[dict[str, Any]] | tuple[dict[str, Any], ...], **kwargs: Any
+    ) -> AsyncCommandCursor:
         await self._ensure_collection()
 
         initial_pipeline: list[dict[str, Any]] = []
