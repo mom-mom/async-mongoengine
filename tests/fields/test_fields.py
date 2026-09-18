@@ -268,6 +268,53 @@ class TestField(MongoDBTestCase):
         assert person.age is None
         assert person.label == "x"
 
+    def test_nullable_default_factory_and_dynamic_null_are_kept(self):
+        """Pin the runtime behaviour behind the remaining optional cases of the
+        static contract (see docs/typing.md): a container ``default=`` factory
+        that returns ``None`` yields ``None`` rather than an empty container,
+        and ``null=`` given as a runtime ``bool`` behaves like ``null=True``
+        when it is true, keeping an assigned ``None`` even with a default.
+        """
+
+        def maybe_list():
+            return None
+
+        def maybe_dict():
+            return None
+
+        def is_nullable() -> bool:
+            return True
+
+        class Address(EmbeddedDocument):
+            city = StringField()
+
+        class Person(Document):
+            tags = ListField(StringField(), default=maybe_list)
+            sorted_tags = SortedListField(StringField(), default=maybe_list)
+            addresses = EmbeddedDocumentListField(Address, default=maybe_list)
+            extra = DictField(default=maybe_dict)
+            scores = MapField(IntField(), default=maybe_dict)
+            name = StringField(default="x", null=is_nullable())
+            age = IntField(required=True, null=is_nullable())
+            labels = ListField(StringField(), null=is_nullable())
+
+        person = Person()
+        assert person.tags is None
+        assert person.sorted_tags is None
+        assert person.addresses is None
+        assert person.extra is None
+        assert person.scores is None
+        assert person.name == "x"
+        assert person.age is None
+        assert person.labels == []
+
+        person.name = None
+        person.age = None
+        person.labels = None
+        assert person.name is None
+        assert person.age is None
+        assert person.labels is None
+
     async def test_default_value_is_not_used_when_changing_value_to_empty_list_for_strict_doc(
         self,
     ):
