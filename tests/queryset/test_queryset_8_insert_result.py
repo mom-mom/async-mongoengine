@@ -77,6 +77,30 @@ class TestQuerySetInsertResult(MongoDBTestCase):
         assert [doc.pk for doc in docs] == ["e", "f"]
         assert all(isinstance(doc, self.Coded) for doc in docs)
 
+    async def test_insert_returns_documents_whatever_the_projection_mode(self):
+        raw = self.Item.objects.as_pymongo()
+        inserted = await raw.insert(self.Item(name="a", count=1))
+        assert isinstance(inserted, self.Item)
+        assert (inserted.name, inserted.count) == ("a", 1)
+        assert not inserted._created  # reloaded, not the in-memory fallback
+        # The queryset itself keeps its mode.
+        assert isinstance(await raw.first(), dict)
+
+        batch = await self.Item.objects.scalar("name", "count").insert(
+            [self.Item(name="b", count=2), self.Item(name="c")]
+        )
+        assert [type(doc) for doc in batch] == [self.Item] * 2
+        assert [(doc.name, doc.count) for doc in batch] == [("b", 2), ("c", None)]
+
+        # scalar()'s field selection does not restrict the reload either.
+        single = await self.Item.objects.scalar("name").insert(self.Item(name="d", count=4))
+        assert isinstance(single, self.Item)
+        assert single.count == 4
+        assert (
+            await self.Item.objects.values_list("count").insert(self.Item(name="e"), load_bulk=False)
+            == (await self.Item.objects.get(name="e")).id
+        )
+
     async def test_insert_falls_back_to_in_memory_document_when_reload_misses(self, monkeypatch):
         async def empty_in_bulk(self, object_ids):
             return {}

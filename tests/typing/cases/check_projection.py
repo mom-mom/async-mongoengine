@@ -125,6 +125,21 @@ async def scalar_mode(query: QuerySet[Item]) -> None:
     assert_type(await many.modify(set__name="x"), Item | None)
 
 
+async def document_producers_ignore_the_mode(query: QuerySet[Item], item: Item) -> None:
+    # insert(), upsert_one() and from_json() produce model instances in any mode.
+    assert_type(await query.as_pymongo().insert(item), Item)
+    assert_type(await query.as_pymongo().insert([item, item]), list[Item])
+    assert_type(await query.scalar("name", "count").insert([item]), list[Item])
+    assert_type(await query.scalar("name").insert(item), Item)
+    assert_type(await query.scalar("name").insert(item, load_bulk=False), ObjectId)
+    assert_type(await query.as_pymongo().upsert_one(set__name="x"), Item)
+    assert_type(await query.scalar("name").upsert_one(set__name="x"), Item)
+    assert_type(await Coded.objects.as_pymongo().upsert_one(set__name="x"), Coded)
+    assert_type(query.as_pymongo().from_json("[]"), list[Item])
+    wrong: dict[str, Any] = await query.as_pymongo().upsert_one(set__name="x")  # expect-error: reportAssignmentType
+    _ = wrong
+
+
 async def cache_switching(query: QuerySet[Item]) -> None:
     assert_type(query.no_cache(), QuerySetNoCache[Item, Item, ObjectId])
     assert_type(query.as_pymongo().no_cache(), QuerySetNoCache[Item, dict[str, Any], ObjectId])

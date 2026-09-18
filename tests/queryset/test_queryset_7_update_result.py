@@ -189,6 +189,28 @@ class TestQuerySetUpdateResult(MongoDBTestCase):
         assert updated.count == 2
         assert await self.Item.objects.count() == 1
 
+    async def test_upsert_one_returns_documents_whatever_the_projection_mode(self):
+        # as_pymongo(): the inserted branch, then the existing-document branch.
+        created = await self.Item.objects(name="a").as_pymongo().upsert_one(set__count=1)
+        assert isinstance(created, self.Item)
+        assert (created.name, created.count) == ("a", 1)
+        existing = await self.Item.objects(name="a").as_pymongo().upsert_one(set__count=2)
+        assert isinstance(existing, self.Item)
+        assert existing.id == created.id
+        assert existing.count == 2
+        assert await self.Item.objects.count() == 1
+
+        # scalar(): both branches too; its field selection is not applied to
+        # the returned document.
+        created = await self.Item.objects(name="b").scalar("name").upsert_one(set__count=3)
+        assert isinstance(created, self.Item)
+        assert (created.name, created.count) == ("b", 3)
+        existing = await self.Item.objects(name="b").scalar("name", "count").upsert_one(set__count=4)
+        assert isinstance(existing, self.Item)
+        assert existing.id == created.id
+        assert (existing.name, existing.count) == ("b", 4)
+        assert await self.Item.objects.count() == 2
+
     async def test_upsert_one_raises_when_upserted_document_cannot_be_read_back(self, monkeypatch):
         async def missing_with_id(self, object_id):
             return None

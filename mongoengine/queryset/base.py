@@ -467,7 +467,11 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
           ``PK`` for a single document, ``list[PK]`` for a list.
 
         With ``load_bulk=True`` the inserted documents are reloaded from the
-        database in one ``in_bulk()`` query. If a document cannot be reloaded
+        database in one document-mode ``in_bulk()`` query, whatever projection
+        mode the queryset is in (``as_pymongo()`` / ``scalar()`` apply to the
+        results of the query, not to the inserted documents; the field
+        selection made by ``scalar()`` is not applied to the reload either).
+        If a document cannot be reloaded
         (for example because the queryset reads from a secondary that has not
         caught up yet), the in-memory document that was inserted is returned
         in its place; its primary key is already set, so the result never
@@ -546,9 +550,10 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
             )
             return ids[0] if return_one else ids
 
-        # Reload the inserted documents; fall back to the in-memory document
+        # Reload the inserted documents in document mode (a projection mode
+        # must not leak into the result); fall back to the in-memory document
         # (its pk is set above) for any id the reload did not return.
-        documents: dict[Any, Any] = await self.in_bulk(ids)
+        documents: dict[Any, T] = await self._document_mode_clone().in_bulk(ids)
         results: list[T] = []
         for doc, doc_id in zip(docs, ids):
             loaded = documents.get(doc_id)
@@ -866,9 +871,9 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         :param read_concern: Override the read concern for the operation
         :param update: Django-style update keyword arguments
 
-        :returns: the new or overwritten document. ``upsert_one()`` is a
-            document-mode operation; do not combine it with ``scalar()`` or
-            ``as_pymongo()``.
+        :returns: the new or overwritten document (``T``), whatever projection
+            mode the queryset is in: ``as_pymongo()`` / ``scalar()`` apply to
+            the results of the query, not to the document this returns.
         :raises OperationError: if the freshly upserted document cannot be
             read back (for example when the queryset reads from a secondary
             that has not caught up yet).
@@ -889,10 +894,10 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
                 raise OperationError("upsert_one() inserted a document that could not be read back")
             return document
 
-        # The query matched an existing document: reload it through this
-        # queryset. ``get()`` is typed ``R``, which is ``T`` in document mode.
-        existing: Any = await self.get()
-        return existing
+        # The query matched an existing document: reload it through a
+        # document-mode clone so that a projection mode does not leak into
+        # the returned value.
+        return await self._document_mode_clone().get()
 
     @overload
     async def update_one(
@@ -1601,6 +1606,23 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         queryset._as_pymongo = True
         # Same object, only the (invariant) phantom result type ``R`` changes.
         return cast("BaseQuerySet[T, dict[str, Any], PK]", queryset)
+
+    def _document_mode_clone(self) -> BaseQuerySet[T, T, PK]:
+        """Clone this queryset into document mode, whatever mode it is in.
+
+        Used by the operations that return model instances regardless of the
+        projection mode (the ``insert()`` reload and the existing-document
+        branch of ``upsert_one()``), so that ``as_pymongo()`` / ``scalar()``
+        never leak into a value typed ``T``. ``scalar(*fields)`` also
+        restricts the loaded fields to ``fields`` (``only()``); that
+        restriction is reset as well, so the documents come back complete.
+        """
+        queryset = self.clone()
+        queryset._as_pymongo = False
+        if queryset._scalar:
+            queryset._scalar = []
+            queryset = queryset.all_fields()
+        return cast("BaseQuerySet[T, T, PK]", queryset)
 
     def max_time_ms(self, ms: int) -> Self:
         """Wait `ms` milliseconds before killing the query on the server
