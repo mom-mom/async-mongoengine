@@ -74,6 +74,39 @@ def maybe_str() -> str | None:
     return None
 
 
+def maybe_tag_list() -> list[str] | None:
+    return None
+
+
+def tag_list() -> list[str]:
+    return []
+
+
+def maybe_score_map() -> dict[str, int] | None:
+    return None
+
+
+def score_map() -> dict[str, int]:
+    return {}
+
+
+def maybe_address_list() -> list[Address] | None:
+    return None
+
+
+def address_list() -> list[Address]:
+    return []
+
+
+def get_flag() -> bool:
+    return True
+
+
+# A ``bool`` of unknown value.  ``null=`` / ``required=`` given as such a
+# flag cannot be resolved statically, so the field is typed optional.
+FLAG = get_flag()
+
+
 class Item(Document):
     # Scalars
     name = StringField(required=True)
@@ -141,6 +174,18 @@ class Item(Document):
     # Documented limitation: the fallback accepts any default (so nullable
     # factories type-check), so a default of the wrong type is not rejected.
     bad_default = IntField(default="x")
+    # A non-literal null= is not narrowed (a true null keeps None at runtime);
+    # the literal null=False changes nothing.
+    nick_flag = StringField(default="x", null=FLAG)
+    count_flag = IntField(required=True, null=FLAG)
+    created_flag = DateTimeField(default=datetime.datetime.now, null=FLAG)
+    seq_flag = SequenceField(required=True, null=FLAG)
+    seq_str_flag = SequenceField(value_decorator=str, default="0", null=FLAG)
+    tags_flag = ListField(StringField(), null=FLAG)
+    extra_flag = DictField(null=FLAG)
+    nick_not_null = StringField(default="x", null=False)
+    count_not_null = IntField(required=True, null=False)
+    tags_not_null = ListField(StringField(), null=False)
     # Containers with an explicit None default or null=True are optional
     tags_none = ListField(StringField(), default=None)
     tags_null = ListField(StringField(), null=True)
@@ -151,6 +196,30 @@ class Item(Document):
     extra_none = DictField(default=None)
     typed_extra_null = DictField(IntField(), null=True)
     scores_none = MapField(IntField(), default=None)
+    # Container defaults: a container of the right type, or a factory
+    # returning one, keeps the value non-optional; a factory that may return
+    # None (or a default of the wrong type) makes it optional.
+    tags_factory = ListField(StringField(), default=tag_list)
+    tags_list = ListField(StringField(), default=list)
+    tags_literal = ListField(StringField(), default=["a"])
+    tags_maybe = ListField(StringField(), default=maybe_tag_list)
+    tags_bad = ListField(StringField(), default=[1])
+    untyped_list = ListField(default=list)
+    untyped_maybe = ListField(default=maybe_tag_list)
+    sorted_factory = SortedListField(StringField(), default=tag_list)
+    sorted_list = SortedListField(StringField(), default=list)
+    sorted_maybe = SortedListField(StringField(), default=maybe_tag_list)
+    addresses_factory = EmbeddedDocumentListField(Address, default=address_list)
+    addresses_list = EmbeddedDocumentListField(Address, default=list)
+    addresses_maybe = EmbeddedDocumentListField(Address, default=maybe_address_list)
+    lazy_addresses_maybe = EmbeddedDocumentListField("Address", default=maybe_address_list)
+    extra_dict = DictField(default=dict)
+    extra_maybe = DictField(default=maybe_score_map)
+    typed_extra_factory = DictField(IntField(), default=score_map)
+    typed_extra_maybe = DictField(IntField(), default=maybe_score_map)
+    scores_factory = MapField(IntField(), default=score_map)
+    scores_dict = MapField(IntField(), default=dict)
+    scores_maybe = MapField(IntField(), default=maybe_score_map)
     # The element type is the exposed Python type of the inner field
     dates = ListField(DateField())
     exacts = ListField(ComplexDateTimeField())
@@ -221,6 +290,18 @@ async def optionality(item: Item) -> None:
     assert_type(item.lazy_owner_default, LazyReference[Owner])
     assert_type(item.generic_lazy_none, LazyReference[Any] | None)
     assert_type(item.bad_default, int | None)
+    # A non-literal null= falls through to the optional overload.
+    assert_type(item.nick_flag, str | None)
+    assert_type(item.count_flag, int | None)
+    assert_type(item.created_flag, datetime.datetime | None)
+    assert_type(item.seq_flag, int | None)
+    assert_type(item.seq_str_flag, str | None)
+    assert_type(item.tags_flag, list[str] | None)
+    assert_type(item.extra_flag, dict[str, Any] | None)
+    # The literal null=False does not widen.
+    assert_type(item.nick_not_null, str)
+    assert_type(item.count_not_null, int)
+    assert_type(item.tags_not_null, list[str])
 
 
 async def sequence_fields(item: Item) -> None:
@@ -263,6 +344,29 @@ async def container_fields(item: Item) -> None:
     assert_type(item.extra_none, dict[str, Any] | None)
     assert_type(item.typed_extra_null, dict[str, int] | None)
     assert_type(item.scores_none, dict[str, int] | None)
+    # A container default of the right type (or a factory returning one) is
+    # non-optional; a factory that may return None is optional.
+    assert_type(item.tags_factory, list[str])
+    assert_type(item.tags_list, list[str])
+    assert_type(item.tags_literal, list[str])
+    assert_type(item.tags_maybe, list[str] | None)
+    assert_type(item.tags_bad, list[str] | None)
+    assert_type(item.untyped_list, list[Any])
+    assert_type(item.untyped_maybe, list[Any] | None)
+    assert_type(item.sorted_factory, list[str])
+    assert_type(item.sorted_list, list[str])
+    assert_type(item.sorted_maybe, list[str] | None)
+    assert_type(item.addresses_factory, EmbeddedDocumentList[Address])
+    assert_type(item.addresses_list, EmbeddedDocumentList[Address])
+    assert_type(item.addresses_maybe, EmbeddedDocumentList[Address] | None)
+    assert_type(item.lazy_addresses_maybe, EmbeddedDocumentList[Any] | None)
+    assert_type(item.extra_dict, dict[str, Any])
+    assert_type(item.extra_maybe, dict[str, Any] | None)
+    assert_type(item.typed_extra_factory, dict[str, int])
+    assert_type(item.typed_extra_maybe, dict[str, int] | None)
+    assert_type(item.scores_factory, dict[str, int])
+    assert_type(item.scores_dict, dict[str, int])
+    assert_type(item.scores_maybe, dict[str, int] | None)
     # The element type is the Python type the inner field exposes.
     assert_type(item.dates, list[datetime.date])
     assert_type(item.exacts, list[datetime.datetime])
@@ -335,6 +439,11 @@ async def class_level_access() -> None:
     assert_type(Item.exact, ComplexDateTimeField[Never])
     assert_type(Item.tags, ListField[str, Never])
     assert_type(Item.tags_none, ListField[str, None])
+    assert_type(Item.tags_maybe, ListField[str, None])
+    assert_type(Item.tags_list, ListField[str, Never])
+    assert_type(Item.tags_flag, ListField[str, None])
+    assert_type(Item.nick_flag, StringField[None])
+    assert_type(Item.nick_not_null, StringField[Never])
     assert_type(Item.dates, ListField[datetime.date, Never])
     assert_type(Item.scores_none, MapField[int, None])
     assert_type(Item.addresses_none, EmbeddedDocumentListField[Address, None])
@@ -387,6 +496,12 @@ async def valid_assignments(item: Item) -> None:
     item.addresses_none = None
     item.scores_none = None
     item.scores_none = {"a": 1}
+    item.tags_maybe = None
+    item.tags_maybe = ["a"]
+    item.scores_maybe = None
+    item.nick_flag = None
+    item.count_flag = None
+    item.tags_flag = None
     # Values inside containers follow the exposed Python type
     item.exact = datetime.datetime.now()
     item.dates = [datetime.date.today()]
@@ -407,6 +522,10 @@ async def invalid_declarations() -> None:
 async def optional_access(item: Item) -> None:
     item.nick.upper()  # expect-error: reportOptionalMemberAccess "upper"
     item.address.city  # expect-error: reportOptionalMemberAccess "city"
+    item.tags_maybe.append("x")  # expect-error: reportOptionalMemberAccess "append"
+    item.tags_flag.append("x")  # expect-error: reportOptionalMemberAccess "append"
+    item.nick_flag.upper()  # expect-error: reportOptionalMemberAccess "upper"
+    item.scores_maybe["a"]  # expect-error: reportOptionalSubscript
     _ = item.name.missing  # expect-error: reportAttributeAccessIssue "missing"
 
 
@@ -424,6 +543,11 @@ async def invalid_assignments(item: Item) -> None:
     item.status = "done"  # expect-error: reportAttributeAccessIssue "status"
     item.nick_null = 5  # expect-error: reportAttributeAccessIssue "nick_null"
     item.tags_none = [1]  # expect-error: reportAttributeAccessIssue "tags_none"
+    item.tags_maybe = [1]  # expect-error: reportAttributeAccessIssue "tags_maybe"
+    item.tags_list = None  # expect-error: reportAttributeAccessIssue "tags_list"
+    item.tags_not_null = None  # expect-error: reportAttributeAccessIssue "tags_not_null"
+    item.nick_not_null = None  # expect-error: reportAttributeAccessIssue "nick_not_null"
+    item.count_not_null = None  # expect-error: reportAttributeAccessIssue "count_not_null"
     item.scores_none = {"a": "1"}  # expect-error: reportAttributeAccessIssue "scores_none"
     item.exact = "2024,01,01,00,00,00,000000"  # expect-error: reportAttributeAccessIssue "exact"
     item.dates = ["2024-01-01"]  # expect-error: reportAttributeAccessIssue "dates"
