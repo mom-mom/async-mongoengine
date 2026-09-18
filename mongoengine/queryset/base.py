@@ -1072,8 +1072,11 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
             differs from its Python type (``UUIDField(binary=False)`` stores
             ``str``, ``EnumField`` stores the enum value) pass the stored form:
             ``in_bulk([str(some_uuid)])`` matches while ``in_bulk([some_uuid])``
-            returns nothing, although the static type is ``Iterable[PK]``.
-            Issue #33 will apply ``prepare_query_value`` to the ids.
+            does not (it finds nothing with ``uuidRepresentation="standard"``;
+            with PyMongo's default, unspecified representation bson refuses
+            to encode a native ``uuid.UUID`` at all), although the static
+            type is ``Iterable[PK]``. Issue #33 will apply
+            ``prepare_query_value`` to the ids.
         :returns: a dict keyed by the stored primary-key values. Ids that do
             not exist are simply absent. The values follow the queryset's
             projection mode: document instances by default, raw dicts after

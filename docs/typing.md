@@ -587,8 +587,11 @@ runtime by `tests/queryset/test_queryset_7_update_result.py`,
   value) the runtime values are therefore the stored form while the static
   type is `PK`: with `class Session(Document[uuid.UUID])`,
   `await Session.objects.insert(session, load_bulk=False)` is a `str`,
-  `in_bulk([str(session_id)])` matches and `in_bulk([session_id])` returns
-  nothing (whereas `get(id=session_id)` converts and matches). Issue #33
+  `in_bulk([str(session_id)])` matches and `in_bulk([session_id])` does not:
+  it finds nothing with `uuidRepresentation="standard"`, and with PyMongo's
+  default (unspecified) representation bson refuses to encode a native
+  `uuid.UUID` at all (`ValueError`), whereas `get(id=session_id)` converts
+  the value and matches under both. Issue #33
   tracks applying the field's `to_python` / `prepare_query_value` conversions;
   until then the current behaviour is pinned by
   `test_insert_returns_the_stored_primary_key_form` and

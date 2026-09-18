@@ -8,10 +8,11 @@ model's primary-key type and ``from_json()`` rebuilds subclasses.
 
 import uuid
 
+import pytest
 from bson import ObjectId
 
-from mongoengine import Document, IntField, StringField, UUIDField
-from tests.utils import MongoDBTestCase
+from mongoengine import Document, IntField, StringField, UUIDField, connect
+from tests.utils import MONGO_TEST_DB, MongoDBTestCase
 
 
 class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
@@ -29,14 +30,9 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
             code = StringField(primary_key=True)
             name = StringField()
 
-        class Session(Document[uuid.UUID]):
-            id = UUIDField(primary_key=True, binary=False)
-            name = StringField()
-
         self.Item = Item
         self.SubItem = SubItem
         self.Coded = Coded
-        self.Session = Session
 
     async def test_in_bulk_documents_and_missing_ids(self):
         a = await self.Item(name="a", count=1).save()
@@ -123,19 +119,46 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
         ``in_bulk()`` matches the given ids against the stored ``_id`` values
         without the field's query conversion: with ``UUIDField(binary=False)``
         the stored form is ``str``, so the ``uuid.UUID`` the static type asks
-        for does not match (``get()`` converts and does).
+        for does not match (``get()`` converts and does). What "does not
+        match" means depends on the connection's UUID representation, so the
+        models use their own aliases instead of the test session's default
+        connection: with ``uuidRepresentation="standard"`` the query is sent
+        and finds nothing, with PyMongo's default (unspecified) representation
+        bson refuses to encode a native ``uuid.UUID`` at all.
         """
-        session_id = uuid.uuid4()
-        session = await self.Session(id=session_id, name="a").save()
-        assert type(session.id) is uuid.UUID
+        connect(db=MONGO_TEST_DB, alias="uuid_standard", uuidRepresentation="standard")
+        connect(db=MONGO_TEST_DB, alias="uuid_unspecified")
 
-        by_stored_form = await self.Session.objects.in_bulk([str(session_id)])
+        class Session(Document[uuid.UUID]):
+            id = UUIDField(primary_key=True, binary=False)
+            name = StringField()
+
+            meta = {"db_alias": "uuid_standard"}
+
+        class LegacySession(Document[uuid.UUID]):
+            id = UUIDField(primary_key=True, binary=False)
+            name = StringField()
+
+            meta = {"db_alias": "uuid_unspecified"}
+
+        session_id = uuid.uuid4()
+        session = await Session(id=session_id, name="a").save()
+        assert type(session.id) is uuid.UUID
+        assert (await Session.objects.as_pymongo().get(id=session_id))["_id"] == str(session_id)
+
+        by_stored_form = await Session.objects.in_bulk([str(session_id)])
         assert list(by_stored_form) == [str(session_id)]  # keys are the stored values too
         assert by_stored_form[str(session_id)] == session
         assert type(by_stored_form[str(session_id)].id) is uuid.UUID
 
-        assert await self.Session.objects.in_bulk([session_id]) == {}
-        assert (await self.Session.objects.get(id=session_id)).name == "a"
+        assert await Session.objects.in_bulk([session_id]) == {}
+        assert (await Session.objects.get(id=session_id)).name == "a"
+
+        legacy = await LegacySession(id=session_id, name="b").save()
+        assert (await LegacySession.objects.in_bulk([str(session_id)]))[str(session_id)] == legacy
+        with pytest.raises(ValueError, match="cannot encode native uuid.UUID"):
+            await LegacySession.objects.in_bulk([session_id])
+        assert (await LegacySession.objects.get(id=session_id)).name == "b"
 
     async def test_in_bulk_reconstructs_subclasses(self):
         item = await self.Item(name="i").save()
