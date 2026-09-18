@@ -8,10 +8,13 @@ Python primary-key values (the ids are converted for the query) and
 """
 
 import uuid
+from enum import Enum
 
+import pytest
 from bson import ObjectId
 
-from mongoengine import Document, IntField, StringField, UUIDField, connect
+from mongoengine import Document, EnumField, IntField, SequenceField, StringField, UUIDField, connect
+from mongoengine.errors import ValidationError
 from tests.utils import MONGO_TEST_DB, MongoDBTestCase
 
 
@@ -167,6 +170,79 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
             assert await model.objects.scalar("name").in_bulk([session_id, missing]) == {session_id: "a"}
             assert await model.objects.in_bulk([missing]) == {}
             assert await model.objects.in_bulk([]) == {}
+
+    async def test_in_bulk_converts_enum_primary_keys(self):
+        """``EnumField`` keys: members and stored values match, the keys are members."""
+
+        class Status(Enum):  # deliberately not a str subclass: "active" != Status.ACTIVE
+            ACTIVE = "active"
+            DONE = "done"
+            ARCHIVED = "archived"
+
+        class Flagged(Document[Status]):
+            id = EnumField(Status, primary_key=True)
+            name = StringField()
+
+        active = await Flagged(id=Status.ACTIVE, name="a").save()
+        done = await Flagged(id=Status.DONE, name="d").save()
+        assert (await Flagged.objects.as_pymongo().get(id=Status.ACTIVE))["_id"] == "active"
+
+        docs = await Flagged.objects.in_bulk([Status.ACTIVE, Status.ARCHIVED])
+        assert list(docs) == [Status.ACTIVE]
+        assert docs[Status.ACTIVE] == active
+        assert docs[Status.ACTIVE].pk is Status.ACTIVE
+        # The stored values are accepted as well; the keys are enum members.
+        by_value = await Flagged.objects.in_bulk(["active", "done"])
+        assert set(by_value) == {Status.ACTIVE, Status.DONE}
+        assert by_value[Status.DONE] == done
+        assert await Flagged.objects.as_pymongo().in_bulk([Status.DONE]) == {Status.DONE: {"_id": "done", "name": "d"}}
+        assert await Flagged.objects.scalar("name").in_bulk(["active", Status.DONE]) == {
+            Status.ACTIVE: "a",
+            Status.DONE: "d",
+        }
+        assert await Flagged.objects.in_bulk([Status.ARCHIVED]) == {}
+
+    async def test_in_bulk_converts_sequence_primary_keys(self):
+        """``SequenceField(value_decorator=str)`` keys: the stored and Python forms agree (``str``)."""
+
+        class Ticket(Document[str]):
+            id = SequenceField(primary_key=True, value_decorator=str)
+            name = StringField()
+
+        first = await Ticket(name="a").save()
+        second = await Ticket(name="b").save()
+        assert (first.pk, second.pk) == ("1", "2")
+
+        docs = await Ticket.objects.in_bulk(["1", "3"])
+        assert docs == {"1": first}
+        assert type(next(iter(docs))) is str
+        # value_decorator is applied to the ids (prepare_query_value), so the
+        # raw counter value matches as well; the key is the str the field exposes.
+        assert await Ticket.objects.in_bulk([2]) == {"2": second}
+        assert await Ticket.objects.scalar("name").in_bulk(["1", "2"]) == {"1": "a", "2": "b"}
+        assert await Ticket.objects.as_pymongo().in_bulk([1]) == {"1": {"_id": "1", "name": "a"}}
+
+    async def test_in_bulk_accepts_object_id_strings(self):
+        """``ObjectIdField`` keys: a 24-character hex string is converted like a filter value.
+
+        The static type is ``Iterable[ObjectId]``; this is the lenient runtime
+        behaviour of the query conversion. The keys are ``ObjectId`` values
+        whatever form was given, and an invalid id raises like a filter does.
+        """
+        a = await self.Item(name="a", count=1).save()
+        b = await self.Item(name="b", count=2).save()
+
+        docs = await self.Item.objects.in_bulk([str(a.id), b.id])
+        assert set(docs) == {a.id, b.id}
+        assert all(type(key) is ObjectId for key in docs)
+        assert docs[a.id].name == "a"
+        raw = await self.Item.objects.as_pymongo().in_bulk([str(a.id)])
+        assert set(raw) == {a.id}
+        assert raw[a.id]["_id"] == a.id
+        assert await self.Item.objects.scalar("name").in_bulk([str(b.id)]) == {b.id: "b"}
+        assert await self.Item.objects.in_bulk([str(ObjectId())]) == {}
+        with pytest.raises(ValidationError):
+            await self.Item.objects.in_bulk(["not-an-object-id"])
 
     async def test_in_bulk_reconstructs_subclasses(self):
         item = await self.Item(name="i").save()

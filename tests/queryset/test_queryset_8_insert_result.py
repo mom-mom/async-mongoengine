@@ -7,10 +7,11 @@ values the overloads describe (including the Python form of the primary keys
 """
 
 import uuid
+from enum import Enum
 
 from bson import ObjectId
 
-from mongoengine import Document, IntField, StringField, UUIDField, connect, signals
+from mongoengine import Document, EnumField, IntField, SequenceField, StringField, UUIDField, connect, signals
 from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import MONGO_TEST_DB, MongoDBTestCase
 
@@ -136,6 +137,55 @@ class TestQuerySetInsertResult(MongoDBTestCase):
             reloaded_batch = await model.objects.insert(originals)
             assert [doc.name for doc in reloaded_batch] == ["c", "d"]
             assert all(doc is not original for doc, original in zip(reloaded_batch, originals))
+
+    async def test_insert_returns_enum_primary_key_members(self):
+        """``EnumField`` stores the enum value; ``load_bulk=False`` returns the member."""
+
+        class Status(Enum):  # deliberately not a str subclass: "active" != Status.ACTIVE
+            ACTIVE = "active"
+            DONE = "done"
+            ARCHIVED = "archived"
+
+        class Flagged(Document[Status]):
+            id = EnumField(Status, primary_key=True)
+            name = StringField()
+
+        flagged = Flagged(id=Status.ACTIVE, name="a")
+        inserted_id = await Flagged.objects.insert(flagged, load_bulk=False)
+        assert inserted_id is Status.ACTIVE
+        assert flagged.pk is Status.ACTIVE
+        assert (await Flagged.objects.as_pymongo().get(id=Status.ACTIVE))["_id"] == "active"
+        assert await Flagged.objects.insert([Flagged(id=Status.DONE)], load_bulk=False) == [Status.DONE]
+
+        original = Flagged(id=Status.ARCHIVED, name="c")
+        reloaded = await Flagged.objects.insert(original)
+        assert reloaded is not original
+        assert reloaded.pk is Status.ARCHIVED
+        assert reloaded.name == "c"
+
+    async def test_insert_returns_sequence_primary_key_values(self):
+        """``SequenceField`` keys are stored as generated: ``to_python`` is the identity."""
+
+        class Ticket(Document[str]):
+            id = SequenceField(primary_key=True, value_decorator=str)
+            name = StringField()
+
+        class Numbered(Document[int]):
+            id = SequenceField(primary_key=True)
+
+        ticket = Ticket(name="a")
+        inserted_id = await Ticket.objects.insert(ticket, load_bulk=False)
+        assert inserted_id == "1"
+        assert type(inserted_id) is str
+        assert ticket.pk == "1"
+        assert await Ticket.objects.insert([Ticket(), Ticket()], load_bulk=False) == ["2", "3"]
+        reloaded = await Ticket.objects.insert(Ticket(name="d"))
+        assert (reloaded.pk, reloaded.name) == ("4", "d")
+        assert type(reloaded.pk) is str
+
+        assert await Numbered.objects.insert(Numbered(), load_bulk=False) == 1
+        assert await Numbered.objects.insert([Numbered(), Numbered()], load_bulk=False) == [2, 3]
+        assert (await Numbered.objects.insert(Numbered())).pk == 4
 
     async def test_insert_returns_documents_whatever_the_projection_mode(self):
         raw = self.Item.objects.as_pymongo()
