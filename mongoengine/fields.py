@@ -133,6 +133,7 @@ class StringField[N = None, V = str](BaseField[V, N]):
         min_length: int | None = None,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -145,6 +146,7 @@ class StringField[N = None, V = str](BaseField[V, N]):
         *,
         default: str | Callable[[], str],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -157,6 +159,7 @@ class StringField[N = None, V = str](BaseField[V, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -266,6 +269,7 @@ class URLField[N = None](StringField[N]):
         schemes: list[str] | None = None,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -277,6 +281,7 @@ class URLField[N = None](StringField[N]):
         *,
         default: str | Callable[[], str],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -288,6 +293,7 @@ class URLField[N = None](StringField[N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -365,6 +371,7 @@ class EmailField[N = None](StringField[N]):
         allow_ip_domain: bool = False,
         *args: Any,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -377,6 +384,7 @@ class EmailField[N = None](StringField[N]):
         *args: Any,
         default: str | Callable[[], str],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -389,6 +397,7 @@ class EmailField[N = None](StringField[N]):
         *args: Any,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -484,6 +493,7 @@ class IntField[N = None](BaseField[int, N]):
         max_value: int | None = None,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -495,6 +505,7 @@ class IntField[N = None](BaseField[int, N]):
         *,
         default: int | Callable[[], int],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -506,6 +517,7 @@ class IntField[N = None](BaseField[int, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -569,6 +581,7 @@ class FloatField[N = None](BaseField[float, N]):
         max_value: float | None = None,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -580,6 +593,7 @@ class FloatField[N = None](BaseField[float, N]):
         *,
         default: float | Callable[[], float],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -591,6 +605,7 @@ class FloatField[N = None](BaseField[float, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -669,6 +684,7 @@ class DecimalField[N = None](BaseField[decimal.Decimal, N]):
         rounding: str = decimal.ROUND_HALF_UP,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -683,6 +699,7 @@ class DecimalField[N = None](BaseField[decimal.Decimal, N]):
         *,
         default: decimal.Decimal | Callable[[], decimal.Decimal],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -697,6 +714,7 @@ class DecimalField[N = None](BaseField[decimal.Decimal, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -789,15 +807,24 @@ class BooleanField[N = None](BaseField[bool, N]):
         def __init__(self: BooleanField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
-        def __init__(self: BooleanField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
-
-        @overload
         def __init__(
-            self: BooleanField[Never], *, default: bool | Callable[[], bool], required: bool = False, **kwargs: Any
+            self: BooleanField[Never], *, required: Literal[True], null: Literal[False] = False, **kwargs: Any
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+        def __init__(
+            self: BooleanField[Never],
+            *,
+            default: bool | Callable[[], bool],
+            required: bool = False,
+            null: Literal[False] = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self, *, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+        ) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -843,7 +870,11 @@ class DateTimeField[V: datetime.date = datetime.datetime, N = None](BaseField[V,
 
         @overload
         def __init__(
-            self: DateTimeField[datetime.datetime, Never], *, required: Literal[True], **kwargs: Any
+            self: DateTimeField[datetime.datetime, Never],
+            *,
+            required: Literal[True],
+            null: Literal[False] = False,
+            **kwargs: Any,
         ) -> None: ...
 
         @overload
@@ -852,6 +883,7 @@ class DateTimeField[V: datetime.date = datetime.datetime, N = None](BaseField[V,
             *,
             default: datetime.datetime | Callable[[], datetime.datetime],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -861,6 +893,7 @@ class DateTimeField[V: datetime.date = datetime.datetime, N = None](BaseField[V,
             *,
             required: bool = False,
             default: Any = None,
+            null: bool = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -935,7 +968,9 @@ class DateField[N = None](DateTimeField[datetime.date, N]):
         def __init__(self: DateField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
-        def __init__(self: DateField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+        def __init__(
+            self: DateField[Never], *, required: Literal[True], null: Literal[False] = False, **kwargs: Any
+        ) -> None: ...
 
         @overload
         def __init__(
@@ -943,11 +978,14 @@ class DateField[N = None](DateTimeField[datetime.date, N]):
             *,
             default: datetime.date | Callable[[], datetime.date],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+        def __init__(
+            self, *, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+        ) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -994,7 +1032,12 @@ class ComplexDateTimeField[N = None](StringField[N, datetime.datetime]):
 
     @overload
     def __init__(
-        self: ComplexDateTimeField[Never], separator: str = ",", *, required: Literal[True], **kwargs: Any
+        self: ComplexDateTimeField[Never],
+        separator: str = ",",
+        *,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -1004,6 +1047,7 @@ class ComplexDateTimeField[N = None](StringField[N, datetime.datetime]):
         *,
         default: datetime.datetime | Callable[[], datetime.datetime],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1014,6 +1058,7 @@ class ComplexDateTimeField[N = None](StringField[N, datetime.datetime]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1113,7 +1158,12 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
 
     @overload
     def __init__[D2: EmbeddedDocument](
-        self: EmbeddedDocumentField[D2, Never], document_type: type[D2], *, required: Literal[True], **kwargs: Any
+        self: EmbeddedDocumentField[D2, Never],
+        document_type: type[D2],
+        *,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -1123,6 +1173,7 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
         *,
         default: D2 | Callable[[], D2],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1133,6 +1184,7 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1143,7 +1195,12 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
 
     @overload
     def __init__(
-        self: EmbeddedDocumentField[Any, Never], document_type: str, *, required: Literal[True], **kwargs: Any
+        self: EmbeddedDocumentField[Any, Never],
+        document_type: str,
+        *,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -1153,6 +1210,7 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
         *,
         default: EmbeddedDocument | Callable[[], EmbeddedDocument],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1163,6 +1221,7 @@ class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1256,7 +1315,13 @@ class GenericEmbeddedDocumentField[N = None](BaseField[EmbeddedDocument, N]):
         def __init__(self: GenericEmbeddedDocumentField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
-        def __init__(self: GenericEmbeddedDocumentField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+        def __init__(
+            self: GenericEmbeddedDocumentField[Never],
+            *,
+            required: Literal[True],
+            null: Literal[False] = False,
+            **kwargs: Any,
+        ) -> None: ...
 
         @overload
         def __init__(
@@ -1264,11 +1329,14 @@ class GenericEmbeddedDocumentField[N = None](BaseField[EmbeddedDocument, N]):
             *,
             default: EmbeddedDocument | Callable[[], EmbeddedDocument],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+        def __init__(
+            self, *, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+        ) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -1325,15 +1393,24 @@ class DynamicField[N = None](BaseField[Any, N]):
         def __init__(self: DynamicField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
-        def __init__(self: DynamicField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
-
-        @overload
         def __init__(
-            self: DynamicField[Never], *, default: Any | Callable[[], Any], required: bool = False, **kwargs: Any
+            self: DynamicField[Never], *, required: Literal[True], null: Literal[False] = False, **kwargs: Any
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+        def __init__(
+            self: DynamicField[Never],
+            *,
+            default: Any | Callable[[], Any],
+            required: bool = False,
+            null: Literal[False] = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self, *, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+        ) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -1406,8 +1483,10 @@ class ListField[V = Any, N = Never](ComplexBaseField[list[V], N]):
     The element type ``V`` is inferred from the inner field
     (``ListField(StringField())`` yields ``list[str]``; no inner field yields
     ``list[Any]``).  Because the default is ``[]`` the value is never ``None``
-    unless the field is declared with an explicit ``default=None`` (which is
-    kept as is) or with ``null=True``.
+    unless the field is declared with ``null=True`` (or a non-literal
+    ``null=``) or with a ``default=`` that is not a list or a list factory: an
+    explicit ``default=None`` is kept as is at runtime and a factory that may
+    return ``None`` yields ``None``, so both are typed optional.
     """
 
     @overload
@@ -1422,17 +1501,24 @@ class ListField[V = Any, N = Never](ComplexBaseField[list[V], N]):
 
     @overload
     def __init__[V2](
-        self: ListField[V2, None],
+        self: ListField[V2, Never],
         field: BaseField[V2, Any],
         *,
         max_length: int | None = None,
-        default: None,
+        default: list[V2] | Callable[[], list[V2]] = ...,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
     @overload
     def __init__[V2](
-        self: ListField[V2, Never], field: BaseField[V2, Any], *, max_length: int | None = None, **kwargs: Any
+        self: ListField[V2, None],
+        field: BaseField[V2, Any],
+        *,
+        max_length: int | None = None,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -1447,17 +1533,24 @@ class ListField[V = Any, N = Never](ComplexBaseField[list[V], N]):
 
     @overload
     def __init__(
-        self: ListField[Any, None],
+        self: ListField[Any, Never],
         field: None = None,
         *,
         max_length: int | None = None,
-        default: None,
+        default: list[Any] | Callable[[], list[Any]] = ...,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
     @overload
     def __init__(
-        self: ListField[Any, Never], field: None = None, *, max_length: int | None = None, **kwargs: Any
+        self: ListField[Any, None],
+        field: None = None,
+        *,
+        max_length: int | None = None,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
     ) -> None: ...
 
     # Catch-all for subclasses that are themselves generic in ``N``
@@ -1536,8 +1629,9 @@ class EmbeddedDocumentListField[D = Any, N = Never](ListField[D, N]):
     Document instances expose an
     :class:`~mongoengine.base.datastructures.EmbeddedDocumentList` of ``D``
     (``Any`` when ``document_type`` is a string name).  The value is never
-    ``None`` unless the field is declared with an explicit ``default=None`` or
-    with ``null=True``.
+    ``None`` unless the field is declared with ``null=True`` (or a non-literal
+    ``null=``) or with a ``default=`` that is not a list or a list factory
+    (an explicit ``default=None``, a factory that may return ``None``).
     """
 
     @overload
@@ -1547,12 +1641,22 @@ class EmbeddedDocumentListField[D = Any, N = Never](ListField[D, N]):
 
     @overload
     def __init__[D2: EmbeddedDocument](
-        self: EmbeddedDocumentListField[D2, None], document_type: type[D2], *, default: None, **kwargs: Any
+        self: EmbeddedDocumentListField[D2, Never],
+        document_type: type[D2],
+        *,
+        default: EmbeddedDocumentList[D2] | list[D2] | Callable[[], EmbeddedDocumentList[D2] | list[D2]] = ...,
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
     def __init__[D2: EmbeddedDocument](
-        self: EmbeddedDocumentListField[D2, Never], document_type: type[D2], **kwargs: Any
+        self: EmbeddedDocumentListField[D2, None],
+        document_type: type[D2],
+        *,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -1562,11 +1666,23 @@ class EmbeddedDocumentListField[D = Any, N = Never](ListField[D, N]):
 
     @overload
     def __init__(
-        self: EmbeddedDocumentListField[Any, None], document_type: str, *, default: None, **kwargs: Any
+        self: EmbeddedDocumentListField[Any, Never],
+        document_type: str,
+        *,
+        default: EmbeddedDocumentList[Any] | list[Any] | Callable[[], EmbeddedDocumentList[Any] | list[Any]] = ...,
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
-    def __init__(self: EmbeddedDocumentListField[Any, Never], document_type: str, **kwargs: Any) -> None: ...
+    def __init__(
+        self: EmbeddedDocumentListField[Any, None],
+        document_type: str,
+        *,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, document_type: str | type[Any], **kwargs: Any) -> None:
         """
@@ -1600,8 +1716,9 @@ class SortedListField[V = Any, N = Never](ListField[V, N]):
         to perform a push operation.
 
     The element type ``V`` is inferred from ``field``; the value is never
-    ``None`` unless the field is declared with an explicit ``default=None`` or
-    with ``null=True``.
+    ``None`` unless the field is declared with ``null=True`` (or a non-literal
+    ``null=``) or with a ``default=`` that is not a list or a list factory
+    (an explicit ``default=None``, a factory that may return ``None``).
     """
 
     @overload
@@ -1611,11 +1728,23 @@ class SortedListField[V = Any, N = Never](ListField[V, N]):
 
     @overload
     def __init__[V2](
-        self: SortedListField[V2, None], field: BaseField[V2, Any], *, default: None, **kwargs: Any
+        self: SortedListField[V2, Never],
+        field: BaseField[V2, Any],
+        *,
+        default: list[V2] | Callable[[], list[V2]] = ...,
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
-    def __init__[V2](self: SortedListField[V2, Never], field: BaseField[V2, Any], **kwargs: Any) -> None: ...
+    def __init__[V2](
+        self: SortedListField[V2, None],
+        field: BaseField[V2, Any],
+        *,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, field: BaseField[Any, Any], **kwargs: Any) -> None:
         self._ordering: str | None = kwargs.pop("ordering", None)
@@ -1658,8 +1787,11 @@ class DictField[V = Any, N = Never](ComplexBaseField[dict[str, V], N]):
 
     The value type is ``dict[str, V]`` where ``V`` comes from the optional
     inner field (``dict[str, Any]`` without one).  Because the default is
-    ``{}`` the value is never ``None`` unless the field is declared with an
-    explicit ``default=None`` (which is kept as is) or with ``null=True``.
+    ``{}`` the value is never ``None`` unless the field is declared with
+    ``null=True`` (or a non-literal ``null=``) or with a ``default=`` that is
+    not a dict or a dict factory: an explicit ``default=None`` is kept as is
+    at runtime and a factory that may return ``None`` yields ``None``, so both
+    are typed optional.
     """
 
     @overload
@@ -1669,11 +1801,23 @@ class DictField[V = Any, N = Never](ComplexBaseField[dict[str, V], N]):
 
     @overload
     def __init__[V2](
-        self: DictField[V2, None], field: BaseField[V2, Any], *args: Any, default: None, **kwargs: Any
+        self: DictField[V2, Never],
+        field: BaseField[V2, Any],
+        *args: Any,
+        default: dict[str, V2] | Callable[[], dict[str, V2]] = ...,
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
-    def __init__[V2](self: DictField[V2, Never], field: BaseField[V2, Any], *args: Any, **kwargs: Any) -> None: ...
+    def __init__[V2](
+        self: DictField[V2, None],
+        field: BaseField[V2, Any],
+        *args: Any,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -1681,10 +1825,24 @@ class DictField[V = Any, N = Never](ComplexBaseField[dict[str, V], N]):
     ) -> None: ...
 
     @overload
-    def __init__(self: DictField[Any, None], field: None = None, *args: Any, default: None, **kwargs: Any) -> None: ...
+    def __init__(
+        self: DictField[Any, Never],
+        field: None = None,
+        *args: Any,
+        default: dict[str, Any] | Callable[[], dict[str, Any]] = ...,
+        null: Literal[False] = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     @overload
-    def __init__(self: DictField[Any, Never], field: None = None, *args: Any, **kwargs: Any) -> None: ...
+    def __init__(
+        self: DictField[Any, None],
+        field: None = None,
+        *args: Any,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     # Catch-all for subclasses that are themselves generic in ``N``
     # (``MapField[V, N]``) and call ``super().__init__()``; see ListField.
@@ -1733,8 +1891,10 @@ class MapField[V = Any, N = Never](DictField[V, N]):
 
     The value type is ``dict[str, V]`` with ``V`` inferred from ``field``
     (which is mandatory: ``MapField()`` raises at class definition).  The
-    value is never ``None`` unless the field is declared with an explicit
-    ``default=None`` or with ``null=True``.
+    value is never ``None`` unless the field is declared with ``null=True``
+    (or a non-literal ``null=``) or with a ``default=`` that is not a dict or
+    a dict factory (an explicit ``default=None``, a factory that may return
+    ``None``).
     """
 
     @overload
@@ -1744,11 +1904,23 @@ class MapField[V = Any, N = Never](DictField[V, N]):
 
     @overload
     def __init__[V2](
-        self: MapField[V2, None], field: BaseField[V2, Any], *args: Any, default: None, **kwargs: Any
+        self: MapField[V2, Never],
+        field: BaseField[V2, Any],
+        *args: Any,
+        default: dict[str, V2] | Callable[[], dict[str, V2]] = ...,
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
-    def __init__[V2](self: MapField[V2, Never], field: BaseField[V2, Any], *args: Any, **kwargs: Any) -> None: ...
+    def __init__[V2](
+        self: MapField[V2, None],
+        field: BaseField[V2, Any],
+        *args: Any,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, field: BaseField[Any, Any] | None = None, *args: Any, **kwargs: Any) -> None:
         # XXX ValidationError raised outside the "validate" method.
@@ -1816,6 +1988,7 @@ class ReferenceField[N = None](BaseField[Any, N]):
         reverse_delete_rule: int = DO_NOTHING,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1828,6 +2001,7 @@ class ReferenceField[N = None](BaseField[Any, N]):
         *,
         default: Any | Callable[[], Any],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1840,6 +2014,7 @@ class ReferenceField[N = None](BaseField[Any, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1981,6 +2156,7 @@ class CachedReferenceField[N = None](BaseField[Any, N]):
         auto_sync: bool = True,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -1993,6 +2169,7 @@ class CachedReferenceField[N = None](BaseField[Any, N]):
         *,
         default: Any | Callable[[], Any],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2005,6 +2182,7 @@ class CachedReferenceField[N = None](BaseField[Any, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2146,7 +2324,13 @@ class GenericReferenceField[N = None](BaseField[Any, N]):
     def __init__(self: GenericReferenceField[None], *args: Any, null: Literal[True], **kwargs: Any) -> None: ...
 
     @overload
-    def __init__(self: GenericReferenceField[Never], *args: Any, required: Literal[True], **kwargs: Any) -> None: ...
+    def __init__(
+        self: GenericReferenceField[Never],
+        *args: Any,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -2154,11 +2338,14 @@ class GenericReferenceField[N = None](BaseField[Any, N]):
         *args: Any,
         default: Any | Callable[[], Any],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
     @overload
-    def __init__(self, *args: Any, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+    def __init__(
+        self, *args: Any, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+    ) -> None: ...
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         choices = kwargs.pop("choices", None)
@@ -2251,7 +2438,12 @@ class BinaryField[N = None](BaseField[bytes, N]):
 
     @overload
     def __init__(
-        self: BinaryField[Never], max_bytes: int | None = None, *, required: Literal[True], **kwargs: Any
+        self: BinaryField[Never],
+        max_bytes: int | None = None,
+        *,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -2261,6 +2453,7 @@ class BinaryField[N = None](BaseField[bytes, N]):
         *,
         default: bytes | Callable[[], bytes],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2271,6 +2464,7 @@ class BinaryField[N = None](BaseField[bytes, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2346,7 +2540,12 @@ class EnumField[E: Enum = Any, N = None](BaseField[E, N]):
 
     @overload
     def __init__[E2: Enum](
-        self: EnumField[E2, Never], enum: type[E2], *, required: Literal[True], **kwargs: Any
+        self: EnumField[E2, Never],
+        enum: type[E2],
+        *,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -2356,12 +2555,19 @@ class EnumField[E: Enum = Any, N = None](BaseField[E, N]):
         *,
         default: E2 | Callable[[], E2],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
     @overload
     def __init__[E2: Enum](
-        self: EnumField[E2, None], enum: type[E2], *, required: bool = False, default: Any = None, **kwargs: Any
+        self: EnumField[E2, None],
+        enum: type[E2],
+        *,
+        required: bool = False,
+        default: Any = None,
+        null: bool = False,
+        **kwargs: Any,
     ) -> None: ...
 
     def __init__(self, enum: type[Enum], **kwargs: Any) -> None:
@@ -2469,6 +2675,7 @@ class SequenceField[V = int, N = None](BaseField[V, N]):
         *args: Any,
         value_decorator: Callable[[Any], V2],
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2482,6 +2689,7 @@ class SequenceField[V = int, N = None](BaseField[V, N]):
         value_decorator: Callable[[Any], V2],
         default: V2 | Callable[[], V2],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2495,6 +2703,7 @@ class SequenceField[V = int, N = None](BaseField[V, N]):
         value_decorator: Callable[[Any], V2],
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2520,6 +2729,7 @@ class SequenceField[V = int, N = None](BaseField[V, N]):
         value_decorator: None = None,
         *args: Any,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2533,6 +2743,7 @@ class SequenceField[V = int, N = None](BaseField[V, N]):
         *args: Any,
         default: int | Callable[[], int],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2546,6 +2757,7 @@ class SequenceField[V = int, N = None](BaseField[V, N]):
         *args: Any,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -2659,7 +2871,14 @@ class UUIDField[N = None](BaseField[uuid.UUID, N]):
     def __init__(self: UUIDField[None], binary: bool = True, *, null: Literal[True], **kwargs: Any) -> None: ...
 
     @overload
-    def __init__(self: UUIDField[Never], binary: bool = True, *, required: Literal[True], **kwargs: Any) -> None: ...
+    def __init__(
+        self: UUIDField[Never],
+        binary: bool = True,
+        *,
+        required: Literal[True],
+        null: Literal[False] = False,
+        **kwargs: Any,
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -2668,11 +2887,14 @@ class UUIDField[N = None](BaseField[uuid.UUID, N]):
         *,
         default: uuid.UUID | Callable[[], uuid.UUID],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
     @overload
-    def __init__(self, binary: bool = True, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+    def __init__(
+        self, binary: bool = True, *, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+    ) -> None: ...
 
     def __init__(self, binary: bool = True, **kwargs: Any) -> None:
         """
@@ -2734,7 +2956,9 @@ class GeoPointField[N = None](BaseField[list[float], N]):
         def __init__(self: GeoPointField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
-        def __init__(self: GeoPointField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+        def __init__(
+            self: GeoPointField[Never], *, required: Literal[True], null: Literal[False] = False, **kwargs: Any
+        ) -> None: ...
 
         @overload
         def __init__(
@@ -2742,11 +2966,14 @@ class GeoPointField[N = None](BaseField[list[float], N]):
             *,
             default: list[float] | Callable[[], list[float]],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
+        def __init__(
+            self, *, required: bool = False, default: Any = None, null: bool = False, **kwargs: Any
+        ) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -2789,7 +3016,12 @@ class PointField[N = None](GeoJsonBaseField[N]):
 
         @overload
         def __init__(
-            self: PointField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+            self: PointField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            required: Literal[True],
+            null: Literal[False] = False,
+            **kwargs: Any,
         ) -> None: ...
 
         @overload
@@ -2799,6 +3031,7 @@ class PointField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             default: Any | Callable[[], Any],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2809,6 +3042,7 @@ class PointField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             required: bool = False,
             default: Any = None,
+            null: bool = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2842,7 +3076,12 @@ class LineStringField[N = None](GeoJsonBaseField[N]):
 
         @overload
         def __init__(
-            self: LineStringField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+            self: LineStringField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            required: Literal[True],
+            null: Literal[False] = False,
+            **kwargs: Any,
         ) -> None: ...
 
         @overload
@@ -2852,6 +3091,7 @@ class LineStringField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             default: Any | Callable[[], Any],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2862,6 +3102,7 @@ class LineStringField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             required: bool = False,
             default: Any = None,
+            null: bool = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2898,7 +3139,12 @@ class PolygonField[N = None](GeoJsonBaseField[N]):
 
         @overload
         def __init__(
-            self: PolygonField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+            self: PolygonField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            required: Literal[True],
+            null: Literal[False] = False,
+            **kwargs: Any,
         ) -> None: ...
 
         @overload
@@ -2908,6 +3154,7 @@ class PolygonField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             default: Any | Callable[[], Any],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2918,6 +3165,7 @@ class PolygonField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             required: bool = False,
             default: Any = None,
+            null: bool = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2952,7 +3200,12 @@ class MultiPointField[N = None](GeoJsonBaseField[N]):
 
         @overload
         def __init__(
-            self: MultiPointField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+            self: MultiPointField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            required: Literal[True],
+            null: Literal[False] = False,
+            **kwargs: Any,
         ) -> None: ...
 
         @overload
@@ -2962,6 +3215,7 @@ class MultiPointField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             default: Any | Callable[[], Any],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -2972,6 +3226,7 @@ class MultiPointField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             required: bool = False,
             default: Any = None,
+            null: bool = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -3014,6 +3269,7 @@ class MultiLineStringField[N = None](GeoJsonBaseField[N]):
             auto_index: bool = True,
             *args: Any,
             required: Literal[True],
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -3024,6 +3280,7 @@ class MultiLineStringField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             default: Any | Callable[[], Any],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -3034,6 +3291,7 @@ class MultiLineStringField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             required: bool = False,
             default: Any = None,
+            null: bool = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -3075,7 +3333,12 @@ class MultiPolygonField[N = None](GeoJsonBaseField[N]):
 
         @overload
         def __init__(
-            self: MultiPolygonField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+            self: MultiPolygonField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            required: Literal[True],
+            null: Literal[False] = False,
+            **kwargs: Any,
         ) -> None: ...
 
         @overload
@@ -3085,6 +3348,7 @@ class MultiPolygonField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             default: Any | Callable[[], Any],
             required: bool = False,
+            null: Literal[False] = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -3095,6 +3359,7 @@ class MultiPolygonField[N = None](GeoJsonBaseField[N]):
             *args: Any,
             required: bool = False,
             default: Any = None,
+            null: bool = False,
             **kwargs: Any,
         ) -> None: ...
 
@@ -3136,6 +3401,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         reverse_delete_rule: int = DO_NOTHING,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3149,6 +3415,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         *,
         default: D2 | LazyReference[D2] | DBRef | Callable[[], D2 | LazyReference[D2] | DBRef],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3162,6 +3429,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3186,6 +3454,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         reverse_delete_rule: int = DO_NOTHING,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3199,6 +3468,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         *,
         default: Document[Any] | LazyReference[Any] | DBRef | Callable[[], Document[Any] | LazyReference[Any] | DBRef],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3212,6 +3482,7 @@ class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3389,6 +3660,7 @@ class GenericLazyReferenceField[N = None](GenericReferenceField[N]):
         *args: Any,
         passthrough: bool = False,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3399,6 +3671,7 @@ class GenericLazyReferenceField[N = None](GenericReferenceField[N]):
         passthrough: bool = False,
         default: Document[Any] | LazyReference[Any] | DBRef | Callable[[], Document[Any] | LazyReference[Any] | DBRef],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3409,6 +3682,7 @@ class GenericLazyReferenceField[N = None](GenericReferenceField[N]):
         passthrough: bool = False,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3503,6 +3777,7 @@ class Decimal128Field[N = None](BaseField[decimal.Decimal, N]):
         max_value: float | None = None,
         *,
         required: Literal[True],
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3514,6 +3789,7 @@ class Decimal128Field[N = None](BaseField[decimal.Decimal, N]):
         *,
         default: decimal.Decimal | Callable[[], decimal.Decimal],
         required: bool = False,
+        null: Literal[False] = False,
         **kwargs: Any,
     ) -> None: ...
 
@@ -3525,6 +3801,7 @@ class Decimal128Field[N = None](BaseField[decimal.Decimal, N]):
         *,
         required: bool = False,
         default: Any = None,
+        null: bool = False,
         **kwargs: Any,
     ) -> None: ...
 
