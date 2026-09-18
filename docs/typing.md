@@ -404,6 +404,11 @@ Limits:
 
 - **Field values are not typed by name.** A single scalar is `Any` and several
   are `tuple[Any, ...]`; narrow them yourself.
+- **A dynamic field list is typed as the tuple form.** Pyright cannot tell an
+  unpacked `list[str]` of unknown length from two or more literal fields, so
+  `qs.scalar(*names)` is `QuerySet[Item, tuple[Any, ...], ObjectId]` even
+  though a 0- or 1-element list yields documents or single values at
+  runtime. Pass the fields literally, or narrow the result yourself.
 - **The last mode switch wins**, at runtime as well as statically:
   `qs.as_pymongo().scalar("x")` yields field values,
   `qs.scalar("x").as_pymongo()` yields dicts and `qs.as_pymongo().scalar()`
@@ -414,10 +419,50 @@ Limits:
   fields resets the selection. This is a behaviour change: the combination
   used to be unspecified and inconsistent (iteration let `as_pymongo()` win
   whatever the order, `in_bulk()` applied `scalar()` first).
-- After a projection switch the static type is the plain `QuerySet[...]`, so
-  the methods of a custom queryset class are no longer visible. Call them
-  before switching modes, or re-declare `as_pymongo()` / `scalar()` in the
-  subclass under `TYPE_CHECKING` (see `mongoengine/queryset/queryset.py`).
+- **Custom queryset classes lose their methods after a switch** unless they
+  re-declare the projection methods. `Self` cannot re-parametrise `R`, so
+  `as_pymongo()` / `scalar()` / `values_list()` on a custom queryset class
+  return the plain `QuerySet[...]` and `Post.objects.as_pymongo().published()`
+  is an attribute error. The supported pattern is to re-declare the three
+  methods under `if TYPE_CHECKING:` so that they return the subclass (the
+  runtime implementation stays inherited; copy the shape from `QuerySet` in
+  `mongoengine/queryset/queryset.py`):
+
+  ```python
+  from typing import TYPE_CHECKING, Any, ClassVar, overload
+
+
+  class PublishedQuerySet[T: Document[Any], R = T, PK = ObjectId](QuerySet[T, R, PK]):
+      def published(self) -> "PublishedQuerySet[T, R, PK]":
+          return self.filter(published=True)
+
+      if TYPE_CHECKING:
+
+          def as_pymongo(self) -> "PublishedQuerySet[T, dict[str, Any], PK]": ...
+
+          @overload
+          def scalar(self) -> "PublishedQuerySet[T, T, PK]": ...
+          @overload
+          def scalar(self, field: str, /) -> "PublishedQuerySet[T, Any, PK]": ...
+          @overload
+          def scalar(self, field1: str, field2: str, /, *fields: str) -> "PublishedQuerySet[T, tuple[Any, ...], PK]": ...
+          def scalar(self, *fields: str) -> "PublishedQuerySet[T, Any, PK]": ...
+
+          # ... and the same three overloads for values_list().
+
+
+  class Post(Document):
+      title = StringField()
+
+      if TYPE_CHECKING:
+          objects: ClassVar[PublishedQuerySet["Post"]]
+
+      meta = {"queryset_class": PublishedQuerySet}
+
+
+  Post.objects.as_pymongo().published()      # PublishedQuerySet[Post, dict[str, Any], ObjectId]
+  Post.objects.scalar("title").published()   # PublishedQuerySet[Post, Any, ObjectId]
+  ```
 
 ### Update results
 
@@ -517,10 +562,13 @@ runtime by `tests/queryset/test_queryset_7_update_result.py`,
   `ObjectId | None`.
 - Subclasses of concrete fields do not narrow on `required=` / `default=`
   unless they repeat the constructor overloads.
-- `scalar()` values are `Any` (one field) or `tuple[Any, ...]` (several).
-  The last of `as_pymongo()` / `scalar()` wins, at runtime and statically.
+- `scalar()` values are `Any` (one field) or `tuple[Any, ...]` (several); a
+  dynamic field list (`scalar(*names)`) is typed as the tuple form whatever
+  its length. The last of `as_pymongo()` / `scalar()` wins, at runtime and
+  statically.
 - After `as_pymongo()` / `scalar()` a custom queryset class is typed as the
-  plain `QuerySet[...]`; `@queryset_manager` managers are
+  plain `QuerySet[...]` unless it re-declares the projection methods under
+  `TYPE_CHECKING` (see "Projection modes"); `@queryset_manager` managers are
   `QuerySetManager[Any]`.
 - The count form of `update()` is `None` at runtime for unacknowledged
   writes (`w=0`); the static type describes acknowledged writes.

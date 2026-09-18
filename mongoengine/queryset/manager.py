@@ -59,6 +59,37 @@ class QuerySetManager[PK = ObjectId]:
                 meta = {"queryset_class": CustomQuerySet}
 
             # Now Post.objects.published() is visible to the type checker.
+
+    .. note:: **Custom methods after a projection switch.**
+        ``Self`` cannot re-parametrise the result type ``R``, so after
+        ``as_pymongo()`` / ``scalar()`` / ``values_list()`` the static type
+        falls back to the plain ``QuerySet[...]`` and the custom methods are
+        no longer visible (``Post.objects.as_pymongo().published()`` is an
+        attribute error). To keep them, re-declare the three projection
+        methods under ``TYPE_CHECKING`` so that they return the subclass; the
+        runtime implementation stays inherited. The shape is the one
+        ``QuerySet`` itself uses in ``mongoengine/queryset/queryset.py``::
+
+            from typing import TYPE_CHECKING, Any, overload
+
+            class GeneralQuerySet[T: Document[Any], R = T, PK = ObjectId](QuerySet[T, R, PK]):
+                def published(self) -> "GeneralQuerySet[T, R, PK]":
+                    return self.filter(published=True)
+
+                if TYPE_CHECKING:
+                    def as_pymongo(self) -> "GeneralQuerySet[T, dict[str, Any], PK]": ...
+
+                    @overload
+                    def scalar(self) -> "GeneralQuerySet[T, T, PK]": ...
+                    @overload
+                    def scalar(self, field: str, /) -> "GeneralQuerySet[T, Any, PK]": ...
+                    @overload
+                    def scalar(self, field1: str, field2: str, /, *fields: str) -> "GeneralQuerySet[T, tuple[Any, ...], PK]": ...
+                    def scalar(self, *fields: str) -> "GeneralQuerySet[T, Any, PK]": ...
+
+                    # ... and the same three overloads for values_list().
+
+            # Post.objects.as_pymongo().published() now type-checks.
     """
 
     get_queryset: Callable[..., Any] | None = None

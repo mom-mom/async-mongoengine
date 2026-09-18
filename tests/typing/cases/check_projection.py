@@ -13,7 +13,7 @@ makes ``R`` ``dict[str, Any]``, ``scalar(field)`` makes it ``Any``,
 ``T``.  The mode is preserved through chaining and cache switching.
 """
 
-from typing import Any, assert_type
+from typing import TYPE_CHECKING, Any, ClassVar, assert_type, overload
 
 from bson import ObjectId
 
@@ -37,6 +37,65 @@ class Sub(Item):
 class Coded(Document[str]):
     code = StringField(primary_key=True)
     name = StringField()
+
+
+class PublishedQuerySet[T: Document[Any], R = T, PK = ObjectId](QuerySet[T, R, PK]):
+    """Custom queryset whose methods stay visible after a projection switch.
+
+    The three projection methods are re-declared under ``TYPE_CHECKING`` so
+    that they return this class; the runtime implementation is inherited.
+    This is the pattern documented in ``docs/typing.md``.
+    """
+
+    def published(self) -> "PublishedQuerySet[T, R, PK]":
+        return self.filter(published=True)
+
+    if TYPE_CHECKING:
+
+        def as_pymongo(self) -> "PublishedQuerySet[T, dict[str, Any], PK]": ...
+
+        @overload
+        def scalar(self) -> "PublishedQuerySet[T, T, PK]": ...
+        @overload
+        def scalar(self, field: str, /) -> "PublishedQuerySet[T, Any, PK]": ...
+        @overload
+        def scalar(self, field1: str, field2: str, /, *fields: str) -> "PublishedQuerySet[T, tuple[Any, ...], PK]": ...
+        def scalar(self, *fields: str) -> "PublishedQuerySet[T, Any, PK]": ...
+
+        @overload
+        def values_list(self) -> "PublishedQuerySet[T, T, PK]": ...
+        @overload
+        def values_list(self, field: str, /) -> "PublishedQuerySet[T, Any, PK]": ...
+        @overload
+        def values_list(
+            self, field1: str, field2: str, /, *fields: str
+        ) -> "PublishedQuerySet[T, tuple[Any, ...], PK]": ...
+        def values_list(self, *fields: str) -> "PublishedQuerySet[T, Any, PK]": ...
+
+
+class PlainQuerySet[T: Document[Any], R = T, PK = ObjectId](QuerySet[T, R, PK]):
+    """Custom queryset without the re-declaration: a switch falls back to ``QuerySet``."""
+
+    def published(self) -> "PlainQuerySet[T, R, PK]":
+        return self.filter(published=True)
+
+
+class Post(Document):
+    title = StringField()
+
+    if TYPE_CHECKING:
+        objects: ClassVar[PublishedQuerySet["Post"]]
+
+    meta = {"queryset_class": PublishedQuerySet}
+
+
+class PlainPost(Document):
+    title = StringField()
+
+    if TYPE_CHECKING:
+        objects: ClassVar[PlainQuerySet["PlainPost"]]
+
+    meta = {"queryset_class": PlainQuerySet}
 
 
 async def document_mode(query: QuerySet[Item]) -> None:
@@ -123,6 +182,38 @@ async def scalar_mode(query: QuerySet[Item]) -> None:
     # Writes and creation still use the model.
     assert_type(await one.create(name="x"), Item)
     assert_type(await many.modify(set__name="x"), Item | None)
+
+
+async def dynamic_field_lists(query: QuerySet[Item], names: list[str]) -> None:
+    # Documented limitation (docs/typing.md): Pyright cannot tell an unpacked
+    # list of unknown length from two or more literal fields, so a dynamic
+    # field list is typed as the tuple form even though a 0- or 1-element
+    # list yields documents or single values at runtime.
+    assert_type(query.scalar(*names), QuerySet[Item, tuple[Any, ...], ObjectId])
+    assert_type(await query.scalar(*names).to_list(), list[tuple[Any, ...]])
+    assert_type(await query.values_list(*names).first(), tuple[Any, ...] | None)
+
+
+async def custom_querysets_after_a_projection_switch() -> None:
+    # With the re-declaration the subclass survives the switch ...
+    assert_type(Post.objects, PublishedQuerySet[Post, Post, ObjectId])
+    assert_type(Post.objects.as_pymongo(), PublishedQuerySet[Post, dict[str, Any], ObjectId])
+    assert_type(Post.objects.as_pymongo().published(), PublishedQuerySet[Post, dict[str, Any], ObjectId])
+    assert_type(await Post.objects.as_pymongo().published().first(), dict[str, Any] | None)
+    assert_type(await Post.objects.published().as_pymongo().to_list(), list[dict[str, Any]])
+    assert_type(Post.objects.scalar("title").published(), PublishedQuerySet[Post, Any, ObjectId])
+    assert_type(await Post.objects.scalar("title", "id").published().first(), tuple[Any, ...] | None)
+    assert_type(await Post.objects.values_list("title").published().to_list(), list[Any])
+    assert_type(Post.objects.scalar("title").scalar().published(), PublishedQuerySet[Post, Post, ObjectId])
+    assert_type(await Post.objects.as_pymongo().scalar().published().first(), Post | None)
+
+    # ... without it the type falls back to the plain QuerySet.
+    assert_type(PlainPost.objects.published(), PlainQuerySet[PlainPost, PlainPost, ObjectId])
+    assert_type(PlainPost.objects.as_pymongo(), QuerySet[PlainPost, dict[str, Any], ObjectId])
+    assert_type(PlainPost.objects.scalar("title"), QuerySet[PlainPost, Any, ObjectId])
+    PlainPost.objects.as_pymongo().published()  # expect-error: reportAttributeAccessIssue "published"
+    PlainPost.objects.scalar("title").published()  # expect-error: reportAttributeAccessIssue "published"
+    PlainPost.objects.values_list("title").published()  # expect-error: reportAttributeAccessIssue "published"
 
 
 async def document_producers_ignore_the_mode(query: QuerySet[Item], item: Item) -> None:

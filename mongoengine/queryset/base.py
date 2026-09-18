@@ -1569,7 +1569,12 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
 
         Statically, one field makes the result type ``Any`` (field values are
         not typed by name) and two or more fields make it ``tuple[Any, ...]``;
-        calling ``scalar()`` without fields restores the document type.
+        calling ``scalar()`` without fields restores the document type. A
+        field list of unknown length (``scalar(*names)``) is typed as the
+        tuple form: the checker cannot tell an unpacked ``list[str]`` from two
+        or more literal fields, although a 0- or 1-element list yields
+        documents or single values at runtime. Pass the fields literally, or
+        narrow the result yourself.
 
         :param fields: One or more fields to return instead of a Document.
         """
