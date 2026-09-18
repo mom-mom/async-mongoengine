@@ -15,7 +15,7 @@ import uuid
 from enum import Enum
 from typing import Any, Never, assert_type
 
-from bson import ObjectId
+from bson import DBRef, ObjectId
 
 from mongoengine import (
     BinaryField,
@@ -70,6 +70,10 @@ class Owner(Document):
     name = StringField()
 
 
+def maybe_str() -> str | None:
+    return None
+
+
 class Item(Document):
     # Scalars
     name = StringField(required=True)
@@ -121,6 +125,44 @@ class Item(Document):
     lazy_owner_req = LazyReferenceField(Owner, required=True)
     lazy_by_name = LazyReferenceField("Owner")
     generic_lazy = GenericLazyReferenceField()
+    # Optionality: null=True always wins, an explicit None default and a
+    # factory that may return None stay optional
+    nick_null = StringField(null=True)
+    name_null = StringField(required=True, null=True)
+    count_null_default = IntField(default=0, null=True)
+    maybe_nick = StringField(default=maybe_str)
+    created_null = DateTimeField(default=datetime.datetime.now, null=True)
+    status_null = EnumField(Status, default=Status.NEW, null=True)
+    address_null = EmbeddedDocumentField(Address, required=True, null=True)
+    point_null = PointField(null=True)
+    lazy_owner_default = LazyReferenceField(Owner, default=DBRef("owner", 1))
+    lazy_owner_none = LazyReferenceField(Owner, default=None)
+    generic_lazy_none = GenericLazyReferenceField(default=None)
+    # Documented limitation: the fallback accepts any default (so nullable
+    # factories type-check), so a default of the wrong type is not rejected.
+    bad_default = IntField(default="x")
+    # Containers with an explicit None default or null=True are optional
+    tags_none = ListField(StringField(), default=None)
+    tags_null = ListField(StringField(), null=True)
+    untyped_none = ListField(default=None)
+    sorted_none = SortedListField(IntField(), default=None)
+    addresses_none = EmbeddedDocumentListField(Address, default=None)
+    lazy_addresses_null = EmbeddedDocumentListField("Address", null=True)
+    extra_none = DictField(default=None)
+    typed_extra_null = DictField(IntField(), null=True)
+    scores_none = MapField(IntField(), default=None)
+    # The element type is the exposed Python type of the inner field
+    dates = ListField(DateField())
+    exacts = ListField(ComplexDateTimeField())
+    sorted_dates = SortedListField(DateField())
+    date_map = MapField(DateField())
+    # SequenceField: the value type follows value_decorator
+    seq_req = SequenceField(required=True)
+    seq_default = SequenceField(default=0)
+    seq_str = SequenceField(value_decorator=str)
+    seq_str_req = SequenceField(value_decorator=str, required=True)
+    seq_hex_null = SequenceField(value_decorator=hex, null=True)
+    seq_named = SequenceField("counters", sequence_name="items", value_decorator=str)
 
     meta = {"allow_inheritance": True}
 
@@ -163,6 +205,41 @@ async def scalar_fields(item: Item) -> None:
     assert_type(item.name.upper(), str)
 
 
+async def optionality(item: Item) -> None:
+    # null=True makes the value optional whatever else is passed.
+    assert_type(item.nick_null, str | None)
+    assert_type(item.name_null, str | None)
+    assert_type(item.count_null_default, int | None)
+    assert_type(item.created_null, datetime.datetime | None)
+    assert_type(item.status_null, Status | None)
+    assert_type(item.address_null, Address | None)
+    assert_type(item.point_null, Any | None)
+    # A factory that may return None falls through to the optional overload.
+    assert_type(item.maybe_nick, str | None)
+    # An explicit None default stays optional; a non-None default narrows.
+    assert_type(item.lazy_owner_none, LazyReference[Owner] | None)
+    assert_type(item.lazy_owner_default, LazyReference[Owner])
+    assert_type(item.generic_lazy_none, LazyReference[Any] | None)
+    assert_type(item.bad_default, int | None)
+
+
+async def sequence_fields(item: Item) -> None:
+    assert_type(item.seq, int | None)
+    assert_type(item.seq_req, int)
+    assert_type(item.seq_default, int)
+    assert_type(item.seq_str, str | None)
+    assert_type(item.seq_str_req, str)
+    assert_type(item.seq_hex_null, str | None)
+    assert_type(item.seq_named, str | None)
+    assert_type(Item.seq, SequenceField[int, None])
+    assert_type(Item.seq_str, SequenceField[str, None])
+    assert_type(Item.seq_str_req, SequenceField[str, Never])
+    assert_type(await Item.seq.generate(), int)
+    assert_type(await Item.seq_str.generate(), str)
+    assert_type(await Item.seq_str.get_next_value(), str)
+    assert_type(await Item.seq_str.set_next_value(3), str)
+
+
 async def container_fields(item: Item) -> None:
     assert_type(item.tags, list[str])
     assert_type(item.nested, list[list[int]])
@@ -176,6 +253,23 @@ async def container_fields(item: Item) -> None:
     for row in item.nested:
         assert_type(row, list[int])
     assert_type(item.scores["a"], int)
+    # Explicit default=None / null=True make a container optional.
+    assert_type(item.tags_none, list[str] | None)
+    assert_type(item.tags_null, list[str] | None)
+    assert_type(item.untyped_none, list[Any] | None)
+    assert_type(item.sorted_none, list[int] | None)
+    assert_type(item.addresses_none, EmbeddedDocumentList[Address] | None)
+    assert_type(item.lazy_addresses_null, EmbeddedDocumentList[Any] | None)
+    assert_type(item.extra_none, dict[str, Any] | None)
+    assert_type(item.typed_extra_null, dict[str, int] | None)
+    assert_type(item.scores_none, dict[str, int] | None)
+    # The element type is the Python type the inner field exposes.
+    assert_type(item.dates, list[datetime.date])
+    assert_type(item.exacts, list[datetime.datetime])
+    assert_type(item.sorted_dates, list[datetime.date])
+    assert_type(item.date_map, dict[str, datetime.date])
+    for exact in item.exacts:
+        assert_type(exact.microsecond, int)
 
 
 async def embedded_fields(item: Item) -> None:
@@ -231,9 +325,19 @@ async def dynamic_documents(dyn: Dyn) -> None:
 async def class_level_access() -> None:
     # Reading a field through the class yields the field instance itself.
     assert_type(Item.name, StringField[Never])
+    assert_type(Item.name, StringField[Never, str])  # the hidden value-type parameter defaults to str
     assert_type(Item.nick, StringField[None])
+    assert_type(Item.nick_null, StringField[None])
     assert_type(Item.count_default, IntField[Never])
+    assert_type(Item.created, DateTimeField[datetime.datetime, Never])
+    assert_type(Item.updated, DateTimeField[datetime.datetime, None])
+    assert_type(Item.birthday, DateField[None])
+    assert_type(Item.exact, ComplexDateTimeField[Never])
     assert_type(Item.tags, ListField[str, Never])
+    assert_type(Item.tags_none, ListField[str, None])
+    assert_type(Item.dates, ListField[datetime.date, Never])
+    assert_type(Item.scores_none, MapField[int, None])
+    assert_type(Item.addresses_none, EmbeddedDocumentListField[Address, None])
     assert_type(Item.address, EmbeddedDocumentField[Address, None])
     assert_type(Item.addresses, EmbeddedDocumentListField[Address])
     assert_type(Item.status, EnumField[Status, Never])
@@ -272,6 +376,32 @@ async def valid_assignments(item: Item) -> None:
     item.lazy_owner = Owner()
     item.owner = Owner()
     item.owner = ObjectId()
+    # null=True / explicit None default / nullable factory accept None
+    item.nick_null = None
+    item.name_null = None
+    item.count_null_default = None
+    item.maybe_nick = None
+    item.lazy_owner_none = None
+    item.tags_none = None
+    item.tags_none = ["a"]
+    item.addresses_none = None
+    item.scores_none = None
+    item.scores_none = {"a": 1}
+    # Values inside containers follow the exposed Python type
+    item.exact = datetime.datetime.now()
+    item.dates = [datetime.date.today()]
+    item.exacts = [datetime.datetime.now()]
+    item.sorted_dates = [datetime.date.today()]
+    item.date_map = {"today": datetime.date.today()}
+    item.seq = 7
+    item.seq_str = "7"
+
+
+async def invalid_declarations() -> None:
+    # value_decorator must be passed by keyword for its return type to be inferred.
+    SequenceField("counters", None, None, str)  # expect-error: reportArgumentType "value_decorator"
+    # MapField requires an inner field (it raises at class definition otherwise).
+    MapField()  # expect-error: reportCallIssue
 
 
 async def optional_access(item: Item) -> None:
@@ -292,3 +422,13 @@ async def invalid_assignments(item: Item) -> None:
     item.address = Owner()  # expect-error: reportAttributeAccessIssue "address"
     item.address_req = None  # expect-error: reportAttributeAccessIssue "address_req"
     item.status = "done"  # expect-error: reportAttributeAccessIssue "status"
+    item.nick_null = 5  # expect-error: reportAttributeAccessIssue "nick_null"
+    item.tags_none = [1]  # expect-error: reportAttributeAccessIssue "tags_none"
+    item.scores_none = {"a": "1"}  # expect-error: reportAttributeAccessIssue "scores_none"
+    item.exact = "2024,01,01,00,00,00,000000"  # expect-error: reportAttributeAccessIssue "exact"
+    item.dates = ["2024-01-01"]  # expect-error: reportAttributeAccessIssue "dates"
+    item.exacts = [datetime.date.today()]  # expect-error: reportAttributeAccessIssue "exacts"
+    item.date_map = {"today": "2024-01-01"}  # expect-error: reportAttributeAccessIssue "date_map"
+    item.seq_str = 7  # expect-error: reportAttributeAccessIssue "seq_str"
+    item.seq_req = None  # expect-error: reportAttributeAccessIssue "seq_req"
+    item.seq_str_req = None  # expect-error: reportAttributeAccessIssue "seq_str_req"
