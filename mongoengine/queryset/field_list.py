@@ -27,7 +27,7 @@ class QueryFieldList:
         self.value: int | dict[str, Any] = value
         self.fields: set[str] = set(fields or [])
         self.always_include: set[str] = set(always_include or [])
-        self._id: int | None = None
+        self._id: int | dict[str, Any] | None = None
         self._only_called: bool = _only_called
         self.slice: dict[str, Any] = {}
 
