@@ -29,7 +29,7 @@ REPR_OUTPUT_SIZE = 20
 ITER_CHUNK_SIZE = 100
 
 
-class QuerySet[T: Document](BaseQuerySet[T]):
+class QuerySet[T: Document[Any]](BaseQuerySet[T]):
     """The default queryset, that builds queries and handles a set of results
     returned from a query.
 
@@ -142,7 +142,7 @@ class QuerySet[T: Document](BaseQuerySet[T]):
         return self._clone_into(QuerySetNoCache(self._document, self._collection))  # type: ignore[arg-type,return-value]
 
 
-class QuerySetNoCache[T: Document](BaseQuerySet[T]):
+class QuerySetNoCache[T: Document[Any]](BaseQuerySet[T]):
     """A non caching QuerySet"""
 
     def cache(self) -> QuerySet[T]:

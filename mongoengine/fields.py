@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import decimal
 import inspect
@@ -9,7 +11,7 @@ from collections.abc import Callable
 from enum import Enum
 from inspect import isclass
 from operator import itemgetter
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, Never, Self, overload
 
 import pymongo
 from bson import SON, Binary, DBRef, ObjectId
@@ -27,6 +29,7 @@ from mongoengine.base import (
     BaseDocument,
     BaseField,
     ComplexBaseField,
+    EmbeddedDocumentList,
     GeoJsonBaseField,
     LazyReference,
     ObjectIdField,
@@ -99,8 +102,43 @@ def _unsaved_object_error(document: Any) -> str:
     )
 
 
-class StringField(BaseField):
+class StringField[N = None](BaseField[str, N]):
     """A unicode string field."""
+
+    @overload
+    def __init__(
+        self: StringField[Never],
+        regex: str | None = None,
+        max_length: int | None = None,
+        min_length: int | None = None,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: StringField[Never],
+        regex: str | None = None,
+        max_length: int | None = None,
+        min_length: int | None = None,
+        *,
+        default: str | Callable[[], str],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        regex: str | None = None,
+        max_length: int | None = None,
+        min_length: int | None = None,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -176,7 +214,7 @@ class StringField(BaseField):
         return super().prepare_query_value(op, value)
 
 
-class URLField(StringField):
+class URLField[N = None](StringField[N]):
     """A field that validates input as an URL."""
 
     _URL_REGEX = LazyRegexCompiler(
@@ -190,6 +228,38 @@ class URLField(StringField):
         re.IGNORECASE,
     )
     _URL_SCHEMES: list[str] = ["http", "https", "ftp", "ftps"]
+
+    @overload
+    def __init__(
+        self: URLField[Never],
+        url_regex: Any | None = None,
+        schemes: list[str] | None = None,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: URLField[Never],
+        url_regex: Any | None = None,
+        schemes: list[str] | None = None,
+        *,
+        default: str | Callable[[], str],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        url_regex: Any | None = None,
+        schemes: list[str] | None = None,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -217,7 +287,7 @@ class URLField(StringField):
             self.error(f"Invalid URL: {value}")
 
 
-class EmailField(StringField):
+class EmailField[N = None](StringField[N]):
     """A field that validates input as an email address."""
 
     USER_REGEX = LazyRegexCompiler(
@@ -245,6 +315,41 @@ class EmailField(StringField):
     )
 
     error_msg: str = "Invalid email address: %s"
+
+    @overload
+    def __init__(
+        self: EmailField[Never],
+        domain_whitelist: list[str] | None = None,
+        allow_utf8_user: bool = False,
+        allow_ip_domain: bool = False,
+        *args: Any,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: EmailField[Never],
+        domain_whitelist: list[str] | None = None,
+        allow_utf8_user: bool = False,
+        allow_ip_domain: bool = False,
+        *args: Any,
+        default: str | Callable[[], str],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        domain_whitelist: list[str] | None = None,
+        allow_utf8_user: bool = False,
+        allow_ip_domain: bool = False,
+        *args: Any,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -318,8 +423,40 @@ class EmailField(StringField):
                     self.error("{} {}".format(self.error_msg % value, "(domain validation failed)"))
 
 
-class IntField(BaseField):
+class IntField[N = None](BaseField[int, N]):
     """32-bit integer field."""
+
+    @overload
+    def __init__(
+        self: IntField[Never],
+        min_value: int | None = None,
+        max_value: int | None = None,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: IntField[Never],
+        min_value: int | None = None,
+        max_value: int | None = None,
+        *,
+        default: int | Callable[[], int],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        min_value: int | None = None,
+        max_value: int | None = None,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -361,8 +498,40 @@ class IntField(BaseField):
         return super().prepare_query_value(op, int(value))
 
 
-class FloatField(BaseField):
+class FloatField[N = None](BaseField[float, N]):
     """Floating point number field."""
+
+    @overload
+    def __init__(
+        self: FloatField[Never],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: FloatField[Never],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        default: float | Callable[[], float],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -408,13 +577,54 @@ class FloatField(BaseField):
         return super().prepare_query_value(op, float(value))
 
 
-class DecimalField(BaseField):
+class DecimalField[N = None](BaseField[decimal.Decimal, N]):
     """Disclaimer: This field is kept for historical reason but since it converts the values to float, it
     is not suitable for true decimal storage. Consider using :class:`~mongoengine.fields.Decimal128Field`.
 
     Fixed-point decimal number field. Stores the value as a float by default unless `force_string` is used.
     If using floats, beware of Decimal to float conversion (potential precision loss)
     """
+
+    @overload
+    def __init__(
+        self: DecimalField[Never],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        force_string: bool = False,
+        precision: int = 2,
+        rounding: str = decimal.ROUND_HALF_UP,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: DecimalField[Never],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        force_string: bool = False,
+        precision: int = 2,
+        rounding: str = decimal.ROUND_HALF_UP,
+        *,
+        default: decimal.Decimal | Callable[[], decimal.Decimal],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        min_value: float | None = None,
+        max_value: float | None = None,
+        force_string: bool = False,
+        precision: int = 2,
+        rounding: str = decimal.ROUND_HALF_UP,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -495,8 +705,24 @@ class DecimalField(BaseField):
         return super().prepare_query_value(op, self.to_mongo(value))
 
 
-class BooleanField(BaseField):
+class BooleanField[N = None](BaseField[bool, N]):
     """Boolean field type."""
+
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from BaseField.
+        @overload
+        def __init__(self: BooleanField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
+        def __init__(
+            self: BooleanField[Never], *, default: bool | Callable[[], bool], required: bool = False, **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def to_python(self, value: Any) -> Any:
         try:
@@ -510,7 +736,7 @@ class BooleanField(BaseField):
             self.error("BooleanField only accepts boolean values")
 
 
-class DateTimeField(BaseField):
+class DateTimeField[N = None](BaseField[datetime.datetime, N]):
     """Datetime field.
 
     Uses the python-dateutil library if available alternatively use time.strptime
@@ -525,6 +751,26 @@ class DateTimeField(BaseField):
       Use :class:`~mongoengine.fields.ComplexDateTimeField` if you
       need accurate microsecond support.
     """
+
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from BaseField.
+        @overload
+        def __init__(self: DateTimeField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
+        def __init__(
+            self: DateTimeField[Never],
+            *,
+            default: datetime.datetime | Callable[[], datetime.datetime],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def validate(self, value: Any) -> None:
         new_value = self.to_mongo(value)
@@ -584,7 +830,40 @@ class DateTimeField(BaseField):
         return super().prepare_query_value(op, self.to_mongo(value))
 
 
-class DateField(DateTimeField):
+class DateField[N = None](DateTimeField[N]):
+    """A :class:`DateTimeField` that exposes ``datetime.date`` values."""
+
+    if TYPE_CHECKING:
+        # Typing-only declarations.  The runtime ``__init__`` / ``__get__`` /
+        # ``__set__`` are inherited unchanged; these narrow the value type
+        # from ``datetime.datetime`` to ``datetime.date``.
+        @overload
+        def __init__(self: DateField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
+        def __init__(
+            self: DateField[Never],
+            *,
+            default: datetime.date | Callable[[], datetime.date],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+        @overload
+        def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+        @overload
+        def __get__(self, instance: Any, owner: type[Any]) -> datetime.date | N: ...
+
+        def __get__(self, instance: Any, owner: type[Any]) -> Any: ...
+
+        def __set__(self, instance: Any, value: datetime.date | N) -> None: ...
+
     def to_mongo(self, value: Any) -> Any:
         value = super().to_mongo(value)
         # drop hours, minutes, seconds
@@ -600,13 +879,15 @@ class DateField(DateTimeField):
         return value
 
 
-class ComplexDateTimeField(StringField):
+class ComplexDateTimeField[N = None](StringField[N]):
     """
     ComplexDateTimeField handles microseconds exactly instead of rounding
     like DateTimeField does.
 
     Derives from a StringField so you can do `gte` and `lte` filtering by
     using lexicographical comparison when filtering / sorting strings.
+    Document instances expose ``datetime.datetime`` values (the string form is
+    an internal storage detail).
 
     The stored string has the following format:
 
@@ -618,6 +899,31 @@ class ComplexDateTimeField(StringField):
 
     Note: To default the field to the current datetime, use: DateTimeField(default=datetime.utcnow)
     """
+
+    @overload
+    def __init__(
+        self: ComplexDateTimeField[Never], separator: str = ",", *, required: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: ComplexDateTimeField[Never],
+        separator: str = ",",
+        *,
+        default: datetime.datetime | Callable[[], datetime.datetime],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        separator: str = ",",
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, separator: str = ",", **kwargs: Any) -> None:
         """
@@ -653,6 +959,12 @@ class ComplexDateTimeField(StringField):
         values = [int(d) for d in data.split(self.separator)]
         return datetime.datetime(*values)  # pyright: ignore[reportCallIssue,reportArgumentType]
 
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> datetime.datetime | N: ...
+
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         if instance is None:
             return self
@@ -663,8 +975,8 @@ class ComplexDateTimeField(StringField):
             return data
         return self._convert_from_string(data)
 
-    def __set__(self, instance: Any, value: Any) -> None:
-        super().__set__(instance, value)
+    def __set__(self, instance: Any, value: datetime.datetime | N) -> None:
+        super().__set__(instance, value)  # pyright: ignore[reportArgumentType]  # stored as a string, exposed as a datetime
         value = instance._data[self.name]
         if value is not None:
             if isinstance(value, datetime.datetime):
@@ -694,10 +1006,63 @@ class ComplexDateTimeField(StringField):
         return super().prepare_query_value(op, self._convert_from_datetime(value))
 
 
-class EmbeddedDocumentField(BaseField):
+class EmbeddedDocumentField[D = Any, N = None](BaseField[D, N]):
     """An embedded document field - with a declared document_type.
     Only valid values are subclasses of :class:`~mongoengine.EmbeddedDocument`.
+
+    The value type ``D`` is inferred from ``document_type`` when it is a
+    class; a string name (lazy reference) yields ``Any``.
     """
+
+    @overload
+    def __init__[D2: EmbeddedDocument](
+        self: EmbeddedDocumentField[D2, Never], document_type: type[D2], *, required: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[D2: EmbeddedDocument](
+        self: EmbeddedDocumentField[D2, Never],
+        document_type: type[D2],
+        *,
+        default: D2 | Callable[[], D2],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[D2: EmbeddedDocument](
+        self: EmbeddedDocumentField[D2, None],
+        document_type: type[D2],
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: EmbeddedDocumentField[Any, Never], document_type: str, *, required: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: EmbeddedDocumentField[Any, Never],
+        document_type: str,
+        *,
+        default: EmbeddedDocument | Callable[[], EmbeddedDocument],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: EmbeddedDocumentField[Any, None],
+        document_type: str,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, document_type: str | type[Any], **kwargs: Any) -> None:
         if not (isinstance(document_type, str) or issubclass(document_type, EmbeddedDocument)):
@@ -771,7 +1136,7 @@ class EmbeddedDocumentField(BaseField):
         return self.to_mongo(value)
 
 
-class GenericEmbeddedDocumentField(BaseField):
+class GenericEmbeddedDocumentField[N = None](BaseField[EmbeddedDocument, N]):
     """A generic embedded document field - allows any
     :class:`~mongoengine.EmbeddedDocument` to be stored.
 
@@ -781,6 +1146,26 @@ class GenericEmbeddedDocumentField(BaseField):
         You can use the choices param to limit the acceptable
         EmbeddedDocument types
     """
+
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from BaseField.
+        @overload
+        def __init__(self: GenericEmbeddedDocumentField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
+        def __init__(
+            self: GenericEmbeddedDocumentField[Never],
+            *,
+            default: EmbeddedDocument | Callable[[], EmbeddedDocument],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def prepare_query_value(self, op: str, value: Any) -> Any:
         return super().prepare_query_value(op, self.to_mongo(value))
@@ -822,11 +1207,27 @@ class GenericEmbeddedDocumentField(BaseField):
         return data
 
 
-class DynamicField(BaseField):
+class DynamicField[N = None](BaseField[Any, N]):
     """A truly dynamic field type capable of handling different and varying
     types of data.
 
     Used by :class:`~mongoengine.DynamicDocument` to handle dynamic data"""
+
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from BaseField.
+        @overload
+        def __init__(self: DynamicField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
+        def __init__(
+            self: DynamicField[Never], *, default: Any | Callable[[], Any], required: bool = False, **kwargs: Any
+        ) -> None: ...
+
+        @overload
+        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def to_mongo(self, value: Any, use_db_field: bool = True, fields: list[str] | None = None) -> Any:
         """Convert a Python type to a MongoDB compatible type."""
@@ -885,7 +1286,7 @@ class DynamicField(BaseField):
             value.validate(clean=clean)
 
 
-class ListField(ComplexBaseField):
+class ListField[V = Any, N = Never](ComplexBaseField[list[V], N]):
     """A list field that wraps a standard field, allowing multiple instances
     of the field to be used as a list in the database.
 
@@ -893,12 +1294,34 @@ class ListField(ComplexBaseField):
 
     .. note::
         Required means it cannot be empty - as the default for ListFields is []
+
+    The element type ``V`` is inferred from the inner field
+    (``ListField(StringField())`` yields ``list[str]``; no inner field yields
+    ``list[Any]``).  Because the default is ``[]`` the value is never ``None``.
     """
 
-    def __init__(self, field: BaseField | None = None, *, max_length: int | None = None, **kwargs: Any) -> None:
+    @overload
+    def __init__[V2](
+        self: ListField[V2, Never], field: BaseField[V2, Any], *, max_length: int | None = None, **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: ListField[Any, Never], field: None = None, *, max_length: int | None = None, **kwargs: Any
+    ) -> None: ...
+
+    def __init__(
+        self, field: BaseField[Any, Any] | None = None, *, max_length: int | None = None, **kwargs: Any
+    ) -> None:
         self.max_length = max_length
         kwargs.setdefault("default", list)
         super().__init__(field=field, **kwargs)
+
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> list[V] | N: ...
 
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         if instance is None:
@@ -943,14 +1366,26 @@ class ListField(ComplexBaseField):
         return super().prepare_query_value(op, value)
 
 
-class EmbeddedDocumentListField(ListField):
+class EmbeddedDocumentListField[D = Any](ListField[D, Never]):
     """A :class:`~mongoengine.ListField` designed specially to hold a list of
     embedded documents to provide additional query helpers.
 
     .. note::
         The only valid list values are subclasses of
         :class:`~mongoengine.EmbeddedDocument`.
+
+    Document instances expose an
+    :class:`~mongoengine.base.datastructures.EmbeddedDocumentList` of ``D``
+    (``Any`` when ``document_type`` is a string name).
     """
+
+    @overload
+    def __init__[D2: EmbeddedDocument](
+        self: EmbeddedDocumentListField[D2], document_type: type[D2], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(self: EmbeddedDocumentListField[Any], document_type: str, **kwargs: Any) -> None: ...
 
     def __init__(self, document_type: str | type[Any], **kwargs: Any) -> None:
         """
@@ -960,8 +1395,19 @@ class EmbeddedDocumentListField(ListField):
         """
         super().__init__(field=EmbeddedDocumentField(document_type), **kwargs)
 
+    if TYPE_CHECKING:
+        # Typing-only: the inherited ListField.__get__ is unchanged at
+        # runtime, but the value it returns is an EmbeddedDocumentList.
+        @overload
+        def __get__(self, instance: None, owner: type[Any]) -> Self: ...
 
-class SortedListField(ListField):
+        @overload
+        def __get__(self, instance: Any, owner: type[Any]) -> EmbeddedDocumentList[D]: ...
+
+        def __get__(self, instance: Any, owner: type[Any]) -> Any: ...
+
+
+class SortedListField[V = Any](ListField[V, Never]):
     """A ListField that sorts the contents of its list before writing to
     the database in order to ensure that a sorted list is always
     retrieved.
@@ -973,7 +1419,7 @@ class SortedListField(ListField):
         to perform a push operation.
     """
 
-    def __init__(self, field: BaseField, **kwargs: Any) -> None:
+    def __init__(self, field: BaseField[V, Any], **kwargs: Any) -> None:
         self._ordering: str | None = kwargs.pop("ordering", None)
         self._order_reverse: bool = kwargs.pop("reverse", False)
         super().__init__(field, **kwargs)
@@ -1005,15 +1451,25 @@ def key_starts_with_dollar(d: dict[str, Any]) -> bool:
     return False
 
 
-class DictField(ComplexBaseField):
+class DictField[V = Any](ComplexBaseField[dict[str, V], Never]):
     """A dictionary field that wraps a standard Python dictionary. This is
     similar to an embedded document, but the structure is not defined.
 
     .. note::
         Required means it cannot be empty - as the default for DictFields is {}
+
+    The value type is ``dict[str, V]`` where ``V`` comes from the optional
+    inner field (``dict[str, Any]`` without one).  Because the default is
+    ``{}`` the value is never ``None``.
     """
 
-    def __init__(self, field: BaseField | None = None, *args: Any, **kwargs: Any) -> None:
+    @overload
+    def __init__[V2](self: DictField[V2], field: BaseField[V2, Any], *args: Any, **kwargs: Any) -> None: ...
+
+    @overload
+    def __init__(self: DictField[Any], field: None = None, *args: Any, **kwargs: Any) -> None: ...
+
+    def __init__(self, field: BaseField[Any, Any] | None = None, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("default", dict)
         super().__init__(*args, field=field, **kwargs)
 
@@ -1048,20 +1504,22 @@ class DictField(ComplexBaseField):
         return super().prepare_query_value(op, value)
 
 
-class MapField(DictField):
+class MapField[V = Any](DictField[V]):
     """A field that maps a name to a specified field type. Similar to
     a DictField, except the 'value' of each item must match the specified
     field type.
+
+    The value type is ``dict[str, V]`` with ``V`` inferred from ``field``.
     """
 
-    def __init__(self, field: BaseField | None = None, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, field: BaseField[V, Any] | None = None, *args: Any, **kwargs: Any) -> None:
         # XXX ValidationError raised outside the "validate" method.
         if not isinstance(field, BaseField):
             self.error("Argument to MapField constructor must be a valid field")
         super().__init__(field=field, *args, **kwargs)
 
 
-class ReferenceField(BaseField):
+class ReferenceField[N = None](BaseField[Any, N]):
     """A reference to a document that returns the raw stored value
     (a :class:`~pymongo.dbref.DBRef` or :class:`~bson.objectid.ObjectId`)
     without auto-dereferencing.
@@ -1070,6 +1528,9 @@ class ReferenceField(BaseField):
     auto-dereference is not supported. Use explicit queries or
     :class:`~mongoengine.fields.LazyReferenceField` (with its async
     ``fetch()`` method) to load the referenced document.
+
+    The static value type is ``Any``: depending on how the value was set the
+    descriptor returns a document instance, a ``DBRef`` or an ``ObjectId``.
 
     Use the `reverse_delete_rule` to handle what should happen if the document
     the field is referencing is deleted.  EmbeddedDocuments, DictFields and
@@ -1097,6 +1558,41 @@ class ReferenceField(BaseField):
 
         User.register_delete_rule(Org, 'owner', DENY)
     """
+
+    @overload
+    def __init__(
+        self: ReferenceField[Never],
+        document_type: str | type[Document[Any]],
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: ReferenceField[Never],
+        document_type: str | type[Document[Any]],
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        default: Any | Callable[[], Any],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        document_type: str | type[Document[Any]],
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -1135,6 +1631,12 @@ class ReferenceField(BaseField):
             else:
                 self.document_type_obj = _DocumentRegistry.get(self.document_type_obj)
         return self.document_type_obj  # type: ignore[return-value]
+
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> Any | N: ...
 
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Descriptor that returns the raw stored value (DBRef or ObjectId)
@@ -1197,15 +1699,54 @@ class ReferenceField(BaseField):
         if not isinstance(value, (self.document_type, LazyReference, DBRef, ObjectId)):
             self.error("A ReferenceField only accepts DBRef, LazyReference, ObjectId or documents")
 
-        if isinstance(value, Document) and value.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
+        if isinstance(value, Document) and value.id is None:
             self.error(_unsaved_object_error(value.__class__.__name__))
 
     def lookup_member(self, member_name: str) -> Any:
         return self.document_type._fields.get(member_name)
 
 
-class CachedReferenceField(BaseField):
-    """A referencefield with cache fields to purpose pseudo-joins"""
+class CachedReferenceField[N = None](BaseField[Any, N]):
+    """A referencefield with cache fields to purpose pseudo-joins.
+
+    The static value type is ``Any`` (a document instance or the raw cached
+    dict, depending on how the value was set).
+    """
+
+    @overload
+    def __init__(
+        self: CachedReferenceField[Never],
+        document_type: str | type[Document[Any]],
+        fields: list[str] | None = None,
+        auto_sync: bool = True,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: CachedReferenceField[Never],
+        document_type: str | type[Document[Any]],
+        fields: list[str] | None = None,
+        auto_sync: bool = True,
+        *,
+        default: Any | Callable[[], Any],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        document_type: str | type[Document[Any]],
+        fields: list[str] | None = None,
+        auto_sync: bool = True,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -1256,6 +1797,12 @@ class CachedReferenceField(BaseField):
             else:
                 self.document_type_obj = _DocumentRegistry.get(self.document_type_obj)
         return self.document_type_obj  # type: ignore[return-value]
+
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> Any | N: ...
 
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Return the raw stored value without auto-dereferencing."""
@@ -1308,14 +1855,14 @@ class CachedReferenceField(BaseField):
         if not isinstance(value, self.document_type):
             self.error("A CachedReferenceField only accepts documents")
 
-        if isinstance(value, Document) and value.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
+        if isinstance(value, Document) and value.id is None:
             self.error(_unsaved_object_error(value.__class__.__name__))
 
     def lookup_member(self, member_name: str) -> Any:
         return self.document_type._fields.get(member_name)
 
 
-class GenericReferenceField(BaseField):
+class GenericReferenceField[N = None](BaseField[Any, N]):
     """A reference to *any* :class:`~mongoengine.document.Document` subclass
     that returns the raw stored value without auto-dereferencing.
 
@@ -1324,6 +1871,9 @@ class GenericReferenceField(BaseField):
     :class:`~mongoengine.fields.GenericLazyReferenceField` (with its async
     ``fetch()`` method) to load the referenced document.
 
+    The static value type is ``Any`` (a document instance or the raw
+    ``{"_cls": ..., "_ref": DBRef}`` dict, depending on how it was set).
+
     .. note ::
         * Any documents used as a generic reference must be registered in the
           document registry.  Importing the model will automatically register
@@ -1331,6 +1881,21 @@ class GenericReferenceField(BaseField):
 
         * You can use the choices param to limit the acceptable Document types
     """
+
+    @overload
+    def __init__(self: GenericReferenceField[Never], *args: Any, required: Literal[True], **kwargs: Any) -> None: ...
+
+    @overload
+    def __init__(
+        self: GenericReferenceField[Never],
+        *args: Any,
+        default: Any | Callable[[], Any],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(self, *args: Any, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         choices = kwargs.pop("choices", None)
@@ -1357,6 +1922,12 @@ class GenericReferenceField(BaseField):
             value = value._class_name
         super()._validate_choices(value)
 
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> Any | N: ...
+
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Return the raw stored value without auto-dereferencing."""
         if instance is None:
@@ -1373,7 +1944,7 @@ class GenericReferenceField(BaseField):
                 self.error("GenericReferences can only contain documents")
 
         # We need the id from the saved object to create the DBRef
-        elif isinstance(value, Document) and value.id is None:  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
+        elif isinstance(value, Document) and value.id is None:
             self.error(_unsaved_object_error(value.__class__.__name__))
 
     def to_mongo(self, document: Any) -> Any:
@@ -1388,7 +1959,7 @@ class GenericReferenceField(BaseField):
 
         if isinstance(document, Document):
             # We need the id from the saved object to create the DBRef
-            id_ = document.id  # pyright: ignore[reportAttributeAccessIssue]  # id is declared with the PK contract in a follow-up
+            id_ = document.id
             if id_ is None:
                 # XXX ValidationError raised outside of the "validate" method.
                 self.error(_unsaved_object_error(document.__class__.__name__))
@@ -1407,14 +1978,39 @@ class GenericReferenceField(BaseField):
         return self.to_mongo(value)
 
 
-class BinaryField(BaseField):
+class BinaryField[N = None](BaseField[bytes, N]):
     """A binary data field."""
+
+    @overload
+    def __init__(
+        self: BinaryField[Never], max_bytes: int | None = None, *, required: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: BinaryField[Never],
+        max_bytes: int | None = None,
+        *,
+        default: bytes | Callable[[], bytes],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        max_bytes: int | None = None,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, max_bytes: int | None = None, **kwargs: Any) -> None:
         self.max_bytes = max_bytes
         super().__init__(**kwargs)
 
-    def __set__(self, instance: Any, value: Any) -> None:
+    def __set__(self, instance: Any, value: bytes | bytearray | N) -> None:
         """Handle bytearrays in python 3.1"""
         if isinstance(value, bytearray):
             value = bytes(value)
@@ -1436,10 +2032,14 @@ class BinaryField(BaseField):
         return super().prepare_query_value(op, self.to_mongo(value))
 
 
-class EnumField(BaseField):
+class EnumField[E: Enum = Any, N = None](BaseField[E, N]):
     """Enumeration Field. Values are stored underneath as is,
     so it will only work with simple types (str, int, etc) that
-    are bson encodable
+    are bson encodable.
+
+    The value type ``E`` is the enum class passed as ``enum``.  Raw values
+    (``"done"``) are converted to enum members at runtime, but the static
+    contract for attribute assignment is the enum type.
 
     Example usage:
 
@@ -1471,6 +2071,26 @@ class EnumField(BaseField):
             status = EnumField(Status, choices=[Status.NEW, Status.DONE])
     """
 
+    @overload
+    def __init__[E2: Enum](
+        self: EnumField[E2, Never], enum: type[E2], *, required: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__[E2: Enum](
+        self: EnumField[E2, Never],
+        enum: type[E2],
+        *,
+        default: E2 | Callable[[], E2],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[E2: Enum](
+        self: EnumField[E2, None], enum: type[E2], *, required: bool = False, default: None = None, **kwargs: Any
+    ) -> None: ...
+
     def __init__(self, enum: type[Enum], **kwargs: Any) -> None:
         self._enum_cls = enum
         if kwargs.get("choices"):
@@ -1501,7 +2121,7 @@ class EnumField(BaseField):
                 return value
         return value
 
-    def __set__(self, instance: Any, value: Any) -> None:
+    def __set__(self, instance: Any, value: E | N) -> None:
         return super().__set__(instance, self.to_python(value))
 
     def to_mongo(self, value: Any) -> Any:
@@ -1515,7 +2135,7 @@ class EnumField(BaseField):
         return super().prepare_query_value(op, self.to_mongo(value))
 
 
-class SequenceField(BaseField):
+class SequenceField[N = None](BaseField[int, N]):
     """Provides a sequential counter see:
      https://www.mongodb.com/docs/manual/reference/method/ObjectId/#ObjectIDs-SequenceNumbers
 
@@ -1548,6 +2168,44 @@ class SequenceField(BaseField):
     _auto_gen: bool = True
     COLLECTION_NAME: str = "mongoengine.counters"
     VALUE_DECORATOR: Callable[..., Any] = int
+
+    @overload
+    def __init__(
+        self: SequenceField[Never],
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        value_decorator: Callable[..., Any] | None = None,
+        *args: Any,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: SequenceField[Never],
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        value_decorator: Callable[..., Any] | None = None,
+        *args: Any,
+        default: int | Callable[[], int],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        collection_name: str | None = None,
+        db_alias: str | None = None,
+        sequence_name: str | None = None,
+        value_decorator: Callable[..., Any] | None = None,
+        *args: Any,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -1624,6 +2282,12 @@ class SequenceField(BaseField):
         else:
             return "".join(f"_{c}" if c.isupper() else c for c in owner._class_name).strip("_").lower()  # type: ignore[attr-defined]
 
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> int | N: ...
+
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         # Cannot auto-generate in __get__ since generate() is async.
         # Sequence values must be generated explicitly before save via
@@ -1631,7 +2295,7 @@ class SequenceField(BaseField):
         # during save() if still None.
         return super().__get__(instance, owner)
 
-    def __set__(self, instance: Any, value: Any) -> None:
+    def __set__(self, instance: Any, value: int | N) -> None:
         return super().__set__(instance, value)
 
     def prepare_query_value(self, op: str, value: Any) -> Any:
@@ -1642,10 +2306,26 @@ class SequenceField(BaseField):
         return value
 
 
-class UUIDField(BaseField):
+class UUIDField[N = None](BaseField[uuid.UUID, N]):
     """A UUID field."""
 
     _binary: bool | None = None
+
+    @overload
+    def __init__(self: UUIDField[Never], binary: bool = True, *, required: Literal[True], **kwargs: Any) -> None: ...
+
+    @overload
+    def __init__(
+        self: UUIDField[Never],
+        binary: bool = True,
+        *,
+        default: uuid.UUID | Callable[[], uuid.UUID],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(self, binary: bool = True, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
 
     def __init__(self, binary: bool = True, **kwargs: Any) -> None:
         """
@@ -1689,7 +2369,7 @@ class UUIDField(BaseField):
                 self.error(f"Could not convert to UUID: {exc}")
 
 
-class GeoPointField(BaseField):
+class GeoPointField[N = None](BaseField[list[float], N]):
     """A list storing a longitude and latitude coordinate.
 
     .. note:: this represents a generic point in a 2D plane and a legacy way of
@@ -1699,6 +2379,26 @@ class GeoPointField(BaseField):
     """
 
     _geo_index: bool | str = pymongo.GEO2D
+
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from BaseField.
+        @overload
+        def __init__(self: GeoPointField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
+        def __init__(
+            self: GeoPointField[Never],
+            *,
+            default: list[float] | Callable[[], list[float]],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def validate(self, value: Any) -> None:
         """Make sure that a geo-value is of type (x, y)"""
@@ -1711,7 +2411,7 @@ class GeoPointField(BaseField):
             self.error(f"Both values ({repr(value)}) in point must be float or int")
 
 
-class PointField(GeoJsonBaseField):
+class PointField[N = None](GeoJsonBaseField[N]):
     """A GeoJSON field storing a longitude and latitude coordinate.
 
     The data is represented as:
@@ -1729,8 +2429,38 @@ class PointField(GeoJsonBaseField):
 
     _type: str = "Point"
 
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from GeoJsonBaseField.
+        @overload
+        def __init__(
+            self: PointField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+        ) -> None: ...
 
-class LineStringField(GeoJsonBaseField):
+        @overload
+        def __init__(
+            self: PointField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            default: Any | Callable[[], Any],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            auto_index: bool = True,
+            *args: Any,
+            required: bool = False,
+            default: None = None,
+            **kwargs: Any,
+        ) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+class LineStringField[N = None](GeoJsonBaseField[N]):
     """A GeoJSON field storing a line of longitude and latitude coordinates.
 
     The data is represented as:
@@ -1747,8 +2477,38 @@ class LineStringField(GeoJsonBaseField):
 
     _type: str = "LineString"
 
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from GeoJsonBaseField.
+        @overload
+        def __init__(
+            self: LineStringField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+        ) -> None: ...
 
-class PolygonField(GeoJsonBaseField):
+        @overload
+        def __init__(
+            self: LineStringField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            default: Any | Callable[[], Any],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            auto_index: bool = True,
+            *args: Any,
+            required: bool = False,
+            default: None = None,
+            **kwargs: Any,
+        ) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+class PolygonField[N = None](GeoJsonBaseField[N]):
     """A GeoJSON field storing a polygon of longitude and latitude coordinates.
 
     The data is represented as:
@@ -1768,8 +2528,38 @@ class PolygonField(GeoJsonBaseField):
 
     _type: str = "Polygon"
 
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from GeoJsonBaseField.
+        @overload
+        def __init__(
+            self: PolygonField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+        ) -> None: ...
 
-class MultiPointField(GeoJsonBaseField):
+        @overload
+        def __init__(
+            self: PolygonField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            default: Any | Callable[[], Any],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            auto_index: bool = True,
+            *args: Any,
+            required: bool = False,
+            default: None = None,
+            **kwargs: Any,
+        ) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+class MultiPointField[N = None](GeoJsonBaseField[N]):
     """A GeoJSON field storing a list of Points.
 
     The data is represented as:
@@ -1787,8 +2577,38 @@ class MultiPointField(GeoJsonBaseField):
 
     _type: str = "MultiPoint"
 
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from GeoJsonBaseField.
+        @overload
+        def __init__(
+            self: MultiPointField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+        ) -> None: ...
 
-class MultiLineStringField(GeoJsonBaseField):
+        @overload
+        def __init__(
+            self: MultiPointField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            default: Any | Callable[[], Any],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            auto_index: bool = True,
+            *args: Any,
+            required: bool = False,
+            default: None = None,
+            **kwargs: Any,
+        ) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+class MultiLineStringField[N = None](GeoJsonBaseField[N]):
     """A GeoJSON field storing a list of LineStrings.
 
     The data is represented as:
@@ -1806,8 +2626,42 @@ class MultiLineStringField(GeoJsonBaseField):
 
     _type: str = "MultiLineString"
 
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from GeoJsonBaseField.
+        @overload
+        def __init__(
+            self: MultiLineStringField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            required: Literal[True],
+            **kwargs: Any,
+        ) -> None: ...
 
-class MultiPolygonField(GeoJsonBaseField):
+        @overload
+        def __init__(
+            self: MultiLineStringField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            default: Any | Callable[[], Any],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            auto_index: bool = True,
+            *args: Any,
+            required: bool = False,
+            default: None = None,
+            **kwargs: Any,
+        ) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+class MultiPolygonField[N = None](GeoJsonBaseField[N]):
     """A GeoJSON field storing  list of Polygons.
 
     The data is represented as:
@@ -1832,15 +2686,126 @@ class MultiPolygonField(GeoJsonBaseField):
 
     _type: str = "MultiPolygon"
 
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads; the runtime ``__init__`` is
+        # inherited unchanged from GeoJsonBaseField.
+        @overload
+        def __init__(
+            self: MultiPolygonField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+        ) -> None: ...
 
-class LazyReferenceField(BaseField):
+        @overload
+        def __init__(
+            self: MultiPolygonField[Never],
+            auto_index: bool = True,
+            *args: Any,
+            default: Any | Callable[[], Any],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(
+            self,
+            auto_index: bool = True,
+            *args: Any,
+            required: bool = False,
+            default: None = None,
+            **kwargs: Any,
+        ) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+class LazyReferenceField[D = Any, N = None](BaseField[LazyReference[D], N]):
     """A really lazy reference to a document.
     Unlike the :class:`~mongoengine.fields.ReferenceField` it will
     **not** be automatically (lazily) dereferenced on access.
     Instead, access will return a :class:`~mongoengine.base.LazyReference` class
     instance, allowing access to `pk` or manual dereference by using
     ``fetch()`` method.
+
+    Document instances expose ``LazyReference[D]`` where ``D`` is the
+    referenced document class (``Any`` for a string name), so
+    ``await doc.owner.fetch()`` is typed ``D``.  Assignment accepts a document
+    instance, a ``DBRef``, a ``LazyReference`` or a primary key.
     """
+
+    @overload
+    def __init__[D2: Document[Any]](
+        self: LazyReferenceField[D2, Never],
+        document_type: type[D2],
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[D2: Document[Any]](
+        self: LazyReferenceField[D2, Never],
+        document_type: type[D2],
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        default: Any | Callable[[], Any],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__[D2: Document[Any]](
+        self: LazyReferenceField[D2, None],
+        document_type: type[D2],
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: LazyReferenceField[Any, Never],
+        document_type: str,
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: LazyReferenceField[Any, Never],
+        document_type: str,
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        default: Any | Callable[[], Any],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: LazyReferenceField[Any, None],
+        document_type: str,
+        passthrough: bool = False,
+        dbref: bool = False,
+        reverse_delete_rule: int = DO_NOTHING,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,
@@ -1894,6 +2859,12 @@ class LazyReferenceField(BaseField):
                 value = LazyReference(self.document_type, value, passthrough=self.passthrough)
         return value
 
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> LazyReference[D] | N: ...
+
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Descriptor to allow lazy dereferencing."""
         if instance is None:
@@ -1905,6 +2876,12 @@ class LazyReferenceField(BaseField):
             instance._data[self.name] = value
 
         return super().__get__(instance, owner)
+
+    if TYPE_CHECKING:
+        # Typing-only: the runtime ``__set__`` is inherited unchanged.  A
+        # document instance, DBRef, LazyReference or primary key may be
+        # assigned; ``build_lazyref`` normalises it on the next read.
+        def __set__(self, instance: Any, value: Any) -> None: ...
 
     def to_mongo(self, value: Any) -> Any:
         if isinstance(value, LazyReference):
@@ -1971,13 +2948,15 @@ class LazyReferenceField(BaseField):
         return self.document_type._fields.get(member_name)
 
 
-class GenericLazyReferenceField(GenericReferenceField):
+class GenericLazyReferenceField[N = None](GenericReferenceField[N]):
     """A reference to *any* :class:`~mongoengine.document.Document` subclass.
     Unlike the :class:`~mongoengine.fields.GenericReferenceField` it will
     **not** be automatically (lazily) dereferenced on access.
     Instead, access will return a :class:`~mongoengine.base.LazyReference` class
     instance, allowing access to `pk` or manual dereference by using
     ``fetch()`` method.
+
+    Document instances expose ``LazyReference[Any]``.
 
     .. note ::
         * Any documents used as a generic reference must be registered in the
@@ -1986,6 +2965,35 @@ class GenericLazyReferenceField(GenericReferenceField):
 
         * You can use the choices param to limit the acceptable Document types
     """
+
+    @overload
+    def __init__(
+        self: GenericLazyReferenceField[Never],
+        *args: Any,
+        passthrough: bool = False,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: GenericLazyReferenceField[Never],
+        *args: Any,
+        passthrough: bool = False,
+        default: Any | Callable[[], Any],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        *args: Any,
+        passthrough: bool = False,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.passthrough: bool = kwargs.pop("passthrough", False)
@@ -2010,6 +3018,12 @@ class GenericLazyReferenceField(GenericReferenceField):
             elif isinstance(value, Document):
                 value = LazyReference(type(value), value.pk, passthrough=self.passthrough)
         return value
+
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> LazyReference[Any] | N: ...
 
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         if instance is None:
@@ -2046,7 +3060,7 @@ class GenericLazyReferenceField(GenericReferenceField):
             return super().to_mongo(document)
 
 
-class Decimal128Field(BaseField):
+class Decimal128Field[N = None](BaseField[decimal.Decimal, N]):
     """
     128-bit decimal-based floating-point field capable of emulating decimal
     rounding with exact precision. This field will expose decimal.Decimal but stores the value as a
@@ -2054,6 +3068,38 @@ class Decimal128Field(BaseField):
     """
 
     DECIMAL_CONTEXT: decimal.Context = create_decimal128_context()
+
+    @overload
+    def __init__(
+        self: Decimal128Field[Never],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        required: Literal[True],
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: Decimal128Field[Never],
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        default: decimal.Decimal | Callable[[], decimal.Decimal],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        min_value: float | None = None,
+        max_value: float | None = None,
+        *,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(
         self,

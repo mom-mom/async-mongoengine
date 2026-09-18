@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import operator
 import weakref
 from collections.abc import Callable, Iterable
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, Never, NoReturn, Self, overload
 
 import pymongo
 from bson import SON, DBRef, ObjectId
@@ -15,12 +17,31 @@ from mongoengine.base.datastructures import (
 from mongoengine.common import _import_class
 from mongoengine.errors import DeprecatedError, ValidationError
 
+if TYPE_CHECKING:
+    from mongoengine.document import EmbeddedDocument as _EmbeddedDocument
+
 __all__ = ("BaseField", "ComplexBaseField", "ObjectIdField", "GeoJsonBaseField")
 
 
-class BaseField:
+class BaseField[V = Any, N = Any]:
     """A base class for fields in a MongoDB document. Instances of this class
     may be added to subclasses of `Document` to define a document's schema.
+
+    The class is generic purely for static typing (see ``docs/typing.md``):
+
+    * ``V`` is the Python value type the field exposes on a document instance
+      (``str`` for :class:`~mongoengine.fields.StringField`, ``list[V]`` for
+      :class:`~mongoengine.fields.ListField`, ...).
+    * ``N`` is ``None`` when the value may be missing and ``Never`` when it is
+      guaranteed by ``required=True`` or a non-``None`` ``default=``.
+
+    Reading a field through a document instance yields ``V | N``; reading it
+    through the document class yields the field instance itself.  Concrete
+    field classes declare their own ``__init__`` overloads so that
+    ``required=`` / ``default=`` select ``N``.  A field class that subclasses
+    ``BaseField`` directly without declaring type parameters is typed as
+    ``Any``, exactly as before.  Adding ``Generic`` to the MRO is the only
+    runtime effect.
     """
 
     name: str | None = None  # set in TopLevelDocumentMetaclass
@@ -116,6 +137,12 @@ class BaseField:
             self.creation_counter = BaseField.creation_counter
             BaseField.creation_counter += 1
 
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> V | N: ...
+
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Descriptor for retrieving a value from a field in a document."""
         if instance is None:
@@ -125,17 +152,15 @@ class BaseField:
         # Get value from document instance if available
         return instance._data.get(self.name)
 
-    def __set__(self, instance: Any, value: Any) -> None:
+    def __set__(self, instance: Any, value: V | N) -> None:
         """Descriptor for assigning a value to a field in a document."""
         # If setting to None and there is a default value provided for this
-        # field, then set the value to the default value.
-        if value is None:
-            if self.null:
-                value = None
-            elif self.default is not None:
-                value = self.default
-                if callable(value):
-                    value = value()
+        # field (and ``null`` is not set), then set the value to the default value.
+        if value is None and not self.null and self.default is not None:
+            default: Any = self.default
+            # A callable default is a factory (``list``, ``datetime.utcnow``, ...);
+            # ``callable()`` narrowing loses its return type.
+            value = default() if callable(default) else default  # pyright: ignore[reportAssignmentType]
 
         if instance._initialised:
             try:
@@ -148,7 +173,7 @@ class BaseField:
                 # Mark the field as changed in such cases.
                 instance._mark_as_changed(self.name)
 
-        EmbeddedDocument = _import_class("EmbeddedDocument")
+        EmbeddedDocument: type[_EmbeddedDocument] = _import_class("EmbeddedDocument")
         if isinstance(value, EmbeddedDocument):
             value._instance = weakref.proxy(instance)
         elif isinstance(value, (list, tuple)):
@@ -273,7 +298,7 @@ class BaseField:
         self._set_owner_document(owner_document)
 
 
-class ComplexBaseField(BaseField):
+class ComplexBaseField[V = Any, N = Any](BaseField[V, N]):
     """Handles complex fields, such as lists / dictionaries.
 
     Allows for nesting of embedded documents inside complex types.
@@ -289,13 +314,13 @@ class ComplexBaseField(BaseField):
     _set_enum_field_type: type | None = None
     _get_emb_doc_list_field_type: type | None = None
 
-    def __init__(self, field: BaseField | None = None, **kwargs: Any) -> None:
+    def __init__(self, field: BaseField[Any, Any] | None = None, **kwargs: Any) -> None:
         if field is not None and not isinstance(field, BaseField):
             raise TypeError(f"field argument must be a Field instance (e.g {self.__class__.__name__}(StringField()))")
         self.field = field
         super().__init__(**kwargs)
 
-    def __set__(self, instance: Any, value: Any) -> None:
+    def __set__(self, instance: Any, value: V | N) -> None:
         # Some fields e.g EnumField are converted upon __set__
         # So it is fair to mimic the same behavior when using e.g ListField(EnumField)
         if self.field:
@@ -305,11 +330,17 @@ class ComplexBaseField(BaseField):
                 ComplexBaseField._set_enum_field_type = EnumField
             if isinstance(self.field, EnumField):
                 if isinstance(value, (list, tuple)):
-                    value = [self.field.to_python(sub_val) for sub_val in value]
+                    value = [self.field.to_python(sub_val) for sub_val in value]  # pyright: ignore[reportAssignmentType]  # converted container is the runtime value type
                 elif isinstance(value, dict):
-                    value = {key: self.field.to_python(sub) for key, sub in value.items()}
+                    value = {key: self.field.to_python(sub) for key, sub in value.items()}  # pyright: ignore[reportAssignmentType]  # see above
 
         return super().__set__(instance, value)
+
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> Self: ...
+
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> V | N: ...
 
     def __get__(self, instance: Any, owner: type[Any]) -> Any:
         """Descriptor for ComplexBaseField access."""
@@ -317,7 +348,7 @@ class ComplexBaseField(BaseField):
             # Document class being used rather than a document object
             return self
 
-        value = super().__get__(instance, owner)
+        value: Any = super().__get__(instance, owner)
 
         # Convert lists / values so we can watch for any changes on them
         if isinstance(value, (list, tuple)):
@@ -530,7 +561,7 @@ class ComplexBaseField(BaseField):
     def prepare_query_value(self, op: str, value: Any) -> Any:
         return self.to_mongo(value)
 
-    def lookup_member(self, member_name: str) -> BaseField | None:
+    def lookup_member(self, member_name: str) -> BaseField[Any, Any] | None:
         if self.field:
             return self.field.lookup_member(member_name)
         return None
@@ -541,8 +572,29 @@ class ComplexBaseField(BaseField):
         self._owner_document = owner_document
 
 
-class ObjectIdField(BaseField):
+class ObjectIdField[N = None](BaseField[ObjectId, N]):
     """A field wrapper around MongoDB's ObjectIds."""
+
+    if TYPE_CHECKING:
+        # Typing-only constructor overloads (the runtime ``__init__`` is
+        # inherited unchanged from BaseField): ``required=True`` or a
+        # non-None ``default=`` make the value non-optional.
+        @overload
+        def __init__(self: ObjectIdField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
+        def __init__(
+            self: ObjectIdField[Never],
+            *,
+            default: ObjectId | Callable[[], ObjectId],
+            required: bool = False,
+            **kwargs: Any,
+        ) -> None: ...
+
+        @overload
+        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def to_python(self, value: Any) -> Any:
         try:
@@ -573,11 +625,40 @@ class ObjectIdField(BaseField):
             self.error("Invalid ObjectID")
 
 
-class GeoJsonBaseField(BaseField):
-    """A geo json field storing a geojson style object."""
+class GeoJsonBaseField[N = None](BaseField[Any, N]):
+    """A geo json field storing a geojson style object.
+
+    The value type is ``Any``: a GeoJSON ``dict`` or the raw coordinate list
+    may be assigned, and the stored shape is returned as is.
+    """
 
     _geo_index: bool | str = pymongo.GEOSPHERE
     _type: str = "GeoBase"
+
+    @overload
+    def __init__(
+        self: GeoJsonBaseField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: GeoJsonBaseField[Never],
+        auto_index: bool = True,
+        *args: Any,
+        default: Any | Callable[[], Any],
+        required: bool = False,
+        **kwargs: Any,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        auto_index: bool = True,
+        *args: Any,
+        required: bool = False,
+        default: None = None,
+        **kwargs: Any,
+    ) -> None: ...
 
     def __init__(self, auto_index: bool = True, *args: Any, **kwargs: Any) -> None:
         """
