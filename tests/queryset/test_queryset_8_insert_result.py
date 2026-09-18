@@ -7,7 +7,7 @@ values the overloads describe, the reload fallback and the bulk-insert signals.
 
 from bson import ObjectId
 
-from mongoengine import Document, StringField, signals
+from mongoengine import Document, IntField, StringField, signals
 from mongoengine.queryset.base import BaseQuerySet
 from tests.utils import MongoDBTestCase
 
@@ -16,6 +16,7 @@ class TestQuerySetInsertResult(MongoDBTestCase):
     def setup_method(self, method=None):
         class Item(Document):
             name = StringField()
+            count = IntField()
 
         class Coded(Document[str]):
             code = StringField(primary_key=True)
@@ -96,6 +97,64 @@ class TestQuerySetInsertResult(MongoDBTestCase):
         coded = self.Coded(code="x")
         assert await self.Coded.objects.insert(coded) is coded
         assert await self.Item.objects.count() == 3
+
+    async def test_insert_fallback_document_is_in_the_loaded_state(self, monkeypatch):
+        """A fallback document behaves like a reloaded one on a later ``save()``.
+
+        Regression test: the in-memory document used to keep its unsaved state
+        (no ``_changed_fields`` at all), so a later ``save()`` wrote every field
+        back and overwrote concurrent writes to other fields.
+        """
+
+        async def empty_in_bulk(self, object_ids):
+            return {}
+
+        monkeypatch.setattr(BaseQuerySet, "in_bulk", empty_in_bulk)
+
+        # The state is established before the post-insert signals fire.
+        seen_by_signal = []
+
+        def post_bulk_insert(sender, documents, **kwargs):
+            seen_by_signal.extend(
+                (doc._created, list(getattr(doc, "_changed_fields", ["<unset>"]))) for doc in documents
+            )
+
+        signals.post_bulk_insert.connect(post_bulk_insert, sender=self.Item)
+        try:
+            item = self.Item(name="a", count=1)
+            inserted = await self.Item.objects.insert(item)
+        finally:
+            signals.post_bulk_insert.disconnect(post_bulk_insert)
+        assert inserted is item
+        assert seen_by_signal == [(False, [])]
+        assert inserted._created is False
+        assert inserted._changed_fields == []
+        assert inserted._delta() == ({}, {})
+
+        # Another writer changes a different field in the meantime.
+        assert await self.Item.objects(id=inserted.id).update(set__count=2) == 1
+
+        replace_calls = []
+        original_save_create = Document._save_create
+
+        async def spy_save_create(doc, *args, **kwargs):
+            replace_calls.append(doc)
+            return await original_save_create(doc, *args, **kwargs)
+
+        monkeypatch.setattr(Document, "_save_create", spy_save_create)
+
+        inserted.name = "b"
+        assert inserted._delta() == ({"name": "b"}, {})
+        await inserted.save()
+        assert replace_calls == []  # the update path, not a replace of the whole document
+        stored = await self.Item.objects.as_pymongo().get(id=inserted.id)
+        assert stored == {"_id": inserted.id, "name": "b", "count": 2}
+
+        # Every document of a batch fallback gets the same treatment.
+        items = [self.Item(name="c", count=3), self.Item(name="d", count=4)]
+        batch = await self.Item.objects.insert(items)
+        assert batch == items
+        assert [(doc._created, doc._changed_fields) for doc in batch] == [(False, []), (False, [])]
 
     async def test_insert_partial_reload_keeps_positions(self, monkeypatch):
         original_in_bulk = BaseQuerySet.in_bulk

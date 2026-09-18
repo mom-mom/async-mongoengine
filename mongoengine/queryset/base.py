@@ -471,7 +471,10 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         (for example because the queryset reads from a secondary that has not
         caught up yet), the in-memory document that was inserted is returned
         in its place; its primary key is already set, so the result never
-        contains ``None``.
+        contains ``None``. Such a fallback document is put into the same state
+        as a loaded one (not ``_created``, no pending changes) before the
+        ``post_bulk_insert`` signals fire, so a later ``save()`` writes only
+        the fields changed from then on.
         """
         await self._ensure_collection()
         Document = _import_class("Document")
@@ -546,7 +549,18 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         # Reload the inserted documents; fall back to the in-memory document
         # (its pk is set above) for any id the reload did not return.
         documents: dict[Any, Any] = await self.in_bulk(ids)
-        results: list[T] = [documents.get(doc_id, doc) for doc, doc_id in zip(docs, ids)]
+        results: list[T] = []
+        for doc, doc_id in zip(docs, ids):
+            loaded = documents.get(doc_id)
+            if loaded is None:
+                # Put the fallback document into the state ``_from_son(created=False)``
+                # yields: a fresh document has no ``_changed_fields`` at all, so
+                # ``save()`` would write every field back (``_delta()`` falls back
+                # to the whole document) and overwrite concurrent writes.
+                doc._created = False
+                doc._clear_changed_fields()
+                loaded = doc
+            results.append(loaded)
         signals.post_bulk_insert.send(self._document, documents=results, loaded=True, **signal_kwargs)
         await signals.post_bulk_insert_async.send_async(self._document, documents=results, loaded=True, **signal_kwargs)
         return results[0] if return_one else results
