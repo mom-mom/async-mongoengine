@@ -75,12 +75,27 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
         assert isinstance(raw[a.id], dict)
         assert raw[a.id]["_id"] == a.id
         assert raw[a.id]["name"] == "a"
-        # Combining the modes is unsupported: the runtime precedence is not
-        # even consistent (iteration lets as_pymongo() win, in_bulk() applies
-        # scalar() first). Pinned here so a change is noticed.
+        # The projection modes are mutually exclusive: the last switch wins at
+        # runtime as well as statically. (Behaviour change: the combination
+        # used to be inconsistent, iteration let as_pymongo() win whatever the
+        # order and in_bulk() applied scalar() first.)
+        assert await self.Item.objects.as_pymongo().scalar("name").in_bulk([a.id, b.id]) == {a.id: "a", b.id: "b"}
+        assert await self.Item.objects(id=a.id).as_pymongo().scalar("name").first() == "a"
+        assert await self.Item.objects(id=a.id).as_pymongo().values_list("name", "count").first() == ("a", 1)
+        assert await self.Item.objects.as_pymongo().scalar().in_bulk([a.id]) == {a.id: a}
+        assert isinstance(await self.Item.objects(id=a.id).as_pymongo().scalar().first(), self.Item)
+        # as_pymongo() keeps the field selection scalar("name") made with only("name").
         combined = await self.Item.objects.scalar("name").as_pymongo().in_bulk([a.id])
-        assert combined == {a.id: "a"}
-        assert isinstance(await self.Item.objects.scalar("name").as_pymongo().first(), dict)
+        assert isinstance(combined[a.id], dict)
+        assert (combined[a.id]["_id"], combined[a.id]["name"]) == (a.id, "a")
+        assert "count" not in combined[a.id]
+        row = await self.Item.objects(id=a.id).scalar("name").as_pymongo().first()
+        assert isinstance(row, dict)
+        assert (row["_id"], row["name"]) == (a.id, "a")
+        assert "count" not in row
+        restored = await self.Item.objects(id=a.id).scalar("name").as_pymongo().scalar().to_list()
+        assert [type(doc) for doc in restored] == [self.Item]
+        assert restored[0].count == 1  # scalar() without fields resets the selection
 
     async def test_in_bulk_custom_primary_key(self):
         await self.Coded(code="x", name="X").save()

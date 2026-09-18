@@ -158,11 +158,14 @@ async def cache_switching(query: QuerySet[Item]) -> None:
     assert_type(await query.no_cache().as_pymongo().get_item(0), dict[str, Any])
 
 
-async def precedence_follows_the_last_call(query: QuerySet[Item]) -> None:
-    # At runtime as_pymongo() takes precedence over scalar() whatever the
-    # order; statically the type follows the last call. Do not combine them.
+async def the_last_mode_switch_wins(query: QuerySet[Item]) -> None:
+    # The projection modes are mutually exclusive: the last switch wins at
+    # runtime as well as statically (see test_queryset_9_bulk_json.py).
     assert_type(await query.as_pymongo().scalar("name").first(), Any | None)
     assert_type(await query.scalar("name").as_pymongo().first(), dict[str, Any] | None)
+    assert_type(await query.as_pymongo().scalar().first(), Item | None)
+    assert_type(await query.scalar("name", "count").as_pymongo().to_list(), list[dict[str, Any]])
+    assert_type(await query.as_pymongo().values_list("name", "count").first(), tuple[Any, ...] | None)
 
 
 async def raw_results_are_not_documents(query: QuerySet[Item]) -> None:

@@ -1541,10 +1541,10 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
     # Projection modes. ``Self`` cannot change the ``R`` type parameter, so the
     # implementations return ``BaseQuerySet[T, <mode>, PK]``; ``QuerySet`` and
     # ``QuerySetNoCache`` re-declare the same signatures (typing-only) to
-    # return their own class. The static type follows whichever mode was
-    # called last, whereas the runtime precedence is fixed per method
-    # (``as_pymongo()`` wins in ``__anext__``/``get_item``, ``scalar()`` wins
-    # in ``in_bulk``): the two modes must not be combined.
+    # return their own class. The modes are mutually exclusive: the last
+    # switch wins at runtime (``as_pymongo()`` clears ``_scalar``, ``scalar()``
+    # clears ``_as_pymongo``) exactly as it does statically, so the result
+    # type is never wrong and no method needs a precedence rule.
 
     @overload
     def scalar(self) -> BaseQuerySet[T, T, PK]: ...
@@ -1562,6 +1562,11 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         .. note:: This effects all results and can be unset by calling
                   ``scalar`` without arguments. Calls ``only`` automatically.
 
+        The projection modes are mutually exclusive and the last switch wins:
+        ``scalar(...)`` leaves ``as_pymongo()`` mode (``qs.as_pymongo().scalar("x")``
+        yields field values, ``qs.as_pymongo().scalar()`` yields documents
+        again) and ``as_pymongo()`` leaves scalar mode.
+
         Statically, one field makes the result type ``Any`` (field values are
         not typed by name) and two or more fields make it ``tuple[Any, ...]``;
         calling ``scalar()`` without fields restores the document type.
@@ -1570,6 +1575,7 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         """
         queryset: BaseQuerySet[T, Any, PK] = self.clone()
         queryset._scalar = list(fields)
+        queryset._as_pymongo = False
 
         if fields:
             queryset = queryset.only(*fields)
@@ -1598,12 +1604,15 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         This method is particularly useful if you don't need dereferencing
         and care primarily about the speed of data retrieval.
 
-        Results are the raw ``dict`` documents. Do not combine with
-        ``scalar()``: the static result type follows the last call while the
-        runtime precedence is fixed per method.
+        Results are the raw ``dict`` documents. The projection modes are
+        mutually exclusive and the last switch wins: ``as_pymongo()`` leaves
+        ``scalar()`` mode (``qs.scalar("x").as_pymongo()`` yields dicts) but
+        keeps the field selection in force, including the one ``scalar("x")``
+        made through ``only("x")``.
         """
         queryset = self.clone()
         queryset._as_pymongo = True
+        queryset._scalar = []
         # Same object, only the (invariant) phantom result type ``R`` changes.
         return cast("BaseQuerySet[T, dict[str, Any], PK]", queryset)
 

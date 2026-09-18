@@ -404,10 +404,16 @@ Limits:
 
 - **Field values are not typed by name.** A single scalar is `Any` and several
   are `tuple[Any, ...]`; narrow them yourself.
-- **Do not combine the two modes.** The static type follows the last call,
-  but the runtime does not: iteration, `first()`, `get()` and `get_item()`
-  let `as_pymongo()` win whatever the order (`qs.as_pymongo().scalar("x")`
-  still yields dicts), while `in_bulk()` applies `scalar()` first.
+- **The last mode switch wins**, at runtime as well as statically:
+  `qs.as_pymongo().scalar("x")` yields field values,
+  `qs.scalar("x").as_pymongo()` yields dicts and `qs.as_pymongo().scalar()`
+  is back in document mode. `as_pymongo()` keeps the field selection in
+  force, including the one `scalar("x")` made through `only("x")`, so the
+  dicts of `qs.scalar("x").as_pymongo()` hold only `_id` and `x`;
+  `scalar()` with fields selects its own fields and `scalar()` without
+  fields resets the selection. This is a behaviour change: the combination
+  used to be unspecified and inconsistent (iteration let `as_pymongo()` win
+  whatever the order, `in_bulk()` applied `scalar()` first).
 - After a projection switch the static type is the plain `QuerySet[...]`, so
   the methods of a custom queryset class are no longer visible. Call them
   before switching modes, or re-declare `as_pymongo()` / `scalar()` in the
@@ -511,10 +517,8 @@ runtime by `tests/queryset/test_queryset_7_update_result.py`,
   `ObjectId | None`.
 - Subclasses of concrete fields do not narrow on `required=` / `default=`
   unless they repeat the constructor overloads.
-- `scalar()` values are `Any` (one field) or `tuple[Any, ...]` (several);
-  `as_pymongo()` and `scalar()` must not be combined (the static type follows
-  the last call; the runtime precedence differs between iteration and
-  `in_bulk()`).
+- `scalar()` values are `Any` (one field) or `tuple[Any, ...]` (several).
+  The last of `as_pymongo()` / `scalar()` wins, at runtime and statically.
 - After `as_pymongo()` / `scalar()` a custom queryset class is typed as the
   plain `QuerySet[...]`; `@queryset_manager` managers are
   `QuerySetManager[Any]`.
