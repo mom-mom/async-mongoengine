@@ -526,6 +526,22 @@ changes) so that a later `save()` writes only the fields changed from then on.
 `pre_bulk_insert` / `post_bulk_insert` fire exactly as before
 (`loaded=True` / `loaded=False`).
 
+With `load_bulk=False` the result is the Python value of the primary key, the
+one a loaded document exposes through `pk`, not the stored `_id` value PyMongo
+reports: each inserted id goes through the primary-key field's `to_python`, so
+a `UUIDField(binary=False)` key (stored as `str`) comes back as a `uuid.UUID`
+and an `EnumField` key (stored as the enum value) as the enum member. The
+in-memory documents' `pk` is set to the same converted value. For
+`ObjectIdField`, `StringField`, `IntField`, `SequenceField` and binary
+`UUIDField` keys the conversion is a no-op.
+
+```python
+class Session(Document[uuid.UUID]):
+    id = UUIDField(primary_key=True, binary=False)   # stored as str
+
+session_id = await Session.objects.insert(Session(), load_bulk=False)  # uuid.UUID, at runtime too
+```
+
 ### `in_bulk()` and `from_json()`
 
 - `in_bulk(ids: Iterable[PK]) -> dict[PK, R]`: accepts any iterable of primary
@@ -535,6 +551,25 @@ changes) so that a later `save()` writes only the fields changed from then on.
   `dict[ObjectId, dict[str, Any]]` after `as_pymongo()`, `dict[ObjectId, Any]`
   or `dict[ObjectId, tuple[Any, ...]]` after `scalar()`; keys follow the
   model's primary key (`dict[str, Product]`).
+  The ids are given in their Python form as the static type says: a
+  `uuid.UUID` for a `UUIDField(binary=False)` key, an enum member for an
+  `EnumField` key, the generated value of a `SequenceField` key. Each id is
+  converted to its stored form with the field's `to_mongo` (not the
+  query-operator conversion of `filter(pk__in=...)`, which would run a
+  `SequenceField`'s `value_decorator` again on an already generated key). The
+  stored form (`str(some_uuid)`, the enum value) and a 24-character hex string
+  for an `ObjectId` key are accepted at runtime as well, although the checker
+  rejects them; an id the field cannot convert raises `ValidationError`. The
+  keys are always the Python values (`doc.pk` of the loaded
+  document), whatever form the ids were given in and whatever the projection
+  mode; the raw dicts of `as_pymongo()` keep the stored form in their `"_id"`
+  entry.
+
+  ```python
+  sessions = await Session.objects.in_bulk([session_id])   # dict[uuid.UUID, Session]
+  sessions[session_id]                                     # found; the key is the uuid.UUID
+  await Session.objects.in_bulk([str(session_id)])         # same result at runtime (rejected statically)
+  ```
 - `from_json(json) -> list[T]`: always builds model instances, whatever the
   projection mode. With inheritance enabled the `_cls` entry reconstructs the
   matching subclass.
@@ -579,23 +614,13 @@ runtime by `tests/queryset/test_queryset_7_update_result.py`,
   `QuerySetManager[Any]`.
 - The count form of `update()` is `None` at runtime for unacknowledged
   writes (`w=0`); the static type describes acknowledged writes.
-- **Primary keys whose stored form differs from their Python type.**
-  `insert(..., load_bulk=False)` returns the stored `_id` values as PyMongo
-  reports them (and sets the in-memory document's `pk` to the same value),
-  and `in_bulk()` matches the ids it is given against the stored values
-  without the primary-key field's query conversion. For
-  `UUIDField(binary=False)` (stores `str`) or `EnumField` (stores the enum
-  value) the runtime values are therefore the stored form while the static
-  type is `PK`: with `class Session(Document[uuid.UUID])`,
-  `await Session.objects.insert(session, load_bulk=False)` is a `str`,
-  `in_bulk([str(session_id)])` matches and `in_bulk([session_id])` does not:
-  it finds nothing with `uuidRepresentation="standard"`, and with PyMongo's
-  default (unspecified) representation bson refuses to encode a native
-  `uuid.UUID` at all (`ValueError`), whereas `get(id=session_id)` converts
-  the value and matches under both. Issue #33
-  tracks applying the field's `to_python` / `prepare_query_value` conversions;
-  until then the current behaviour is pinned by
-  `test_insert_returns_the_stored_primary_key_form` and
-  `test_in_bulk_matches_stored_primary_key_values`.
+- `in_bulk()` is more lenient at runtime than its static type: besides the
+  Python primary-key values (`Iterable[PK]`) it also accepts the stored form
+  (`str(some_uuid)` for a `UUIDField(binary=False)` key, the enum value for an
+  `EnumField` key, a 24-character hex string for an `ObjectId` key), since the
+  ids go through the field's `to_mongo`; the result is keyed by the Python
+  values either way. A `SequenceField` key must be given as generated (its
+  `value_decorator` is not applied again). `insert(..., load_bulk=False)`
+  returns those Python values as well (see `insert()` and `in_bulk()` above).
 - The contract is verified with Pyright; mypy is not part of the regression
   suite.

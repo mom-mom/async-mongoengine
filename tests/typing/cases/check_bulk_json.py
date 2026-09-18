@@ -9,16 +9,20 @@ expectations use ``typing.assert_type``; negative expectations use
 The contract under test is documented in ``docs/typing.md``:
 ``in_bulk(ids)`` takes any iterable of the model's primary-key type and
 returns ``dict[PK, R]`` (missing ids are absent; the values follow the
-projection mode), and ``from_json()`` always builds model instances
+projection mode; the ids are converted for the query and the keys are the
+Python primary-key values, so the types hold at runtime for a ``uuid.UUID``
+or enum key as well), and ``from_json()`` always builds model instances
 (``list[T]``).
 """
 
+import uuid
 from collections.abc import Iterable
+from enum import Enum
 from typing import Any, assert_type
 
 from bson import ObjectId
 
-from mongoengine import Document, QuerySet, StringField
+from mongoengine import Document, EnumField, QuerySet, StringField, UUIDField
 
 
 class Item(Document):
@@ -36,6 +40,21 @@ class Sub(Item):
 
 class Coded(Document[str]):
     code = StringField(primary_key=True)
+    name = StringField()
+
+
+class Status(Enum):
+    ACTIVE = "active"
+    DONE = "done"
+
+
+class Session(Document[uuid.UUID]):
+    id = UUIDField(primary_key=True, binary=False)  # stored as str, exposed as uuid.UUID
+    name = StringField()
+
+
+class Flagged(Document[Status]):
+    id = EnumField(Status, primary_key=True)  # stored as the enum value, exposed as the member
     name = StringField()
 
 
@@ -82,6 +101,25 @@ async def in_bulk_custom_primary_key(codes: list[str]) -> None:
         assert_type(coded.id, str | None)
 
 
+async def in_bulk_converted_primary_keys(session_ids: list[uuid.UUID]) -> None:
+    # Keys whose stored form differs from their Python type: the runtime
+    # converts the ids for the query and keys the result by the Python value,
+    # so these types hold at runtime as well (issue #33).
+    docs = await Session.objects.in_bulk(session_ids)
+    assert_type(docs, dict[uuid.UUID, Session])
+    for key, doc in docs.items():
+        assert_type(key, uuid.UUID)
+        assert_type(doc.id, uuid.UUID | None)
+    assert_type(docs.get(uuid.uuid4()), Session | None)
+    assert_type(await Session.objects.in_bulk([uuid.uuid4()]), dict[uuid.UUID, Session])
+    assert_type(await Session.objects.in_bulk(uuid.uuid4() for _ in range(2)), dict[uuid.UUID, Session])
+    assert_type(await Session.objects.as_pymongo().in_bulk(session_ids), dict[uuid.UUID, dict[str, Any]])
+    assert_type(await Session.objects.scalar("name").in_bulk(session_ids), dict[uuid.UUID, Any])
+    assert_type(await Flagged.objects.in_bulk([Status.ACTIVE]), dict[Status, Flagged])
+    assert_type(await Flagged.objects.in_bulk(list(Status)), dict[Status, Flagged])
+    assert_type(await Flagged.objects.as_pymongo().in_bulk([Status.DONE]), dict[Status, dict[str, Any]])
+
+
 async def from_json(query: QuerySet[Item]) -> None:
     assert_type(query.from_json("[]"), list[Item])
     assert_type(Item.objects.from_json("[]"), list[Item])
@@ -95,10 +133,17 @@ async def from_json(query: QuerySet[Item]) -> None:
         assert_type(doc.id, ObjectId | None)
 
 
-async def wrong_key_types(query: QuerySet[Item], ids: list[ObjectId]) -> None:
+async def wrong_key_types(query: QuerySet[Item], ids: list[ObjectId], session_ids: list[uuid.UUID]) -> None:
     await query.in_bulk(["a"])  # expect-error: reportArgumentType
     await Coded.objects.in_bulk(ids)  # expect-error: reportArgumentType
     await query.in_bulk(ObjectId())  # expect-error: reportArgumentType
+    # The stored forms are accepted at runtime, but the contract is the Python type.
+    await Session.objects.in_bulk([str(uuid.uuid4())])  # expect-error: reportArgumentType
+    await Session.objects.in_bulk([str(session_id) for session_id in session_ids])  # expect-error: reportArgumentType
+    await Flagged.objects.in_bulk(["active"])  # expect-error: reportArgumentType
+    await Flagged.objects.in_bulk([Status.ACTIVE.value])  # expect-error: reportArgumentType
+    wrong_keys: dict[str, Session] = await Session.objects.in_bulk(session_ids)  # expect-error: reportAssignmentType
+    _ = wrong_keys
 
 
 async def results_keep_their_types(query: QuerySet[Item], ids: list[ObjectId]) -> None:

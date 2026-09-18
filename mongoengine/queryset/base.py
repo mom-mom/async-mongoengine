@@ -464,14 +464,16 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         - a single document with ``load_bulk=True`` (the default) returns the
           reloaded document (``T``); a list of documents returns ``list[T]``;
         - with ``load_bulk=False`` the primary key(s) are returned instead:
-          ``PK`` for a single document, ``list[PK]`` for a list. These are
-          the stored ``_id`` values as PyMongo reports them, so for a primary
-          key whose BSON form differs from its Python type
-          (``UUIDField(binary=False)`` stores ``str``, ``EnumField`` stores
-          the enum value) the runtime value is the stored form although the
-          static type is ``PK``; the in-memory document's ``pk`` is set to
-          the same value. Issue #33 will apply the field's ``to_python``
-          conversion.
+          ``PK`` for a single document, ``list[PK]`` for a list. They are the
+          Python values of the primary key, not the stored ``_id`` values
+          PyMongo reports: each inserted id goes through the primary-key
+          field's ``to_python``, so a ``UUIDField(binary=False)`` key (stored
+          as ``str``) comes back as a ``uuid.UUID`` and an ``EnumField`` key
+          (stored as the enum value) as the enum member, exactly as a loaded
+          document exposes them. The in-memory documents' ``pk`` is set to
+          the same converted value. For ``ObjectIdField``, ``StringField``,
+          ``IntField``, ``SequenceField`` and binary ``UUIDField`` keys the
+          conversion is a no-op.
 
         With ``load_bulk=True`` the inserted documents are reloaded from the
         database in one document-mode ``in_bulk()`` query, whatever projection
@@ -547,7 +549,15 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
                 raise NotUniqueError(message % err)
             raise OperationError(message % err)
 
-        # Apply inserted_ids to documents
+        # Expose the Python form of the primary key: PyMongo reports the
+        # stored ``_id`` values, which differ from the value the model exposes
+        # for a ``UUIDField(binary=False)`` (``str`` vs ``uuid.UUID``) or an
+        # ``EnumField`` (enum value vs member). ``to_python`` is what
+        # ``_from_son`` applies when a document is loaded, so the in-memory
+        # documents, the ``load_bulk=False`` result and a reloaded document
+        # all agree.
+        id_field = self._primary_key_field()
+        ids = [id_field.to_python(inserted_id) for inserted_id in ids]
         for doc, doc_id in zip(docs, ids):
             doc.pk = doc_id
 
@@ -561,6 +571,9 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         # Reload the inserted documents in document mode (a projection mode
         # must not leak into the result); fall back to the in-memory document
         # (its pk is set above) for any id the reload did not return.
+        # ``in_bulk()`` converts the Python ids back for the query and keys
+        # its result by the Python value, so the lookup below uses the
+        # converted ids as they are.
         documents: dict[Any, T] = await self._document_mode_clone().in_bulk(ids)
         results: list[T] = []
         for doc, doc_id in zip(docs, ids):
@@ -1067,35 +1080,49 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         """Retrieve a set of documents by their ids.
 
         :param object_ids: the primary keys to look up (any iterable; it is
-            materialised into a list for the ``$in`` query). They are matched
-            against the stored ``_id`` values as given, without the primary-key
-            field's query conversion, so for a primary key whose BSON form
-            differs from its Python type (``UUIDField(binary=False)`` stores
-            ``str``, ``EnumField`` stores the enum value) pass the stored form:
-            ``in_bulk([str(some_uuid)])`` matches while ``in_bulk([some_uuid])``
-            does not (it finds nothing with ``uuidRepresentation="standard"``;
-            with PyMongo's default, unspecified representation bson refuses
-            to encode a native ``uuid.UUID`` at all), although the static
-            type is ``Iterable[PK]``. Issue #33 will apply
-            ``prepare_query_value`` to the ids.
-        :returns: a dict keyed by the stored primary-key values. Ids that do
-            not exist are simply absent. The values follow the queryset's
-            projection mode: document instances by default, raw dicts after
-            ``as_pymongo()`` and scalar values / tuples after ``scalar()``.
+            materialised into a list for the ``$in`` query). The ids are given
+            in their Python form, as the static type ``Iterable[PK]`` says: a
+            ``uuid.UUID`` for a ``UUIDField(binary=False)`` key (stored as
+            ``str``), an enum member for an ``EnumField`` key (stored as the
+            enum value), the generated value of a ``SequenceField`` key. Each
+            id is converted to its stored form with the primary-key field's
+            ``to_mongo`` (not the query-operator conversion of
+            ``filter(pk__in=...)``, which would run a ``SequenceField``'s
+            ``value_decorator`` a second time on an already generated key).
+            The stored form is accepted at runtime as well (``str(some_uuid)``,
+            the enum value), and so is a 24-character hex string for an
+            ``ObjectIdField`` key, which the conversion turns into an
+            ``ObjectId``; an id the field cannot convert raises
+            :class:`~mongoengine.errors.ValidationError`.
+        :returns: a dict keyed by the Python primary-key values (``doc.pk`` of
+            the loaded document), whatever form the ids were given in and
+            whatever the projection mode. Ids that do not exist are simply
+            absent. The values follow the queryset's projection mode:
+            document instances by default, raw dicts after ``as_pymongo()``
+            (their ``"_id"`` entry keeps the stored form) and scalar values /
+            tuples after ``scalar()``.
         """
         await self._ensure_collection()
         doc_map: dict[Any, Any] = {}
 
-        docs = self._collection.find({"_id": {"$in": list(object_ids)}}, session=_get_session(), **self._cursor_args)
+        # Convert the given Python primary-key values to their stored form.
+        # ``to_mongo`` rather than ``prepare_query_value``: the latter is the
+        # query-operator conversion, which for a SequenceField applies
+        # ``value_decorator`` and would decorate an already generated key
+        # again ("T1" -> "TT1").
+        id_field = self._primary_key_field()
+        stored_ids = [id_field._to_mongo_safe_call(object_id) for object_id in object_ids]
+        docs = self._collection.find({"_id": {"$in": stored_ids}}, session=_get_session(), **self._cursor_args)
         if self._scalar:
             async for doc in docs:
-                doc_map[doc["_id"]] = self._get_scalar(self._document._from_son(doc))
+                doc_map[id_field.to_python(doc["_id"])] = self._get_scalar(self._document._from_son(doc))
         elif self._as_pymongo:
             async for doc in docs:
-                doc_map[doc["_id"]] = doc
+                doc_map[id_field.to_python(doc["_id"])] = doc
         else:
             async for doc in docs:
-                doc_map[doc["_id"]] = self._document._from_son(doc)
+                document = self._document._from_son(doc)
+                doc_map[document.pk] = document
 
         if self._select_related_depth > 0 and not self._as_pymongo and not self._scalar and doc_map:
             await self._dereference(
@@ -1655,6 +1682,17 @@ class BaseQuerySet[T: Document[Any], R = T, PK = ObjectId]:
         queryset._scalar = []
         queryset = queryset.all_fields()
         return cast("BaseQuerySet[T, T, PK]", queryset)
+
+    def _primary_key_field(self) -> Any:
+        """The field behind ``pk`` (``_meta["id_field"]``) of the model.
+
+        Its ``to_python`` turns a stored ``_id`` into the value the model
+        exposes (a ``uuid.UUID`` for ``UUIDField(binary=False)``, the member
+        for ``EnumField``) and its ``to_mongo`` does the reverse; ``insert()``
+        and ``in_bulk()`` use it so that their primary-key values are the
+        ``PK`` the static contract describes.
+        """
+        return self._document._fields[self._document._meta["id_field"]]
 
     def max_time_ms(self, ms: int) -> Self:
         """Wait `ms` milliseconds before killing the query on the server
