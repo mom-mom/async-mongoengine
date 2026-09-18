@@ -9,6 +9,8 @@ expectations use ``typing.assert_type``; negative expectations use
 
 from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, assert_type
 
+from bson import ObjectId
+
 from mongoengine import Document, IntField, QuerySet, QuerySetNoCache, StringField
 
 
@@ -38,6 +40,26 @@ class Post(Document):
         objects: ClassVar[CustomQuerySet["Post"]]
 
     meta = {"queryset_class": CustomQuerySet}
+
+
+class Coded(Document[str]):
+    code = StringField(primary_key=True)
+
+
+class GeneralQuerySet[T: Document[Any], R = T, PK = ObjectId](QuerySet[T, R, PK]):
+    """The fully general custom queryset shape: keeps R and PK through custom methods."""
+
+    def published(self) -> "GeneralQuerySet[T, R, PK]":
+        return self.filter(published=True)
+
+
+class Article(Document[str]):
+    slug = StringField(primary_key=True)
+
+    if TYPE_CHECKING:
+        objects: ClassVar[GeneralQuerySet["Article", "Article", str]]
+
+    meta = {"queryset_class": GeneralQuerySet}
 
 
 class CityCount(TypedDict):
@@ -104,3 +126,34 @@ async def aggregation(query: QuerySet[Item]) -> None:
     async for row in query.aggregate([]).typed(CityCount):
         assert_type(row, CityCount)
         assert_type(row["count"], int)
+
+
+async def three_parameter_shape() -> None:
+    # ``QuerySet[Item]`` is ``QuerySet[Item, Item, ObjectId]``: the result type
+    # ``R`` defaults to the model and the primary-key type ``PK`` to ObjectId.
+    assert_type(Item.objects, QuerySet[Item, Item, ObjectId])
+    assert_type(Item.objects.filter(name="x")[1:3], QuerySet[Item, Item, ObjectId])
+    assert_type(Item.objects.no_cache(), QuerySetNoCache[Item, Item, ObjectId])
+    assert_type(Item.objects.no_cache().cache(), QuerySet[Item, Item, ObjectId])
+    assert_type(Sub.objects, QuerySet[Sub, Sub, ObjectId])
+    assert_type(Coded.objects, QuerySet[Coded, Coded, str])
+    assert_type(await Coded.objects.first(), Coded | None)
+    explicit: QuerySet[Item, Item, ObjectId] = Item.objects
+    assert_type(explicit, QuerySet[Item])
+    shorthand: QuerySet[Item] = Item.objects
+    assert_type(shorthand, QuerySet[Item, Item, ObjectId])
+    wrong: QuerySet[Item] = Coded.objects  # expect-error: reportAssignmentType
+    _ = wrong
+
+
+async def general_custom_queryset(article: Article) -> None:
+    assert_type(Article.objects, GeneralQuerySet[Article, Article, str])
+    assert_type(Article.objects.published(), GeneralQuerySet[Article, Article, str])
+    assert_type(await Article.objects.published().first(), Article | None)
+    assert_type(await Article.objects.published().insert(article, load_bulk=False), str)
+    assert_type(await Article.objects.published().in_bulk(["a"]), dict[str, Article])
+    # Custom methods are visible until a projection mode is applied; after
+    # as_pymongo() / scalar() the static type is the plain QuerySet (see docs).
+    assert_type(Article.objects.published().as_pymongo(), QuerySet[Article, dict[str, Any], str])
+    assert_type(await Article.objects.published().scalar("slug").to_list(), list[Any])
+    Article.objects.as_pymongo().published()  # expect-error: reportAttributeAccessIssue "published"

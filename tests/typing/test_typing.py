@@ -38,8 +38,9 @@ def _collect_expectations() -> Expectations:
     expectations: Expectations = {}
     for case_file in sorted(CASES_DIR.glob("check_*.py")):
         for line_no, line in enumerate(case_file.read_text().splitlines(), start=1):
-            match = _EXPECT_ERROR.search(line)
-            if match:
+            # A line may carry several markers when Pyright reports more than
+            # one diagnostic for it (e.g. reportCallIssue + reportArgumentType).
+            for match in _EXPECT_ERROR.finditer(line):
                 expectations.setdefault((case_file, line_no), []).append((match["rule"], match["message"]))
     return expectations
 
