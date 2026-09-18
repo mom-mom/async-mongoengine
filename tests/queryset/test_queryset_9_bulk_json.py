@@ -2,13 +2,13 @@
 
 The static contract (``dict[PK, R]`` / ``list[T]``) is checked by
 ``tests/typing/cases/check_bulk_json.py``; these tests pin the runtime values:
-missing ids are absent, values follow the projection mode, keys follow the
-model's primary-key type and ``from_json()`` rebuilds subclasses.
+missing ids are absent, values follow the projection mode, keys are the
+Python primary-key values (the ids are converted for the query) and
+``from_json()`` rebuilds subclasses.
 """
 
 import uuid
 
-import pytest
 from bson import ObjectId
 
 from mongoengine import Document, IntField, StringField, UUIDField, connect
@@ -65,6 +65,8 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
         b = await self.Item(name="b", count=2).save()
         missing = ObjectId()
 
+        # Whatever the projection mode, the keys are the Python primary-key
+        # values (the ObjectIds here).
         assert await self.Item.objects.scalar("name").in_bulk([a.id, b.id, missing]) == {a.id: "a", b.id: "b"}
         assert await self.Item.objects.values_list("name").in_bulk([a.id]) == {a.id: "a"}
         assert await self.Item.objects.scalar("name", "count").in_bulk([a.id, b.id]) == {
@@ -113,18 +115,18 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
         raw = await self.Coded.objects.as_pymongo().in_bulk(("y",))
         assert raw == {"y": {"_id": "y", "name": "Y"}}
 
-    async def test_in_bulk_matches_stored_primary_key_values(self):
-        """Pins the current behaviour for issue #33 (PK Python type vs stored type).
+    async def test_in_bulk_converts_uuid_primary_keys(self):
+        """``in_bulk()`` takes and returns ``PK`` values, not the stored form (issue #33).
 
-        ``in_bulk()`` matches the given ids against the stored ``_id`` values
-        without the field's query conversion: with ``UUIDField(binary=False)``
-        the stored form is ``str``, so the ``uuid.UUID`` the static type asks
-        for does not match (``get()`` converts and does). What "does not
-        match" means depends on the connection's UUID representation, so the
-        models use their own aliases instead of the test session's default
-        connection: with ``uuidRepresentation="standard"`` the query is sent
-        and finds nothing, with PyMongo's default (unspecified) representation
-        bson refuses to encode a native ``uuid.UUID`` at all.
+        ``UUIDField(binary=False)`` stores the key as ``str``. The ids go
+        through the field's ``prepare_query_value`` (as ``filter(pk__in=...)``
+        does), so a ``uuid.UUID`` matches, and the keys are the ``uuid.UUID``
+        values a loaded document exposes, whatever form was given. The models
+        use their own aliases so that both UUID representations are covered:
+        only the stored ``str`` form ever reaches the driver, so the
+        representation must not matter (with PyMongo's default, unspecified
+        representation bson refuses to encode a native ``uuid.UUID``, which
+        is what an unconverted query used to run into).
         """
         connect(db=MONGO_TEST_DB, alias="uuid_standard", uuidRepresentation="standard")
         connect(db=MONGO_TEST_DB, alias="uuid_unspecified")
@@ -141,24 +143,30 @@ class TestQuerySetInBulkAndFromJson(MongoDBTestCase):
 
             meta = {"db_alias": "uuid_unspecified"}
 
-        session_id = uuid.uuid4()
-        session = await Session(id=session_id, name="a").save()
-        assert type(session.id) is uuid.UUID
-        assert (await Session.objects.as_pymongo().get(id=session_id))["_id"] == str(session_id)
+        for model in (Session, LegacySession):
+            session_id = uuid.uuid4()
+            session = await model(id=session_id, name="a").save()
+            missing = uuid.uuid4()
+            assert (await model.objects.as_pymongo().get(id=session_id))["_id"] == str(session_id)
 
-        by_stored_form = await Session.objects.in_bulk([str(session_id)])
-        assert list(by_stored_form) == [str(session_id)]  # keys are the stored values too
-        assert by_stored_form[str(session_id)] == session
-        assert type(by_stored_form[str(session_id)].id) is uuid.UUID
+            docs = await model.objects.in_bulk([session_id, missing])
+            assert list(docs) == [session_id]
+            assert type(next(iter(docs))) is uuid.UUID
+            assert docs[session_id] == session
+            assert type(docs[session_id].id) is uuid.UUID
 
-        assert await Session.objects.in_bulk([session_id]) == {}
-        assert (await Session.objects.get(id=session_id)).name == "a"
+            # The stored form is accepted as well; the keys stay the Python values.
+            by_stored_form = await model.objects.in_bulk([str(session_id)])
+            assert list(by_stored_form) == [session_id]
+            assert by_stored_form[session_id] == session
 
-        legacy = await LegacySession(id=session_id, name="b").save()
-        assert (await LegacySession.objects.in_bulk([str(session_id)]))[str(session_id)] == legacy
-        with pytest.raises(ValueError, match="cannot encode native uuid.UUID"):
-            await LegacySession.objects.in_bulk([session_id])
-        assert (await LegacySession.objects.get(id=session_id)).name == "b"
+            # Raw and scalar modes key by the Python value too; the raw dict
+            # keeps the stored form in its "_id" entry.
+            raw = await model.objects.as_pymongo().in_bulk([session_id])
+            assert raw == {session_id: {"_id": str(session_id), "name": "a"}}
+            assert await model.objects.scalar("name").in_bulk([session_id, missing]) == {session_id: "a"}
+            assert await model.objects.in_bulk([missing]) == {}
+            assert await model.objects.in_bulk([]) == {}
 
     async def test_in_bulk_reconstructs_subclasses(self):
         item = await self.Item(name="i").save()

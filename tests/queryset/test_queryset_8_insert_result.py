@@ -2,16 +2,17 @@
 
 The static contract (overloads on the input shape and ``load_bulk``) is
 checked by ``tests/typing/cases/check_insert.py``; these tests pin the runtime
-values the overloads describe, the reload fallback and the bulk-insert signals.
+values the overloads describe (including the Python form of the primary keys
+``load_bulk=False`` returns), the reload fallback and the bulk-insert signals.
 """
 
 import uuid
 
 from bson import ObjectId
 
-from mongoengine import Document, IntField, StringField, UUIDField, signals
+from mongoengine import Document, IntField, StringField, UUIDField, connect, signals
 from mongoengine.queryset.base import BaseQuerySet
-from tests.utils import MongoDBTestCase
+from tests.utils import MONGO_TEST_DB, MongoDBTestCase
 
 
 class TestQuerySetInsertResult(MongoDBTestCase):
@@ -24,13 +25,8 @@ class TestQuerySetInsertResult(MongoDBTestCase):
             code = StringField(primary_key=True)
             name = StringField()
 
-        class Session(Document[uuid.UUID]):
-            id = UUIDField(primary_key=True, binary=False)
-            name = StringField()
-
         self.Item = Item
         self.Coded = Coded
-        self.Session = Session
 
     async def test_insert_single_returns_reloaded_document(self):
         item = self.Item(name="a")
@@ -84,32 +80,62 @@ class TestQuerySetInsertResult(MongoDBTestCase):
         assert [doc.pk for doc in docs] == ["e", "f"]
         assert all(isinstance(doc, self.Coded) for doc in docs)
 
-    async def test_insert_returns_the_stored_primary_key_form(self):
-        """Pins the current behaviour for issue #33 (PK Python type vs stored type).
+    async def test_insert_returns_the_python_primary_key_value(self):
+        """``load_bulk=False`` returns ``PK`` values, not the stored ``_id`` (issue #33).
 
-        ``UUIDField(binary=False)`` stores the key as ``str``; ``load_bulk=False``
-        returns that stored form although ``Document[uuid.UUID]`` types it as
-        ``uuid.UUID``. The reloaded document (``load_bulk=True``) goes through
-        ``to_python`` and exposes a ``uuid.UUID`` again.
+        ``UUIDField(binary=False)`` stores the key as ``str``; the inserted ids
+        PyMongo reports go through the field's ``to_python``, so the result and
+        the in-memory document's ``pk`` are ``uuid.UUID`` values, like the
+        ``id`` of a loaded document. The models use their own aliases so that
+        both UUID representations are covered: only the stored ``str`` form
+        ever reaches the driver (the write and the reload query alike), so
+        the representation must not matter.
         """
-        session_id = uuid.uuid4()
-        session = self.Session(id=session_id, name="a")
-        inserted_id = await self.Session.objects.insert(session, load_bulk=False)
-        assert inserted_id == str(session_id)
-        assert type(inserted_id) is str
-        assert session.pk == str(session_id)  # the in-memory document gets the stored form too
-        assert type(session.pk) is str
-        batch_ids = await self.Session.objects.insert(
-            [self.Session(id=uuid.uuid4()), self.Session(id=uuid.uuid4())], load_bulk=False
-        )
-        assert all(type(batch_id) is str for batch_id in batch_ids)
+        connect(db=MONGO_TEST_DB, alias="uuid_standard", uuidRepresentation="standard")
+        connect(db=MONGO_TEST_DB, alias="uuid_unspecified")
 
-        other_id = uuid.uuid4()
-        reloaded = await self.Session.objects.insert(self.Session(id=other_id, name="b"))
-        assert isinstance(reloaded, self.Session)
-        assert reloaded.id == other_id
-        assert type(reloaded.id) is uuid.UUID
-        assert (await self.Session.objects.as_pymongo().get(id=other_id))["_id"] == str(other_id)
+        class Session(Document[uuid.UUID]):
+            id = UUIDField(primary_key=True, binary=False)
+            name = StringField()
+
+            meta = {"db_alias": "uuid_standard"}
+
+        class LegacySession(Document[uuid.UUID]):
+            id = UUIDField(primary_key=True, binary=False)
+            name = StringField()
+
+            meta = {"db_alias": "uuid_unspecified"}
+
+        for model in (Session, LegacySession):
+            session_id = uuid.uuid4()
+            session = model(id=session_id, name="a")
+            inserted_id = await model.objects.insert(session, load_bulk=False)
+            assert inserted_id == session_id
+            assert type(inserted_id) is uuid.UUID
+            assert session.pk == session_id  # the in-memory document gets the Python value too
+            assert type(session.pk) is uuid.UUID
+            # The stored form is unchanged.
+            assert (await model.objects.as_pymongo().get(id=session_id))["_id"] == str(session_id)
+
+            batch_ids = [uuid.uuid4(), uuid.uuid4()]
+            batch = [model(id=batch_id) for batch_id in batch_ids]
+            assert await model.objects.insert(batch, load_bulk=False) == batch_ids
+            assert all(type(doc.pk) is uuid.UUID for doc in batch)
+
+            # The load_bulk=True reload passes the converted ids to in_bulk(),
+            # which converts them back for the query and keys its result by
+            # the Python value, so the reloaded documents are matched again.
+            other_id = uuid.uuid4()
+            original = model(id=other_id, name="b")
+            reloaded = await model.objects.insert(original)
+            assert isinstance(reloaded, model)
+            assert reloaded is not original  # reloaded, not the in-memory fallback
+            assert reloaded.id == other_id
+            assert type(reloaded.id) is uuid.UUID
+            originals = [model(id=uuid.uuid4(), name="c"), model(id=uuid.uuid4(), name="d")]
+            reloaded_batch = await model.objects.insert(originals)
+            assert [doc.name for doc in reloaded_batch] == ["c", "d"]
+            assert all(doc is not original for doc, original in zip(reloaded_batch, originals))
 
     async def test_insert_returns_documents_whatever_the_projection_mode(self):
         raw = self.Item.objects.as_pymongo()
