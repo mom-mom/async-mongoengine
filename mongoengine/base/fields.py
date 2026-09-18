@@ -580,6 +580,9 @@ class ObjectIdField[N = None](BaseField[ObjectId, N]):
         # inherited unchanged from BaseField): ``required=True`` or a
         # non-None ``default=`` make the value non-optional.
         @overload
+        def __init__(self: ObjectIdField[None], *, null: Literal[True], **kwargs: Any) -> None: ...
+
+        @overload
         def __init__(self: ObjectIdField[Never], *, required: Literal[True], **kwargs: Any) -> None: ...
 
         @overload
@@ -592,7 +595,7 @@ class ObjectIdField[N = None](BaseField[ObjectId, N]):
         ) -> None: ...
 
         @overload
-        def __init__(self, *, required: bool = False, default: None = None, **kwargs: Any) -> None: ...
+        def __init__(self, *, required: bool = False, default: Any = None, **kwargs: Any) -> None: ...
 
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
@@ -637,6 +640,11 @@ class GeoJsonBaseField[N = None](BaseField[Any, N]):
 
     @overload
     def __init__(
+        self: GeoJsonBaseField[None], auto_index: bool = True, *args: Any, null: Literal[True], **kwargs: Any
+    ) -> None: ...
+
+    @overload
+    def __init__(
         self: GeoJsonBaseField[Never], auto_index: bool = True, *args: Any, required: Literal[True], **kwargs: Any
     ) -> None: ...
 
@@ -656,7 +664,7 @@ class GeoJsonBaseField[N = None](BaseField[Any, N]):
         auto_index: bool = True,
         *args: Any,
         required: bool = False,
-        default: None = None,
+        default: Any = None,
         **kwargs: Any,
     ) -> None: ...
 
