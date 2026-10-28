@@ -24,6 +24,7 @@ env/
 htmlcov/
 venv
 venv3
-.claude/
+.claude/*
+!.claude/settings.json
 .agents/
 async_mongoengine.egg-info/
